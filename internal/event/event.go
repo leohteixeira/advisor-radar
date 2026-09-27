@@ -32,12 +32,14 @@ var knownNames = map[string]struct{}{
 }
 
 // Envelope is the shared event body plus the routing-key name.
+// Payload is optional domain facts; MarshalBody omits it when nil.
 type Envelope struct {
 	Name          string    `json:"-"`
 	EventID       string    `json:"event_id"`
 	OccurredAt    time.Time `json:"occurred_at"`
 	CustomerID    string    `json:"customer_id"`
 	SchemaVersion int       `json:"schema_version"`
+	Payload       any       `json:"payload,omitempty"`
 }
 
 // Validate checks the envelope against the MVP contract.
