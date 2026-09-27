@@ -1,4 +1,11 @@
-import type { CaseItem, Signal, TimelineEntry } from '../domain/types';
+import type {
+  CaseItem,
+  Intent,
+  ManagerSnapshot,
+  ReviewRow,
+  Signal,
+  TimelineEntry,
+} from '../domain/types';
 
 async function readJSON<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -57,4 +64,23 @@ export async function fetchTimeline(
   const url = `/v1/customers/${customerId}/timeline${qs ? `?${qs}` : ''}`;
   const body = await readJSON<{ items: TimelineEntry[] }>(await fetch(url));
   return body.items ?? [];
+}
+
+export async function fetchReview(): Promise<ReviewRow[]> {
+  const body = await readJSON<{ items: ReviewRow[] }>(await fetch('/v1/review'));
+  return body.items ?? [];
+}
+
+export async function correctReview(id: string, intent: Intent | string): Promise<ReviewRow> {
+  return readJSON<ReviewRow>(
+    await fetch(`/v1/review/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intent }),
+    }),
+  );
+}
+
+export async function fetchManager(): Promise<ManagerSnapshot> {
+  return readJSON<ManagerSnapshot>(await fetch('/v1/manager'));
 }

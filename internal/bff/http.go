@@ -9,11 +9,13 @@ import (
 	"time"
 )
 
-// Handler serves the queue, SSE stream, actions proxy, seed cases, and timeline.
+// Handler serves the queue, SSE stream, actions proxy, seed cases, timeline,
+// review queue, and manager panel.
 type Handler struct {
 	board    *Board
 	actions  ActionsClient
 	cases    *CaseBoard
+	review   *ReviewQueue
 	timeline TimelineClient
 	now      func() time.Time
 }
@@ -31,6 +33,7 @@ func NewHandler(board *Board, actions ActionsClient, tl TimelineClient) http.Han
 		board:    board,
 		actions:  actions,
 		cases:    NewCaseBoard(),
+		review:   NewReviewQueue(),
 		timeline: tl,
 		now:      time.Now,
 	}
@@ -43,6 +46,9 @@ func NewHandler(board *Board, actions ActionsClient, tl TimelineClient) http.Han
 	mux.HandleFunc("DELETE /v1/actions/{id}", h.deleteAction)
 	mux.HandleFunc("GET /v1/actions", h.listActions)
 	mux.HandleFunc("GET /v1/customers/{id}/timeline", h.customerTimeline)
+	mux.HandleFunc("GET /v1/review", h.listReview)
+	mux.HandleFunc("PUT /v1/review/{id}", h.correctReview)
+	mux.HandleFunc("GET /v1/manager", h.manager)
 	return mux
 }
 
@@ -221,6 +227,66 @@ func (h *Handler) listActions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) listReview(w http.ResponseWriter, r *http.Request) {
+	if err := r.Context().Err(); err != nil {
+		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
+		return
+	}
+	items := h.review.Items()
+	if items == nil {
+		items = []ReviewRow{}
+	}
+	body := struct {
+		Items []ReviewRow `json:"items"`
+	}{Items: items}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		return
+	}
+}
+
+func (h *Handler) correctReview(w http.ResponseWriter, r *http.Request) {
+	if err := r.Context().Err(); err != nil {
+		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
+		return
+	}
+	id := r.PathValue("id")
+	intent, err := decodeReviewIntent(r)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	row, err := h.review.Correct(id, intent)
+	if errors.Is(err, ErrInvalidIntent) {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, ErrReviewNotFound) {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(row); err != nil {
+		return
+	}
+}
+
+func (h *Handler) manager(w http.ResponseWriter, r *http.Request) {
+	if err := r.Context().Err(); err != nil {
+		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
+		return
+	}
+	snap := ManagerSnapshotSeed()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(snap); err != nil {
+		return
+	}
+}
+
 func decodeProxyAction(r *http.Request) (string, error) {
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
@@ -238,4 +304,23 @@ func decodeProxyAction(r *http.Request) (string, error) {
 		return "", err
 	}
 	return asObj.Action, nil
+}
+
+func decodeReviewIntent(r *http.Request) (string, error) {
+	defer r.Body.Close()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return "", fmt.Errorf("bff: read review intent: %w", err)
+	}
+	var asString string
+	if err := json.Unmarshal(body, &asString); err == nil {
+		return asString, nil
+	}
+	var asObj struct {
+		Intent string `json:"intent"`
+	}
+	if err := json.Unmarshal(body, &asObj); err != nil {
+		return "", fmt.Errorf("bff: decode review intent: %w", err)
+	}
+	return asObj.Intent, nil
 }

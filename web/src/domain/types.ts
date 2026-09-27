@@ -76,6 +76,44 @@ export interface TimelineEntry {
   ago: number;
 }
 
+export interface ReviewRow {
+  id: string;
+  client: string;
+  text: string;
+  dist: Record<string, number>;
+  ago: number;
+  fallback?: boolean;
+  intent: Intent | string;
+  corrected?: boolean;
+}
+
+export interface ManagerBacklog {
+  advisor: string;
+  open: number;
+  risk: number;
+  overdue: number;
+}
+
+export interface ManagerAtRisk {
+  id: string;
+  client: string;
+  advisor: string;
+  segment: string;
+  remaining: number;
+}
+
+export interface ManagerSnapshot {
+  backlog: ManagerBacklog[];
+  avgFirstContactMin: number;
+  avgFirstContactYesterday: number;
+  reviewPct: number;
+  fallbackPct: number;
+  intents: Record<string, number>;
+  atRisk: ManagerAtRisk[];
+}
+
+export type Persona = 'queue' | 'review' | 'manager';
+
 export const CASE_STATES: CaseState[] = [
   'Aberto',
   'Em atendimento',
