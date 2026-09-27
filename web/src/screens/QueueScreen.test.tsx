@@ -94,6 +94,14 @@ const timelineMariana = [
   },
 ];
 
+const emptyFacets = {
+  andamento: [],
+  sla: [],
+  sinal: [],
+  motivo: [],
+  segmento: [],
+};
+
 const seedCases: CaseItem[] = [
   {
     id: KID.paulo,
@@ -139,13 +147,13 @@ function mockFetch(queue: Signal[] = seedSignals) {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/v1/queue') && !url.includes('/stream') && (!init || !init.method || init.method === 'GET')) {
-        return new Response(JSON.stringify({ items: queue }), {
+        return new Response(JSON.stringify({ items: queue, facets: emptyFacets }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
       }
       if (url.includes('/v1/cases') && !url.includes('/advance')) {
-        return new Response(JSON.stringify({ items: seedCases, states: [] }), {
+        return new Response(JSON.stringify({ items: seedCases, states: [], facets: emptyFacets }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
@@ -160,6 +168,7 @@ function mockFetch(queue: Signal[] = seedSignals) {
         const u = new URL(url, 'http://localhost');
         const q = (u.searchParams.get('q') ?? '').toLowerCase();
         const kind = u.searchParams.get('kind') ?? '';
+        const order = u.searchParams.get('order') ?? 'asc';
         let items = [...timelineMariana];
         if (kind === 'notas') {
           items = items.filter((i) => i.kind === 'nota');
@@ -171,6 +180,10 @@ function mockFetch(queue: Signal[] = seedSignals) {
               i.text.toLowerCase().includes(q) ||
               i.meta.toLowerCase().includes(q),
           );
+        }
+        items.sort((a, b) => a.ago - b.ago);
+        if (order === 'desc') {
+          items.reverse();
         }
         return new Response(JSON.stringify({ items }), {
           status: 200,
@@ -260,13 +273,13 @@ describe('QueueScreen', () => {
               ? { ...s, contacted_at: '2026-09-27T15:00:00Z' }
               : s,
           );
-          return new Response(JSON.stringify({ items }), {
+          return new Response(JSON.stringify({ items, facets: emptyFacets }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         }
         if (url.includes('/v1/cases')) {
-          return new Response(JSON.stringify({ items: seedCases }), {
+          return new Response(JSON.stringify({ items: seedCases, facets: emptyFacets }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
@@ -302,6 +315,17 @@ describe('QueueScreen', () => {
 
   it('keeps a live signal on the pill until it is tapped', async () => {
     const user = userEvent.setup();
+    let liveAnnounced = false;
+
+    const live: Signal = {
+      id: SID.live,
+      kind: 'message',
+      client: CID.vanessa,
+      name: 'Vanessa Moreira',
+      segment: 'Advance',
+      text: 'ao vivo',
+      intent: 'Reclamação',
+    };
 
     class FakeEventSource {
       static current: FakeEventSource | null = null;
@@ -322,6 +346,26 @@ describe('QueueScreen', () => {
     }
 
     vi.stubGlobal('EventSource', FakeEventSource);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/v1/queue') && !url.includes('/stream') && (!init || !init.method || init.method === 'GET')) {
+          const items = liveAnnounced ? [...seedSignals, live] : [...seedSignals];
+          return new Response(JSON.stringify({ items, facets: emptyFacets }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.includes('/v1/cases')) {
+          return new Response(JSON.stringify({ items: seedCases, facets: emptyFacets }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
     renderQueue({ isDesktop: true, disableStream: false });
 
     await waitFor(() => {
@@ -329,16 +373,9 @@ describe('QueueScreen', () => {
       expect(FakeEventSource.current).not.toBeNull();
     });
 
+    liveAnnounced = true;
     FakeEventSource.current?.listeners.get('signal')?.({
-      data: JSON.stringify({
-        id: SID.live,
-        kind: 'message',
-        client: CID.vanessa,
-        name: 'Vanessa Moreira',
-        segment: 'Advance',
-        text: 'ao vivo',
-        intent: 'Reclamação',
-      }),
+      data: JSON.stringify(live),
       lastEventId: SID.live,
     });
 
@@ -347,7 +384,9 @@ describe('QueueScreen', () => {
 
     await user.click(pill);
 
-    expect(screen.getByText('ao vivo')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('ao vivo')).toBeInTheDocument();
+    });
     expect(screen.queryByRole('button', { name: '1 novo' })).not.toBeInTheDocument();
   });
 
@@ -364,13 +403,13 @@ describe('QueueScreen', () => {
           const items = snoozed && !deleted
             ? seedSignals.filter((s) => s.id !== SID.marianaMsg)
             : seedSignals;
-          return new Response(JSON.stringify({ items }), {
+          return new Response(JSON.stringify({ items, facets: emptyFacets }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         }
         if (url.includes('/v1/cases')) {
-          return new Response(JSON.stringify({ items: seedCases }), {
+          return new Response(JSON.stringify({ items: seedCases, facets: emptyFacets }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
@@ -448,13 +487,13 @@ describe('QueueScreen', () => {
           if (afterUndo) {
             items = [...items, live];
           }
-          return new Response(JSON.stringify({ items }), {
+          return new Response(JSON.stringify({ items, facets: emptyFacets }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         }
         if (url.includes('/v1/cases')) {
-          return new Response(JSON.stringify({ items: seedCases }), {
+          return new Response(JSON.stringify({ items: seedCases, facets: emptyFacets }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
@@ -544,6 +583,30 @@ describe('QueueScreen', () => {
     expect(within(rail).getByText('Em atendimento')).toBeInTheDocument();
     const current = within(rail).getByText('Em atendimento').closest('li');
     expect(current).toHaveAttribute('aria-current', 'step');
+  });
+
+  it('customer page opens with the most recent message and Mais recentes toggles to saque', async () => {
+    const user = userEvent.setup();
+    renderQueue({ isDesktop: true });
+    await waitFor(() => expect(screen.getByTestId(`signal-${SID.marianaMsg}`)).toBeInTheDocument());
+    await user.click(screen.getByRole('link', { name: 'Abrir Mariana Costa' }));
+    await waitFor(() => expect(screen.getByTestId('client-360')).toBeInTheDocument());
+
+    const list = screen.getByTestId('timeline-list');
+    const items = within(list).getAllByRole('listitem');
+    expect(items[0]).toHaveTextContent('Se isso não for resolvido hoje');
+
+    await user.click(screen.getByRole('button', { name: 'Mais recentes' }));
+    await waitFor(() => {
+      const ordered = within(screen.getByTestId('timeline-list')).getAllByRole('listitem');
+      expect(ordered[0]).toHaveTextContent('Saque');
+    });
+
+    const fetchMock = vi.mocked(fetch);
+    const orderCalls = fetchMock.mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => u.includes('/timeline') && u.includes('order=desc'));
+    expect(orderCalls.length).toBeGreaterThan(0);
   });
 
   it('customer page Orlando search shows the note and hides the saque', async () => {

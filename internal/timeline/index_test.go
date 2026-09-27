@@ -40,6 +40,53 @@ func seedCustomer(t *testing.T, idx *timeline.Index, customerID string) {
 	}
 }
 
+func TestIndex_SearchOrdersByAgoAscending(t *testing.T) {
+	t.Parallel()
+	cust := identity.MustNewV7()
+	idx := timeline.NewIndex()
+	seedCustomer(t, idx, cust)
+	items, err := idx.Search(context.Background(), cust, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) < 3 {
+		t.Fatalf("items = %d, want at least 3", len(items))
+	}
+	// Seed includes ago ~12 (message), ~2900 (note), ~21000 (aporte).
+	agos := make([]int, len(items))
+	for i, e := range items {
+		agos[i] = e.Ago
+	}
+	for i := 1; i < len(agos); i++ {
+		if agos[i] < agos[i-1] {
+			t.Fatalf("agos not ascending: %v", agos)
+		}
+	}
+	if items[0].Ago > 20 {
+		t.Fatalf("first ago = %d, want ~12 (most recent)", items[0].Ago)
+	}
+	found2900, found21000 := false, false
+	var i12, i2900, i21000 int
+	for i, e := range items {
+		switch {
+		case e.Ago >= 10 && e.Ago <= 20:
+			i12 = i
+		case e.Ago >= 2800 && e.Ago <= 3000:
+			found2900 = true
+			i2900 = i
+		case e.Ago >= 20000 && e.Ago <= 22000:
+			found21000 = true
+			i21000 = i
+		}
+	}
+	if !found2900 || !found21000 {
+		t.Fatalf("missing expected ages in %v", agos)
+	}
+	if !(i12 < i2900 && i2900 < i21000) {
+		t.Fatalf("want ago 12 before 2900 before 21000; indexes %d %d %d in %v", i12, i2900, i21000, agos)
+	}
+}
+
 func TestIndex_SearchOrlando(t *testing.T) {
 	t.Parallel()
 	cust := identity.MustNewV7()

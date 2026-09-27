@@ -148,6 +148,82 @@ func TestHTTP_TimelineViaGRPCBufconn(t *testing.T) {
 	}
 }
 
+func TestHTTP_TimelineOrderDescReverses(t *testing.T) {
+	t.Parallel()
+	idx := timeline.NewIndex()
+	cust := identity.MustNewV7()
+	now := time.Now().UTC()
+	rows := []struct {
+		ago     time.Duration
+		payload map[string]any
+	}{
+		{12 * time.Minute, map[string]any{"text": "msg", "channel": "chat", "meta": "x"}},
+		{2900 * time.Minute, map[string]any{"kind": "nota", "title": "Nota", "text": "n", "meta": "a"}},
+		{21000 * time.Minute, map[string]any{"kind": "aporte", "title": "Aporte", "text": "US$", "meta": "c"}},
+	}
+	for _, r := range rows {
+		eid := identity.MustNewV7()
+		key := "advisory.note.recorded"
+		if r.payload["kind"] == "aporte" {
+			key = "account.event.recorded"
+		}
+		if _, ok := r.payload["channel"]; ok {
+			key = "message.received"
+		}
+		body, _ := json.Marshal(map[string]any{
+			"event_id": eid, "occurred_at": now.Add(-r.ago),
+			"customer_id": cust, "schema_version": 1, "payload": r.payload,
+		})
+		if _, _, err := idx.ApplyDelivery(context.Background(), key, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lis := bufconn.Listen(1024 * 1024)
+	srv := grpc.NewServer()
+	timelinev1.RegisterTimelineServiceServer(srv, timeline.NewGRPCServer(idx))
+	go srv.Serve(lis)
+	t.Cleanup(srv.Stop)
+	conn, err := grpc.DialContext(context.Background(), "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	tl := bff.NewGRPCTimeline(timelinev1.NewTimelineServiceClient(conn))
+	h := bff.NewHandler(bff.NewBoard(), nil, tl, nil, nil, nil)
+
+	reqAsc := httptest.NewRequest(http.MethodGet, "/v1/customers/"+cust+"/timeline", nil)
+	rrAsc := httptest.NewRecorder()
+	h.ServeHTTP(rrAsc, reqAsc)
+	var asc struct {
+		Items []bff.TimelineEntry `json:"items"`
+	}
+	if err := json.Unmarshal(rrAsc.Body.Bytes(), &asc); err != nil {
+		t.Fatal(err)
+	}
+	if len(asc.Items) != 3 || asc.Items[0].Ago > asc.Items[1].Ago {
+		t.Fatalf("asc items = %+v", asc.Items)
+	}
+
+	reqDesc := httptest.NewRequest(http.MethodGet, "/v1/customers/"+cust+"/timeline?order=desc", nil)
+	rrDesc := httptest.NewRecorder()
+	h.ServeHTTP(rrDesc, reqDesc)
+	var desc struct {
+		Items []bff.TimelineEntry `json:"items"`
+	}
+	if err := json.Unmarshal(rrDesc.Body.Bytes(), &desc); err != nil {
+		t.Fatal(err)
+	}
+	if len(desc.Items) != 3 {
+		t.Fatalf("desc items = %+v", desc.Items)
+	}
+	if desc.Items[0].Ago < desc.Items[1].Ago || desc.Items[0].EventID != asc.Items[2].EventID {
+		t.Fatalf("desc did not reverse asc: asc=%+v desc=%+v", asc.Items, desc.Items)
+	}
+}
+
 func TestHTTP_ActionsUnavailable503(t *testing.T) {
 	t.Parallel()
 	h := bff.NewHandler(bff.NewBoard(), nil, nil, nil, nil, nil)
