@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--sans:'Albert Sans',system-ui,sans-serif;--serif:'Literata',Georgia,serif;--mono:'JetBrains Mono',ui-monospace,monospace}
+[data-theme="light"]{--bg:#f5f3ec;--surface:#fbfaf6;--surface-2:#efede5;--ink:#14191a;--ink-2:#3a4240;--ink-3:#6b706c;--line:#d9d6cc;--line-2:#e6e3d9;--brand:#1d4d3a;--brand-ink:#fff;--brand-soft:#dfe8df;--accent:#6fbf8a;--crit:#a8322c;--crit-soft:#f1d0cc;--crit-ink:#6e1f1a;--warn:#b9821c;--warn-soft:#f3e9cf;--warn-ink:#6f4a06;--ok:#2c7d55;--ok-soft:#d9ebdf;--ok-ink:#174a30;--info:#3a6a8a;--info-soft:#dbe6ee;--info-ink:#23465e;--neutral-soft:#e6e3d9;--f0:#6b706c;--f0-soft:#e6e3d9;--f1:#b9821c;--f1-soft:#f3e9cf;--f2:#c2601f;--f2-soft:#f3dcc4;--f3:#a8322c;--f3-soft:#f1d0cc;--sla-ok:#6b706c;--sla-due:#6f4a06;--sla-over:#a8322c;--skeleton:#e6e3d9;--shadow:0 1px 2px rgba(20,25,26,.06)}
+[data-theme="dark"]{--bg:#0f1412;--surface:#171d1a;--surface-2:#1e2521;--ink:#ecebe4;--ink-2:#c4c8c2;--ink-3:#8f968f;--line:#2b332f;--line-2:#232a26;--brand:#6fbf8a;--brand-ink:#0f1412;--brand-soft:#1b3a2c;--accent:#6fbf8a;--crit:#e0675f;--crit-soft:#4a2320;--crit-ink:#f4b6b0;--warn:#d9a03a;--warn-soft:#443417;--warn-ink:#f0d18a;--ok:#5fb98a;--ok-soft:#1f3a2c;--ok-ink:#b9e3c8;--info:#6da3c6;--info-soft:#1f3342;--info-ink:#b6d3e6;--neutral-soft:#232a26;--f0:#8f968f;--f0-soft:#232a26;--f1:#d9a03a;--f1-soft:#443417;--f2:#e0834a;--f2-soft:#4a2e1c;--f3:#e0675f;--f3-soft:#4a2320;--sla-ok:#8f968f;--sla-due:#f0d18a;--sla-over:#e0675f;--skeleton:#232a26;--shadow:none}
+body{margin:0;background:#e9e7e0;color:#14191a;font-family:var(--sans)}
+a{color:#1d4d3a}a:hover{color:#14191a}
+@keyframes ar-shimmer{0%{opacity:.6}50%{opacity:1}100%{opacity:.6}}
+</style>
+</helmet>
+<div style="max-width:1200px;margin:0 auto;padding:32px 24px 64px;display:flex;flex-direction:column;gap:40px;font-size:14px;line-height:1.45">
+
+<div style="display:flex;flex-direction:column;gap:10px;max-width:720px">
+  <div style="display:flex;align-items:center;gap:12px">
+    <div style="width:40px;height:40px;border-radius:4px;background:#14191a;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:0 9px"><div style="height:4px;width:22px;background:#6fbf8a"></div><div style="height:4px;width:14px;background:#f5f3ec"></div><div style="height:4px;width:8px;background:#f5f3ec"></div></div>
+    <span style="font-family:var(--serif);font-size:28px;font-weight:500;letter-spacing:-.01em">Advisor Radar · Design system</span>
+  </div>
+  <p style="margin:0;color:#3a4240;text-wrap:pretty">Base neutra em papel e tinta, marca em verde profundo, semânticas separadas da marca. Vermelho só para o crítico. Tudo o que depende de cor também carrega ícone, barras ou texto. Tokens em <a href="handoff/tokens.css">tokens.css</a> / <a href="handoff/tokens.json">tokens.json</a>; mapa de componentes em <a href="handoff/components.md">components.md</a>; protótipo em <a href="Advisor Radar.dc.html">Advisor Radar</a>.</p>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:14px">
+  <span style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6b706c">01 · Logotipo</span>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
+    <div data-theme="light" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:28px;display:flex;align-items:center;gap:12px;color:var(--ink)">
+      <div style="width:44px;height:44px;border-radius:4px;background:var(--ink);display:flex;flex-direction:column;justify-content:center;gap:4px;padding:0 10px"><div style="height:4px;width:24px;background:var(--accent)"></div><div style="height:4px;width:15px;background:var(--bg)"></div><div style="height:4px;width:8px;background:var(--bg)"></div></div>
+      <div style="display:flex;flex-direction:column"><span style="font-family:var(--serif);font-size:24px;font-weight:500;line-height:1;letter-spacing:-.01em">Advisor Radar</span><span style="font-size:11.5px;color:var(--ink-3);margin-top:4px">Quem precisa de você agora</span></div>
+    </div>
+    <div data-theme="dark" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:28px;display:flex;align-items:center;gap:12px;color:var(--ink)">
+      <div style="width:44px;height:44px;border-radius:4px;background:var(--ink);display:flex;flex-direction:column;justify-content:center;gap:4px;padding:0 10px"><div style="height:4px;width:24px;background:#1d4d3a"></div><div style="height:4px;width:15px;background:var(--bg)"></div><div style="height:4px;width:8px;background:var(--bg)"></div></div>
+      <div style="display:flex;flex-direction:column"><span style="font-family:var(--serif);font-size:24px;font-weight:500;line-height:1;letter-spacing:-.01em">Advisor Radar</span><span style="font-size:11.5px;color:var(--ink-3);margin-top:4px">Quem precisa de você agora</span></div>
+    </div>
+    <div style="background:#fbfaf6;border:1px solid #d9d6cc;border-radius:6px;padding:20px;display:flex;flex-direction:column;gap:6px;color:#3a4240;font-size:13px">
+      <span style="font-weight:600;color:#14191a">Símbolo</span>
+      <span>Três barras em ordem de prioridade: a primeira, em verde, é quem atende agora. Sem radar literal, sem alarme. Mínimo 24 px; só o símbolo no ícone do app.</span>
+      <span style="font-family:var(--mono);font-size:11px;color:#6b706c">wordmark: Literata 500 · tagline: Albert Sans 400</span>
+    </div>
+  </div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:14px">
+  <span style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6b706c">02 · Cor · claro e escuro</span>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px">
+    <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+    <div data-theme="{{ t }}" style="background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:20px;display:flex;flex-direction:column;gap:16px">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--ink-3);letter-spacing:.06em">data-theme="{{ t }}"</span>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:12px;font-weight:600">Base</span>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;font-size:10px">
+          <div style="height:48px;border-radius:4px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:flex-end;padding:5px">bg</div>
+          <div style="height:48px;border-radius:4px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:flex-end;padding:5px">surface</div>
+          <div style="height:48px;border-radius:4px;background:var(--surface-2);display:flex;align-items:flex-end;padding:5px">surface-2</div>
+          <div style="height:48px;border-radius:4px;background:var(--line);display:flex;align-items:flex-end;padding:5px">line</div>
+          <div style="height:48px;border-radius:4px;background:var(--ink-3);color:var(--bg);display:flex;align-items:flex-end;padding:5px">ink-3</div>
+          <div style="height:48px;border-radius:4px;background:var(--ink-2);color:var(--bg);display:flex;align-items:flex-end;padding:5px">ink-2</div>
+          <div style="height:48px;border-radius:4px;background:var(--ink);color:var(--bg);display:flex;align-items:flex-end;padding:5px">ink</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:12px;font-weight:600">Marca</span>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:10px">
+          <div style="height:40px;border-radius:4px;background:var(--brand);color:var(--brand-ink);display:flex;align-items:flex-end;padding:5px">brand</div>
+          <div style="height:40px;border-radius:4px;background:var(--brand-soft);color:var(--brand);display:flex;align-items:flex-end;padding:5px">brand-soft</div>
+          <div style="height:40px;border-radius:4px;background:var(--accent);color:#0f1412;display:flex;align-items:flex-end;padding:5px">accent</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:12px;font-weight:600">Semânticas · cor forte, fundo suave, texto sobre o suave</span>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:10px">
+          <div style="border-radius:4px;overflow:hidden;border:1px solid var(--line)"><div style="height:22px;background:var(--crit)"></div><div style="padding:6px;background:var(--crit-soft);color:var(--crit-ink);font-weight:600">Crítico</div></div>
+          <div style="border-radius:4px;overflow:hidden;border:1px solid var(--line)"><div style="height:22px;background:var(--warn)"></div><div style="padding:6px;background:var(--warn-soft);color:var(--warn-ink);font-weight:600">Atenção</div></div>
+          <div style="border-radius:4px;overflow:hidden;border:1px solid var(--line)"><div style="height:22px;background:var(--ok)"></div><div style="padding:6px;background:var(--ok-soft);color:var(--ok-ink);font-weight:600">Sucesso</div></div>
+          <div style="border-radius:4px;overflow:hidden;border:1px solid var(--line)"><div style="height:22px;background:var(--info)"></div><div style="padding:6px;background:var(--info-soft);color:var(--info-ink);font-weight:600">Informação</div></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:12px;font-weight:600">Frustração · 4 passos, barras + rótulo</span>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:11px;font-weight:600">
+          <span style="padding:6px 8px;border-radius:3px;background:var(--f0-soft);color:var(--ink-2);display:flex;align-items:center;gap:6px"><span style="display:inline-flex;gap:1.5px;align-items:flex-end"><span style="width:3px;height:4px;background:var(--f0)"></span><span style="width:3px;height:6px;background:var(--line)"></span><span style="width:3px;height:8px;background:var(--line)"></span><span style="width:3px;height:10px;background:var(--line)"></span></span>Calmo</span>
+          <span style="padding:6px 8px;border-radius:3px;background:var(--f1-soft);color:var(--f1);display:flex;align-items:center;gap:6px"><span style="display:inline-flex;gap:1.5px;align-items:flex-end"><span style="width:3px;height:4px;background:var(--f1)"></span><span style="width:3px;height:6px;background:var(--f1)"></span><span style="width:3px;height:8px;background:var(--line)"></span><span style="width:3px;height:10px;background:var(--line)"></span></span>Incomodado</span>
+          <span style="padding:6px 8px;border-radius:3px;background:var(--f2-soft);color:var(--f2);display:flex;align-items:center;gap:6px"><span style="display:inline-flex;gap:1.5px;align-items:flex-end"><span style="width:3px;height:4px;background:var(--f2)"></span><span style="width:3px;height:6px;background:var(--f2)"></span><span style="width:3px;height:8px;background:var(--f2)"></span><span style="width:3px;height:10px;background:var(--line)"></span></span>Frustrado</span>
+          <span style="padding:6px 8px;border-radius:3px;background:var(--f3-soft);color:var(--f3);display:flex;align-items:center;gap:6px"><span style="display:inline-flex;gap:1.5px;align-items:flex-end"><span style="width:3px;height:4px;background:var(--f3)"></span><span style="width:3px;height:6px;background:var(--f3)"></span><span style="width:3px;height:8px;background:var(--f3)"></span><span style="width:3px;height:10px;background:var(--f3)"></span></span>Muito frustrado</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:12px;font-weight:600">SLA · sempre com o tempo restante</span>
+        <div style="display:flex;gap:16px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;flex-wrap:wrap"><span style="color:var(--sla-ok)">SLA 3 h 10</span><span style="color:var(--sla-due)">SLA 18 min</span><span style="color:var(--sla-over)">Vencido há 2 h 5</span></div>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--ink-3)">--sla-ok · --sla-due · --sla-over</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:12px;font-weight:600">Estados do caso · selo e cor da coluna</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;font-weight:600">
+          <span style="padding:3px 8px;border-radius:3px;background:var(--info-soft);color:var(--info-ink);box-shadow:inset 0 -2px 0 var(--info)">Aberto</span><span style="padding:3px 8px;border-radius:3px;background:var(--brand-soft);color:var(--brand);box-shadow:inset 0 -2px 0 var(--brand)">Em atendimento</span><span style="padding:3px 8px;border-radius:3px;background:var(--warn-soft);color:var(--warn-ink);box-shadow:inset 0 -2px 0 var(--warn)">Aguardando cliente</span><span style="padding:3px 8px;border-radius:3px;background:var(--ok-soft);color:var(--ok-ink);box-shadow:inset 0 -2px 0 var(--ok)">Resolvido</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:12px;font-weight:600">Sombra</span>
+        <div style="display:flex;gap:10px;align-items:center;font-size:11px;color:var(--ink-3)"><div style="width:72px;height:32px;border-radius:6px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow)"></div><span style="font-family:var(--mono);font-size:10px">--shadow · só em cards; nenhuma no escuro</span></div>
+      </div>
+    </div>
+    </sc-for>
+  </div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:14px">
+  <span style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6b706c">03 · Tipografia e espaço</span>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">
+    <div data-theme="light" style="background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:20px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:grid;grid-template-columns:110px 1fr;gap:8px 16px;align-items:baseline">
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">screen · 24/1.1</span><span style="font-family:var(--serif);font-size:24px;font-weight:500;letter-spacing:-.01em">Fila de hoje</span>
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">card · 15/600</span><span style="font-size:15px;font-weight:600">Mariana Costa</span>
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">quote · 15 it.</span><span style="font-family:var(--serif);font-style:italic;font-size:15px">“Consegue pedir para o meu assessor me ligar?”</span>
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">body · 14</span><span style="font-size:14px;color:var(--ink)">Saque de US$ 190.000,00, 30% do patrimônio</span>
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">support · 12</span><span style="font-size:12px;color:var(--ink-3)">Mensagem com risco · há 12 min</span>
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">label · 11/600</span><span style="font-size:11px;font-weight:600;letter-spacing:.02em">Precisa de revisão</span>
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">mono · SLA</span><span style="font-family:var(--mono);font-size:20px">00:18:14</span>
+      </div>
+      <div style="border-top:1px solid var(--line-2);padding-top:12px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--ink-2)">
+        <span><strong>Números tabulares</strong> em valores e tempos (<span style="font-variant-numeric:tabular-nums">US$ 248.300,00 · US$ 7.800,00</span>), sempre alinhados à direita em listas.</span>
+        <span><strong>Albert Sans</strong> para interface, <strong>Literata</strong> para nomes em destaque, títulos de tela e a voz do cliente. <strong>JetBrains Mono</strong> só para contagem de SLA, ids e a camada de demo.</span>
+      </div>
+    </div>
+    <div data-theme="light" style="background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:20px;display:flex;flex-direction:column;gap:14px">
+      <span style="font-size:12px;font-weight:600">Grade de 4 pt</span>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <sc-for list="{{ spaces }}" as="s" hint-placeholder-count="7">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:{{ s.px }};height:{{ s.px }};background:var(--brand-soft);border:1px solid var(--brand)"></div><span style="font-family:var(--mono);font-size:10px;color:var(--ink-3)">{{ s.n }}</span></div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--ink-2);border-top:1px solid var(--line-2);padding-top:12px">
+        <span>Raios: 3 px em selos, botões, filtros e campos; 6 px em cards; 8 px em cards de revisão e no modal; pill só no “N novos” e no botão de tema.</span>
+        <span>Toque mínimo 44 pt em ações primárias; 36–40 pt em ações secundárias dentro de cards, sempre com 8 px de folga entre elas.</span>
+        <span>Mobile a partir de 360 px: colunas do quadro com largura min(84vw, 320 px), rolagem lateral com snap; detalhe substitui a tela. Desktop ≥ 900 px: quadro com colunas iguais (máx. 1280 px) e detalhe em modal de até 760 px.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:14px">
+  <span style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6b706c">04 · Estrutura da fila</span>
+  <div data-theme="light" style="background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;overflow:hidden;display:flex;flex-direction:column">
+    <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);padding:12px 16px 8px">AppShell · PersonaSwitcher · ThemeToggle</span>
+    <div style="height:52px;box-sizing:border-box;background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;padding:0 16px">
+      <div style="display:flex;align-items:center;gap:10px;flex:none"><div style="width:28px;height:28px;border-radius:4px;background:var(--ink);display:flex;flex-direction:column;justify-content:center;gap:3px;padding:0 6px;box-sizing:border-box"><div style="height:3px;width:16px;background:var(--accent)"></div><div style="height:3px;width:10px;background:var(--bg)"></div><div style="height:3px;width:5px;background:var(--bg)"></div></div><span style="font-family:var(--serif);font-size:18px;font-weight:500;letter-spacing:-.01em;line-height:1">Advisor Radar</span></div>
+      <nav style="display:flex;gap:2px;align-self:stretch;margin-left:8px;overflow-x:auto;scrollbar-width:none">
+        <span style="padding:0 12px;font-size:13.5px;font-weight:600;color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink);display:flex;align-items:center;white-space:nowrap">Fila</span><span style="padding:0 12px;font-size:13.5px;font-weight:500;color:var(--ink-3);display:flex;align-items:center;white-space:nowrap">Revisão de triagem</span><span style="padding:0 12px;font-size:13.5px;font-weight:500;color:var(--ink-3);display:flex;align-items:center;white-space:nowrap">Painel da assessoria</span>
+      </nav>
+      <div style="margin-left:auto;position:relative;flex:none;width:60px;height:30px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);display:grid;grid-template-columns:1fr 1fr;align-items:center;justify-items:center;box-sizing:border-box">
+        <span style="position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:var(--ink)"></span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--bg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:relative;z-index:1"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:relative;z-index:1"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+      </div>
+    </div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">QueueStatus · FilterBar</span>
+      <span style="font-size:12.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="color:var(--ink-2);font-weight:500">Sáb, 26 set</span><span style="width:3px;height:3px;border-radius:50%;background:var(--line)"></span><span><span style="color:var(--ink);font-weight:600">17</span> sinais</span><span style="width:3px;height:3px;border-radius:50%;background:var(--line)"></span><span><span style="color:var(--ink);font-weight:600">4</span> resolvidos</span></span>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+        <div style="flex:1 1 420px;display:flex;flex-direction:column;gap:8px;min-width:0">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <div style="flex:1 1 200px;min-width:160px;display:flex;align-items:center;gap:8px;min-height:36px;padding:0 10px;border:1px solid var(--line);border-radius:3px;background:var(--surface);box-sizing:border-box;font-size:13.5px;color:var(--ink-3)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4"></path></svg>Buscar cliente</div>
+            <sc-for list="{{ filterBtns }}" as="f" hint-placeholder-count="5">
+            <span style="min-height:36px;padding:0 10px;border-radius:3px;border:1px solid {{ f.border }};background:{{ f.bg }};font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;box-sizing:border-box">{{ f.label }}<sc-if value="{{ f.on }}" hint-placeholder-val="{{ false }}"><span style="min-width:18px;height:18px;padding:0 5px;border-radius:3px;background:var(--ink);color:var(--bg);font-size:11px;display:grid;place-items:center;box-sizing:border-box">{{ f.n }}</span></sc-if><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg></span>
+            </sc-for>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <span style="min-height:28px;padding:0 8px;border-radius:3px;border:1px solid var(--line);background:var(--surface-2);font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:6px;font-weight:500">SLA: Vencendo<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></span><span style="min-height:28px;padding:0 8px;border-radius:3px;border:1px solid var(--line);background:var(--surface-2);font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:6px;font-weight:500">Segmento: Singular<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></span><span style="padding:0 8px;font-size:12px;color:var(--brand);font-weight:600">Limpar filtros</span>
+          </div>
+        </div>
+        <div style="flex:0 0 220px;background:var(--surface);border:1px solid var(--line);border-radius:3px;box-shadow:0 8px 24px rgba(20,25,26,.14);padding:6px;display:flex;flex-direction:column">
+          <sc-for list="{{ filterOpts }}" as="o" hint-placeholder-count="3">
+          <div style="min-height:36px;display:flex;align-items:center;gap:10px;padding:0 8px;font-size:13px"><span style="width:16px;height:16px;flex:none;border:1.5px solid {{ o.bd }};background:{{ o.bg }};border-radius:2px;display:grid;place-items:center;box-sizing:border-box"><sc-if value="{{ o.on }}" hint-placeholder-val="{{ false }}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--bg)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 7"></path></svg></sc-if></span><span style="flex:1">{{ o.label }}</span><span style="color:var(--ink-3);font-size:12px;font-variant-numeric:tabular-nums">{{ o.n }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+      <span style="font-size:12px;color:var(--ink-2);text-wrap:pretty">Grupos multi-seleção em popover com caixas de seleção e contagem. Filtro ativo ganha borda tinta e contador; cada opção vira uma etiqueta removível. Andamento controla quais colunas do quadro aparecem.</span>
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:8px">QueueBoard · ColumnHeader · CaseCard</span>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start">
+        <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 2px 8px;border-bottom:2px solid var(--crit);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2)"><span>Novos sinais</span><span style="color:var(--ink-3)">12</span></div>
+          <div style="border:1px dashed var(--line);border-radius:6px;padding:14px;font-size:12px;color:var(--ink-3);text-align:center">SignalCard (acima)</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 2px 8px;border-bottom:2px solid var(--info);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2)"><span>Aberto</span><span style="color:var(--ink-3)">2</span></div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--sla-over);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow)">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span style="font-size:15px;font-weight:600;line-height:1.25">Mariana Costa</span><span style="flex:none;font-family:var(--mono);font-size:12px;color:var(--sla-over)">−00:12:40</span></div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:3px;background:var(--brand-soft);color:var(--brand)">Singular</span><span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:3px;background:var(--crit-soft);color:var(--crit-ink)">SLA Vencido</span></div>
+            <div style="font-size:12px;color:var(--ink-3)"><span style="font-family:var(--mono);font-size:11px">k1052</span> · mensagem · Reclamação</div>
+            <div style="font-size:11px;font-weight:600;color:var(--crit-ink);background:var(--crit-soft);border-radius:3px;padding:3px 8px;align-self:flex-start">Escalonado automaticamente</div>
+            <div style="font-size:13px;color:var(--ink-2);line-height:1.4">Caso aberto a partir de mensagem triada</div>
+            <div style="display:flex;gap:6px;border-top:1px solid var(--line-2);padding-top:8px;margin-top:2px"><span style="min-height:36px;padding:0 12px;border-radius:3px;border:1px solid var(--line);font-size:12.5px;font-weight:600;display:flex;align-items:center;box-sizing:border-box">Iniciar atendimento →</span></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 2px 8px;border-bottom:2px solid var(--brand);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2)"><span>Em atendimento</span><span style="color:var(--ink-3)">1</span></div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow)">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span style="font-size:15px;font-weight:600;line-height:1.25">Sérgio Cardoso</span><span style="flex:none;font-family:var(--mono);font-size:12px;color:var(--warn)">00:18:14</span></div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:3px;background:var(--brand-soft);color:var(--brand)">Singular</span><span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:3px;background:var(--brand-soft);color:var(--brand)">SLA Vencendo</span></div>
+            <div style="font-size:12px;color:var(--ink-3)"><span style="font-family:var(--mono);font-size:11px">k1048</span> · saque relevante</div>
+            <div style="display:flex;gap:6px;border-top:1px solid var(--line-2);padding-top:8px;margin-top:2px"><span style="min-height:36px;padding:0 12px;border-radius:3px;border:1px solid var(--line);font-size:12.5px;font-weight:600;display:flex;align-items:center;box-sizing:border-box">Aguardar cliente →</span></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 2px 8px;border-bottom:2px solid var(--warn);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2)"><span>Aguardando cliente</span><span style="color:var(--ink-3)">0</span></div>
+          <div style="border:1px dashed var(--line);border-radius:6px;padding:20px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center"><span style="font-weight:600;font-size:13px">Nenhum caso</span><span style="color:var(--ink-3);font-size:13px">Nenhum caso aguardando resposta.</span></div>
+        </div>
+      </div>
+      <span style="font-size:12px;color:var(--ink-2);text-wrap:pretty">Casos ordenados pelo SLA restante. Borda esquerda e contagem em mono seguem o estado do SLA. “Resolvido” só aparece se escolhido em Andamento. No mobile as colunas rolam na horizontal com snap.</span>
+    </div>
+  </div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:14px">
+  <span style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6b706c">05 · Componentes</span>
+  <div data-theme="light" style="background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px">
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">SignalCard · mensagem</span>
+      <div style="background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--crit);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px;font-weight:600">Mariana Costa</span><span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:3px;background:var(--brand-soft);color:var(--brand)">Singular</span></div><span style="font-size:12px;font-weight:600;color:var(--warn-ink);font-variant-numeric:tabular-nums">SLA 18 min</span></div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--crit)" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"></path></svg>Mensagem com risco · há 12 min</div>
+        <div style="font-family:var(--serif);font-style:italic;font-size:15px;line-height:1.4">“Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.”</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px"><span style="padding:3px 8px;border-radius:3px;background:var(--crit-soft);color:var(--crit-ink);font-weight:600">Risco de saída · certeza alta</span><span style="padding:3px 8px;border-radius:3px;background:var(--neutral-soft);color:var(--ink-2)">Reclamação</span><span style="padding:3px 8px;border-radius:3px;background:var(--f2-soft);color:var(--f2);font-weight:600">Frustrado</span></div>
+        <div style="display:flex;gap:6px;border-top:1px solid var(--line-2);padding-top:8px"><button style="min-height:36px;padding:0 12px;border-radius:3px;border:none;background:var(--ink);color:var(--bg);font:600 12.5px var(--sans)">Abrir caso</button><button style="min-height:36px;padding:0 12px;border-radius:3px;border:1px solid var(--line);background:transparent;color:var(--ink);font:600 12.5px var(--sans)">Contatado</button><button style="min-height:36px;padding:0 12px;border:none;background:transparent;color:var(--ink-3);font:600 12.5px var(--sans);margin-left:auto">Adiar 1 h</button></div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">SignalCard · alerta de conta</span>
+      <div style="background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px;font-weight:600">Sérgio Cardoso</span><span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:3px;background:var(--brand-soft);color:var(--brand)">Singular</span></div><span style="font-size:12px;font-weight:600;color:var(--ink-3);font-variant-numeric:tabular-nums">SLA 38 min</span></div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l16 16M20 10v10H10"></path></svg>Saque relevante · há 22 min</div>
+        <div style="font-size:14px">Saque de <span style="font-variant-numeric:tabular-nums;font-weight:600">US$ 190.000,00</span>, 30% do patrimônio</div>
+        <div style="display:flex;gap:6px;border-top:1px solid var(--line-2);padding-top:8px"><button style="min-height:36px;padding:0 12px;border-radius:3px;border:none;background:var(--ink);color:var(--bg);font:600 12.5px var(--sans)">Abrir caso</button><button style="min-height:36px;padding:0 12px;border-radius:3px;border:1px solid var(--line);background:transparent;color:var(--ink);font:600 12.5px var(--sans)">Contatado</button></div>
+      </div>
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:8px">SkeletonCard</span>
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:10px;animation:ar-shimmer 1.4s infinite"><div style="display:flex;justify-content:space-between"><div style="height:12px;width:45%;border-radius:3px;background:var(--skeleton)"></div><div style="height:12px;width:18%;border-radius:3px;background:var(--skeleton)"></div></div><div style="height:10px;width:35%;border-radius:3px;background:var(--skeleton)"></div><div style="height:12px;width:90%;border-radius:3px;background:var(--skeleton)"></div></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">Selos</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;align-items:center">
+        <span style="font-weight:600;padding:2px 7px;border-radius:3px;background:var(--neutral-soft);color:var(--ink-2)">Essencial</span><span style="font-weight:600;padding:2px 7px;border-radius:3px;background:var(--info-soft);color:var(--info-ink)">Advance</span><span style="font-weight:600;padding:2px 7px;border-radius:3px;background:var(--brand-soft);color:var(--brand)">Singular</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;align-items:center">
+        <span style="padding:3px 8px;border-radius:3px;background:var(--neutral-soft);color:var(--ink-2);display:flex;align-items:center;gap:5px">Tributação<span style="display:inline-flex;gap:1.5px;align-items:flex-end"><span style="width:3px;height:5px;background:currentColor"></span><span style="width:3px;height:7px;background:currentColor"></span><span style="width:3px;height:9px;background:currentColor"></span></span></span>
+        <span style="padding:3px 8px;border-radius:3px;background:var(--neutral-soft);color:var(--ink-2);display:flex;align-items:center;gap:5px">Resgate<span style="display:inline-flex;gap:1.5px;align-items:flex-end"><span style="width:3px;height:5px;background:currentColor"></span><span style="width:3px;height:7px;background:currentColor"></span><span style="width:3px;height:9px;background:var(--line)"></span></span></span>
+        <span style="padding:2px 8px;border-radius:3px;background:var(--ok-soft);color:var(--ok-ink);font-weight:600">alta</span><span style="padding:2px 8px;border-radius:3px;background:var(--warn-soft);color:var(--warn-ink);font-weight:600">média</span><span style="padding:2px 8px;border-radius:3px;background:var(--crit-soft);color:var(--crit-ink);font-weight:600">baixa</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;align-items:center">
+        <span style="padding:3px 8px;border-radius:3px;border:1px dashed var(--warn);color:var(--warn-ink);font-weight:600">Precisa de revisão</span><span style="padding:3px 8px;border-radius:3px;border:1px solid var(--line);color:var(--ink-3)">Classificação simplificada</span><span style="padding:3px 8px;border-radius:3px;background:var(--info-soft);color:var(--info-ink);font-weight:600">Pediu atendimento humano</span>
+      </div>
+      <span style="font-size:12px;color:var(--ink-2);text-wrap:pretty">Certeza aparece como 3 barrinhas ao lado da intenção; nunca como número. Certeza média ou baixa vira “Precisa de revisão” e o texto ganha “provável”.</span>
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:8px">FilterChips (timeline 360, seleção única) · NewItemsPill</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button style="min-height:32px;padding:0 12px;border-radius:3px;font:600 12.5px var(--sans);border:1px solid var(--ink);background:var(--ink);color:var(--bg)">Todos</button><button style="min-height:32px;padding:0 12px;border-radius:3px;font:600 12.5px var(--sans);border:1px solid var(--line);background:transparent;color:var(--ink-2)">Mensagens</button><button style="min-height:32px;padding:0 12px;border-radius:3px;font:600 12.5px var(--sans);border:1px solid var(--line);background:transparent;color:var(--ink-2)">Casos</button>
+        <span style="border-radius:999px;padding:6px 12px;font-size:12px;font-weight:600;background:var(--brand);color:var(--brand-ink);display:inline-flex;align-items:center;gap:6px;min-height:32px;box-sizing:border-box"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent)"></span>3 novos</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">CaseRail · SlaCounter</span>
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr)">
+          <sc-for list="{{ rail }}" as="st" hint-placeholder-count="4">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;position:relative;text-align:center">
+            <div style="position:absolute;top:9px;left:{{ st.l }};right:{{ st.r }};height:2px;background:{{ st.line }}"></div>
+            <div style="width:20px;height:20px;border-radius:50%;background:{{ st.bg }};border:2px solid {{ st.border }};box-sizing:border-box;position:relative;z-index:1"></div>
+            <span style="font-size:11px;font-weight:{{ st.w }};color:{{ st.c }}">{{ st.label }}</span>
+          </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em;font-weight:600">SLA · Vencendo</span><span style="font-family:var(--mono);font-size:22px;color:var(--warn)">00:18:14</span></div>
+        <div style="height:6px;background:var(--surface-2);border-radius:2px;overflow:hidden"><div style="height:100%;width:70%;background:var(--warn)"></div></div>
+      </div>
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:8px">DistributionBars</span>
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 16px;display:flex;flex-direction:column;gap:8px;font-size:13px">
+        <div style="display:grid;grid-template-columns:100px 1fr auto;gap:10px;align-items:center"><span style="font-weight:600">Resgate</span><div style="height:8px;background:var(--surface-2);border-radius:2px;overflow:hidden"><div style="height:100%;width:54%;background:var(--brand)"></div></div><span style="font-size:12px;color:var(--ink-3)">atual</span></div>
+        <div style="display:grid;grid-template-columns:100px 1fr auto;gap:10px;align-items:center"><span style="color:var(--ink-3)">Câmbio</span><div style="height:8px;background:var(--surface-2);border-radius:2px;overflow:hidden"><div style="height:100%;width:31%;background:var(--ink-3)"></div></div><span style="font-size:12px;color:var(--ink-3);min-width:36px"></span></div>
+        <div style="display:grid;grid-template-columns:100px 1fr auto;gap:10px;align-items:center"><span style="color:var(--ink-3)">Operacional</span><div style="height:8px;background:var(--surface-2);border-radius:2px;overflow:hidden"><div style="height:100%;width:10%;background:var(--ink-3)"></div></div><span style="font-size:12px;color:var(--ink-3);min-width:36px"></span></div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">TimelineItem · um marcador por tipo</span>
+      <div style="display:flex;flex-direction:column">
+        <sc-for list="{{ tl }}" as="t" hint-placeholder-count="4">
+        <div style="display:grid;grid-template-columns:28px 1fr;gap:12px;position:relative;padding-bottom:14px">
+          <div style="position:absolute;left:13px;top:28px;bottom:0;width:1px;background:var(--line)"></div>
+          <div style="width:28px;height:28px;border-radius:50%;background:var(--surface);border:1.5px solid {{ t.color }};display:grid;place-items:center;position:relative;z-index:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{ t.color }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{ t.icon }}"></path></svg></div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding-top:4px"><span style="font-size:12px;font-weight:600;color:var(--ink-2)">{{ t.title }}</span><span style="font-size:13px">{{ t.text }}</span></div>
+        </div>
+        </sc-for>
+      </div>
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:8px">Estados · vazio, erro, reconectando</span>
+      <div style="border:1px dashed var(--line);border-radius:6px;padding:14px;text-align:center;font-size:13px;color:var(--ink-3)"><span style="font-weight:600;color:var(--ink)">Fila em dia.</span> Novos sinais aparecem aqui em tempo real.</div>
+      <div style="border:1px solid var(--crit-soft);background:var(--surface);border-radius:6px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px"><span>Não foi possível carregar a fila</span><button style="min-height:36px;padding:0 12px;border-radius:3px;border:1px solid var(--ink);background:transparent;color:var(--ink);font:600 12.5px var(--sans)">Tentar novamente</button></div>
+      <div style="background:var(--warn-soft);color:var(--warn-ink);border-radius:3px;padding:8px 12px;font-size:12.5px;display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:var(--warn)"></span>Reconectando ao servidor… tentativa 2</div>
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:8px">Toast</span>
+      <div style="background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:4px;font-size:13px;font-weight:500;box-shadow:0 6px 20px rgba(0,0,0,.2);display:flex;align-items:center;gap:12px;align-self:flex-start">Mariana marcada como contatada<span style="color:var(--accent);font-weight:600">Desfazer</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">ReviewCard · revisão de triagem</span>
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px 0"><span style="font-size:14px;font-weight:600">Roberto Lima</span><span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:3px;background:var(--info-soft);color:var(--info-ink)">Advance</span><span style="margin-left:auto;font-size:12px;color:var(--ink-3)">há 8 min</span></div>
+        <div style="margin:12px 16px 0;padding:12px 14px;border-left:3px solid var(--warn-ink);background:var(--surface-2);border-radius:0 6px 6px 0;font-family:var(--serif);font-style:italic;font-size:15px;line-height:1.45">“Queria entender melhor esse valor que saiu ontem.”</div>
+        <div style="padding:14px 16px 16px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line-2);border-radius:6px">
+            <div style="display:flex;flex-direction:column;gap:3px;flex:1 1 140px"><span style="font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em;font-weight:600">Sugestão do modelo</span><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:15px;font-weight:600">Resgate</span><span style="font-size:11px;padding:2px 8px;border-radius:3px;background:var(--warn-soft);color:var(--warn-ink);font-weight:600">certeza média</span></div></div>
+            <span style="flex:1 1 100px;min-height:42px;border-radius:3px;background:var(--ink);color:var(--bg);font-weight:600;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:8px">Confirmar</span>
+          </div>
+          <span style="font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em;font-weight:600">Ou escolha outra intenção</span>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <span style="min-height:44px;padding:8px 12px;border-radius:3px;border:1px solid var(--line);font-size:13px;font-weight:600;display:flex;flex-direction:column;justify-content:center;gap:2px;box-sizing:border-box">Tributação<span style="font-weight:500;font-size:11.5px;color:var(--ink-3)">mais provável</span></span>
+            <span style="min-height:44px;padding:8px 12px;border-radius:3px;border:1px solid var(--line);font-size:13px;font-weight:600;display:flex;flex-direction:column;justify-content:center;gap:2px;box-sizing:border-box">Operacional<span style="font-weight:500;font-size:11.5px;color:var(--ink-3)">alternativa</span></span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ok-ink);background:var(--ok-soft);border-radius:6px;padding:10px 12px">Confirmado como Resgate</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">Iconografia · traço 1.8, 24×24</span>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <sc-for list="{{ icons }}" as="i" hint-placeholder-count="9">
+        <div style="background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px;display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="{{ i.d }}"></path></svg><span>{{ i.label }}</span></div>
+        </sc-for>
+      </div>
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:8px">MetricCard</span>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--crit);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:3px"><span style="font-size:12px;color:var(--ink-3)">Casos com SLA em risco</span><span style="font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1">5</span><span style="font-size:12px;color:var(--crit)">2 vencidos</span></div>
+        <div style="background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:3px"><span style="font-size:12px;color:var(--ink-3)">Alerta → 1º contato</span><span style="font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1">14 <span style="font-size:13px;font-weight:500;color:var(--ink-3)">min</span></span><span style="font-size:12px;color:var(--ok)">−5 min vs. ontem</span></div>
+      </div>
+      <span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:8px">StackedBar · backlog por assessor</span>
+      <div style="background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;font-size:13px"><span>Ana Paula Ribeiro</span><span style="font-variant-numeric:tabular-nums;color:var(--ink-3)"><span style="color:var(--ink);font-weight:600">9</span> abertos · 3 em risco</span></div>
+        <div style="height:10px;background:var(--surface-2);border-radius:2px;overflow:hidden;display:flex"><div style="height:100%;width:55%;background:var(--brand)"></div><div style="height:100%;width:25%;background:var(--warn)"></div><div style="height:100%;width:10%;background:var(--crit)"></div></div>
+        <div style="display:flex;gap:14px;font-size:11px;color:var(--ink-3);flex-wrap:wrap"><span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;background:var(--brand);border-radius:2px"></span>No prazo</span><span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;background:var(--warn);border-radius:2px"></span>Vencendo</span><span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;background:var(--crit);border-radius:2px"></span>Vencido</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:10px;max-width:720px;font-size:13px;color:#3a4240">
+  <span style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6b706c">06 · Movimento e voz</span>
+  <span>Entrada de item novo: 450 ms, deslocamento de 6 px, sem empurrar o que está sendo lido (fica no contador até o toque). Transição quadro → detalhe: substituição direta no mobile; no desktop, modal com fundo escurecido (200 ms), fecha com Esc, ✕ ou clique fora. “Abrir caso” no desktop move o card para a coluna Aberto sem abrir o modal. Aviso na base da tela por 4 s, com “Desfazer” quando a ação tira o item da fila. Contagem de SLA: atualização por segundo só no caso aberto. Tudo desligado com <span style="font-family:var(--mono);font-size:11px">prefers-reduced-motion</span>.</span>
+  <span>Voz: português direto, sem jargão de IA. “Provável reclamação · certeza média”, nunca “p=0,54”. A interface sugere; a pessoa decide.</span>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const I = { saque: 'M4 4l16 16M20 10v10H10', queda: 'M3 6l7 7 4-4 7 7M21 10v6h-6', aporte: 'M20 20L4 4M4 14V4h10', segmento: 'M6 4l6 6-6 6M13 4l6 6-6 6', contato: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8v5l3 2', risco: 'M4 5h16v11H9l-5 4z', mensagem: 'M4 5h16v11H9l-5 4zM8 9h8M8 12h5', nota: 'M6 3h12v18H6zM9 8h6M9 12h6M9 16h3', caso: 'M4 7h16v13H4zM9 7V4h6v3', telefone: 'M5 4h4l2 5-3 2a10 10 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z' };
+    const cur = 1;
+    return {
+      themes: ['light', 'dark'],
+      filterBtns: [['Andamento', 0], ['SLA', 1], ['Sinal', 0], ['Motivo', 0], ['Segmento', 1]].map(([label, n]) => ({ label, n, on: n > 0, border: n ? 'var(--ink)' : 'var(--line)', bg: n ? 'var(--surface-2)' : 'var(--surface)' })),
+      filterOpts: [['No prazo', 9, false], ['Vencendo', 5, true], ['Vencido', 3, false]].map(([label, n, on]) => ({ label, n, on, bg: on ? 'var(--ink)' : 'transparent', bd: on ? 'var(--ink)' : 'var(--ink-3)' })),
+      spaces: [4, 8, 12, 16, 20, 24, 32].map(n => ({ n, px: n + 'px' })),
+      rail: ['Aberto', 'Em atendimento', 'Aguardando cliente', 'Resolvido'].map((label, i) => ({ label, l: i === 0 ? '50%' : '0', r: i === 3 ? '50%' : '0', line: i <= cur ? 'var(--brand)' : 'var(--line)', bg: i < cur ? 'var(--brand)' : 'var(--surface)', border: i <= cur ? 'var(--brand)' : 'var(--line)', w: i === cur ? 600 : 500, c: i === cur ? 'var(--ink)' : 'var(--ink-3)' })),
+      tl: [
+        { icon: I.saque, color: 'var(--info)', title: 'Conta · saque', text: 'US$ 20.000,00 para conta nos EUA' },
+        { icon: I.mensagem, color: 'var(--brand)', title: 'Mensagem · chat', text: 'A transferência ainda não caiu. Podem verificar?' },
+        { icon: I.caso, color: 'var(--ink-2)', title: 'Caso k0977', text: 'Resolvido · Tributação' },
+        { icon: I.nota, color: 'var(--warn)', title: 'Nota do assessor', text: 'Precisa de liquidez em março.' },
+      ],
+      icons: [['saque', 'Saque relevante'], ['queda', 'Queda de patrimônio'], ['aporte', 'Aporte grande'], ['segmento', 'Mudança de segmento'], ['contato', 'Sem contato'], ['risco', 'Mensagem com risco'], ['mensagem', 'Mensagem'], ['caso', 'Caso'], ['telefone', 'Ligação']].map(([k, label]) => ({ d: I[k], label })),
+    };
+  }
+}
+</script>
+</body>
+</html>
