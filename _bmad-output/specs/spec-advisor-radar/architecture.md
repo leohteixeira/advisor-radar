@@ -26,7 +26,7 @@ Record these ADRs under `specs/` before the code that depends on them:
 | account-sim | Fictional account events and customer messages, including the market-day burst | PostgreSQL outbox | Publishes to RabbitMQ |
 | advisory | Book, segment, alert rules | PostgreSQL | gRPC; consumes and publishes |
 | triage | Message classification and the resilience stack | PostgreSQL inbox and results | Consumes and publishes |
-| cases | Cases, SLA, state machine, escalation | MySQL | gRPC; consumes and publishes |
+| cases | Cases, SLA, state machine, escalation | PostgreSQL | gRPC; consumes and publishes |
 | timeline-indexer | Customer 360 index | Elasticsearch | Read by the BFF |
 | bff | HTTP for the frontend, gRPC aggregation, SSE | Nothing | HTTP and SSE |
 
@@ -126,7 +126,7 @@ The README states that a real deployment would need a review of customer text se
 
 ## Infrastructure
 
-Docker Compose on one Hostinger VPS. The public name is `leohts.tech`. Caddy or Traefik terminates TLS for that name. Elasticsearch heap is 512 MB. Plan for about 4 GB free for the full set. Bind development servers to `0.0.0.0`.
+Docker Compose on one Hostinger VPS with 8 GB of RAM. The public name is `leohts.tech`. Caddy or Traefik terminates TLS for that name. Elasticsearch stays, with a 512 MB heap, and the `grafana/otel-lgtm` dashboard stays. Cut Elasticsearch only after a measured run on that VPS shows it does not fit; the Grafana dashboard stays. Bind development servers to `0.0.0.0`.
 
 ## Advisor actions
 
@@ -139,15 +139,15 @@ Docker Compose on one Hostinger VPS. The public name is `leohts.tech`. Caddy or 
 | RabbitMQ | 5673 |
 | RabbitMQ management | 15673 |
 | PostgreSQL | 5435 |
-| MySQL | 3307 |
 | Elasticsearch | 9201 |
 
 These ports stay off the other portfolio assignments.
 
 ## Cut order
 
-1. Elasticsearch. The timeline is read from PostgreSQL.
+Apply this order only after a measured run on the 8 GB VPS fails:
+
+1. Elasticsearch. The timeline is read from PostgreSQL. The Grafana dashboard stays, pointed at the PostgreSQL timeline.
 2. Jev. Heuristic only, with the `Classifier` port left in place.
-3. MySQL. Cases move to PostgreSQL.
 
 Do not cut RabbitMQ, gRPC, outbox, inbox, or observability.

@@ -82,7 +82,7 @@ A **pain to solve** and a **mandate to meet**. Advisors covering more clients ca
 - One Go module. One command per service: `account-sim`, `advisory`, `triage`, `cases`, `timeline-indexer`, `bff`. The React, TypeScript, and Vite frontend talks only to the BFF, over versioned HTTP/JSON plus one SSE connection. Business rules, scoring, and SLA stay in the backend. Shipped UI copy is Portuguese.
 - A query between services is gRPC with a propagated deadline. A state change is a RabbitMQ event. Opening a case from an alert is an asynchronous command.
 - Every publisher uses a transactional outbox. Every consumer uses an idempotent inbox keyed by `event_id`. Retries use backoff and a dead-letter queue per queue. SLA escalation uses a queue with TTL and a dead-letter exchange, not a cron.
-- Databases are not shared. PostgreSQL for `account-sim`, `advisory`, and `triage`. MySQL for `cases`. Elasticsearch for `timeline-indexer`. The BFF stores nothing.
+- Databases are not shared. PostgreSQL for `account-sim`, `advisory`, `triage`, and `cases`, one database each. Elasticsearch for `timeline-indexer`. The BFF stores nothing.
 - Triage is the `radar-triage` classifier copied into this module, not imported across repositories. Keep the `Classifier` port, the Jev adapter, the keyword heuristic, and the `Fallback` decorator. The call is Jev on the Vercel AI Gateway, model `typesafe-ai/jev`, with zero data retention, as that prototype does. Resilience wraps that call in the order in `architecture.md`.
 - Human review when the top intent probability is below 0.85. A degraded result is marked and does not enter the queue unless its probability is also below 0.85. The badge shows alta at or above 0.75, média at or above 0.5, and baixa below 0.5, and never the raw number. Alta can still need review.
 - "Contatado" and "Adiar 1 h" are stored in advisory's PostgreSQL. A snooze lasts one hour. Undo removes that row. The BFF stores nothing.
@@ -90,7 +90,7 @@ A **pain to solve** and a **mandate to meet**. Advisors covering more clients ca
 - The breaker opens after 3 consecutive message-level failures, or when 5 of the last 10 outcomes failed, and after an immediate quota error. It stays open for 15 seconds. Half-open allows one trial. Each HTTP attempt times out at 2 seconds.
 - SLA base is Essencial 1440, Advance 240, Singular 60 minutes. The clock is halved when churn risk is true, frustration is Frustrado or worse, the customer asked for a human, or the alert is a relevant withdrawal.
 - UI layout, tokens, and seed book match the adopted design companions. Light theme is the default.
-- Never cut RabbitMQ, gRPC, outbox, inbox, or observability. If time or memory fails, cut Elasticsearch, then Jev, then MySQL, in that order.
+- Never cut RabbitMQ, gRPC, outbox, inbox, or observability. The demo VPS has 8 GB. Elasticsearch and the Grafana dashboard stay until a measured run on that VPS shows Elasticsearch does not fit. Only then cut Elasticsearch, then Jev, in that order. Grafana stays and reads the timeline from PostgreSQL.
 - Do not log tokens, credentials, connection strings, or model-provider keys.
 
 ## Non-goals

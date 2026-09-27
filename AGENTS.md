@@ -28,9 +28,9 @@ application code, and no frontend yet.
   with TTL and a dead-letter exchange, not a cron.
 - Repositories and external integrations sit behind ports and adapters. Alert rules are small
   interfaces, one per rule. gRPC interceptors cover tracing, deadline, and retry.
-- Persistence is per service: PostgreSQL for `account-sim`, `advisory`, and `triage`; MySQL for
-  `cases`; Elasticsearch for `timeline-indexer`; the BFF stores nothing. Do not share a database
-  across services.
+- Persistence is per service: PostgreSQL for `account-sim`, `advisory`, `triage`, and `cases`,
+  one database each; Elasticsearch for `timeline-indexer`; the BFF stores nothing. Do not share
+  a database across services.
 - Structured logs use `log/slog` JSON. OpenTelemetry on every service. Propagate trace context
   on RabbitMQ headers so one trace covers the event, the rule, the alert, and the SSE push.
   Never log tokens, credentials, connection strings, or model-provider keys.
@@ -56,7 +56,7 @@ application code, and no frontend yet.
 | account-sim | Fictional account events and customer messages | PostgreSQL (outbox) | Publishes to RabbitMQ |
 | advisory | Book, segmentation, alert rules | PostgreSQL | gRPC; consumes and publishes |
 | triage | Message classification with fallback | PostgreSQL (inbox and results) | Consumes and publishes |
-| cases | Cases, SLA, state machine, escalation | MySQL | gRPC; consumes and publishes |
+| cases | Cases, SLA, state machine, escalation | PostgreSQL | gRPC; consumes and publishes |
 | timeline-indexer | Customer 360 index | Elasticsearch | Read by the BFF |
 | bff | HTTP for the frontend, gRPC aggregation, SSE | None | HTTP and SSE |
 
@@ -86,7 +86,6 @@ repository and must stay off the portfolio assignments (Fleet Pulse uses 3300, 8
 | RabbitMQ | 5673 |
 | RabbitMQ management | 15673 |
 | PostgreSQL | 5435 |
-| MySQL | 3307 |
 | Elasticsearch | 9201 |
 
 ## Language
