@@ -66,6 +66,16 @@ export interface ClientInfo {
   since: string;
 }
 
+export interface TimelineEntry {
+  event_id: string;
+  customer_id: string;
+  kind: string;
+  title: string;
+  text: string;
+  meta: string;
+  ago: number;
+}
+
 export const CASE_STATES: CaseState[] = [
   'Aberto',
   'Em atendimento',

@@ -15,6 +15,7 @@ interface QueueBoardProps {
   cases: CaseItem[];
   desktop: boolean;
   onOpen: (id: string) => void;
+  onViewCase: (id: string) => void;
   onOpenCase: (id: string) => void;
   onContacted: (id: string) => void;
   onSnooze: (id: string) => void;
@@ -26,6 +27,7 @@ export function QueueBoard({
   cases,
   desktop,
   onOpen,
+  onViewCase,
   onOpenCase,
   onContacted,
   onSnooze,
@@ -52,21 +54,21 @@ export function QueueBoard({
       key: 'aberto',
       label: COLUMN_LABELS[1],
       body: byState(0).map((c) => (
-        <CaseCard key={c.id} caseItem={c} onAdvance={onAdvanceCase} />
+        <CaseCard key={c.id} caseItem={c} onAdvance={onAdvanceCase} onOpen={onViewCase} />
       )),
     },
     {
       key: 'atendimento',
       label: COLUMN_LABELS[2],
       body: byState(1).map((c) => (
-        <CaseCard key={c.id} caseItem={c} onAdvance={onAdvanceCase} />
+        <CaseCard key={c.id} caseItem={c} onAdvance={onAdvanceCase} onOpen={onViewCase} />
       )),
     },
     {
       key: 'aguardando',
       label: COLUMN_LABELS[3],
       body: byState(2).map((c) => (
-        <CaseCard key={c.id} caseItem={c} onAdvance={onAdvanceCase} />
+        <CaseCard key={c.id} caseItem={c} onAdvance={onAdvanceCase} onOpen={onViewCase} />
       )),
     },
   ];

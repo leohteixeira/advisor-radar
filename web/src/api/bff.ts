@@ -1,4 +1,4 @@
-import type { CaseItem, Signal } from '../domain/types';
+import type { CaseItem, Signal, TimelineEntry } from '../domain/types';
 
 async function readJSON<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -39,4 +39,22 @@ export async function advanceCase(id: string): Promise<CaseItem> {
   return readJSON<CaseItem>(
     await fetch(`/v1/cases/${id}/advance`, { method: 'POST' }),
   );
+}
+
+export async function fetchTimeline(
+  customerId: string,
+  q = '',
+  kind = '',
+): Promise<TimelineEntry[]> {
+  const params = new URLSearchParams();
+  if (q) {
+    params.set('q', q);
+  }
+  if (kind) {
+    params.set('kind', kind);
+  }
+  const qs = params.toString();
+  const url = `/v1/customers/${customerId}/timeline${qs ? `?${qs}` : ''}`;
+  const body = await readJSON<{ items: TimelineEntry[] }>(await fetch(url));
+  return body.items ?? [];
 }

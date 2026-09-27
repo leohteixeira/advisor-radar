@@ -9,24 +9,30 @@ import (
 	"time"
 )
 
-// Handler serves the queue, SSE stream, actions proxy, and seed cases.
+// Handler serves the queue, SSE stream, actions proxy, seed cases, and timeline.
 type Handler struct {
-	board   *Board
-	actions ActionsClient
-	cases   *CaseBoard
-	now     func() time.Time
+	board    *Board
+	actions  ActionsClient
+	cases    *CaseBoard
+	timeline TimelineClient
+	now      func() time.Time
 }
 
 // NewHandler returns an HTTP handler. A nil actions client is treated as unavailable.
-func NewHandler(board *Board, actions ActionsClient) http.Handler {
+// A nil timeline client serves the in-process c01 seed.
+func NewHandler(board *Board, actions ActionsClient, tl TimelineClient) http.Handler {
 	if actions == nil {
 		actions = UnavailableActions{}
 	}
+	if tl == nil {
+		tl = NewSeedTimeline()
+	}
 	h := &Handler{
-		board:   board,
-		actions: actions,
-		cases:   NewCaseBoard(),
-		now:     time.Now,
+		board:    board,
+		actions:  actions,
+		cases:    NewCaseBoard(),
+		timeline: tl,
+		now:      time.Now,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/queue", h.queue)
@@ -36,7 +42,33 @@ func NewHandler(board *Board, actions ActionsClient) http.Handler {
 	mux.HandleFunc("PUT /v1/actions/{id}", h.putAction)
 	mux.HandleFunc("DELETE /v1/actions/{id}", h.deleteAction)
 	mux.HandleFunc("GET /v1/actions", h.listActions)
+	mux.HandleFunc("GET /v1/customers/{id}/timeline", h.customerTimeline)
 	return mux
+}
+
+func (h *Handler) customerTimeline(w http.ResponseWriter, r *http.Request) {
+	if err := r.Context().Err(); err != nil {
+		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
+		return
+	}
+	id := r.PathValue("id")
+	q := r.URL.Query().Get("q")
+	kind := r.URL.Query().Get("kind")
+	items, err := h.timeline.Search(r.Context(), id, q, kind)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	if items == nil {
+		items = []TimelineEntry{}
+	}
+	body := struct {
+		Items []TimelineEntry `json:"items"`
+	}{Items: items}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		return
+	}
 }
 
 func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package timeline.v1;
+
+option go_package = "github.com/leohteixeira/advisor-radar/gen/timeline/v1;timelinev1";
+
+// TimelineService is the read API for the customer 360 index.
+service TimelineService {
+  rpc Search(SearchRequest) returns (SearchResponse);
+}
+
+message SearchRequest {
+  string customer_id = 1;
+  string query = 2;
+  string kind = 3;
+}
+
+message TimelineItem {
+  string event_id = 1;
+  string customer_id = 2;
+  string kind = 3;
+  string title = 4;
+  string text = 5;
+  string meta = 6;
+  int32 ago = 7;
+}
+
+message SearchResponse {
+  repeated TimelineItem items = 1;
+}
