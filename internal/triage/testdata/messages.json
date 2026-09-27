@@ -1,0 +1,18 @@
+[
+  {"id": "m01", "channel": "chat", "text": "Oi, não consigo entrar no app desde ontem, fica dando erro no token.", "expected": {"intent": "operacional", "churn": false, "human": false}},
+  {"id": "m02", "channel": "chat", "text": "Mandei 20 mil reais na segunda e até agora não caiu na conta em dólar. Isso é normal?", "expected": {"intent": "cambio", "churn": false, "human": false}},
+  {"id": "m03", "channel": "email", "text": "Bom dia. Onde encontro o informe de rendimentos para declarar o imposto deste ano?", "expected": {"intent": "tributacao", "churn": false, "human": false}},
+  {"id": "m04", "channel": "chat", "text": "Queria entender se faz sentido colocar parte da carteira em treasuries ou se fico só em ETF.", "expected": {"intent": "investimento", "churn": false, "human": false}},
+  {"id": "m05", "channel": "chat", "text": "Preciso sacar 5 mil dólares e trazer de volta para o Brasil. Como faço?", "expected": {"intent": "resgate", "churn": false, "human": false}},
+  {"id": "m06", "channel": "chat", "text": "Já é a terceira vez que eu explico o mesmo problema e ninguém resolve. Um absurdo.", "expected": {"intent": "reclamacao", "churn": false, "human": false}},
+  {"id": "m07", "channel": "email", "text": "Quero encerrar minha conta. Por favor me digam o que preciso fazer.", "expected": {"intent": "encerramento", "churn": true, "human": false}},
+  {"id": "m08", "channel": "chat", "text": "Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.", "expected": {"intent": "reclamacao", "churn": true, "human": false}},
+  {"id": "m09", "channel": "chat", "text": "Prefiro não resolver por aqui. Consegue pedir para o meu assessor me ligar?", "expected": {"intent": "contato", "churn": false, "human": true}},  
+  {"id": "m10", "channel": "chat", "text": "Fui cobrado duas vezes na taxa de câmbio da última remessa, quero o estorno.", "expected": {"intent": "reclamacao", "churn": false, "human": false}},
+  {"id": "m11", "channel": "email", "text": "Preciso atualizar meu endereço no cadastro, mudei de cidade.", "expected": {"intent": "operacional", "churn": false, "human": false}},
+  {"id": "m12", "channel": "chat", "text": "Vendi ações com lucro em julho. Tenho que pagar DARF?", "expected": {"intent": "tributacao", "churn": false, "human": false}},
+  {"id": "m13", "channel": "chat", "text": "Estou pensando em transferir tudo pro banco onde tenho conta, lá o atendimento pelo menos responde.", "expected": {"intent": "reclamacao", "churn": true, "human": false}},
+  {"id": "m14", "channel": "chat", "text": "Quero falar com uma pessoa de verdade, esse robô não entende nada!!", "expected": {"intent": "reclamacao", "churn": false, "human": true}},
+  {"id": "m15", "channel": "email", "text": "Qual o prazo para o resgate do fundo cair na minha conta corrente em dólar?", "expected": {"intent": "resgate", "churn": false, "human": false}},
+  {"id": "m16", "channel": "chat", "text": "Obrigado pela ajuda ontem, deu tudo certo com a remessa!", "expected": {"intent": "cambio", "churn": false, "human": false}}
+]

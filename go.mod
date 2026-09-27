@@ -1,10 +1,12 @@
 module github.com/leohteixeira/advisor-radar
 
-go 1.26
+go 1.26.0
 
 require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/rabbitmq/amqp091-go v1.15.0
+	github.com/sony/gobreaker/v2 v2.4.0
+	golang.org/x/time v0.16.0
 )
 
 require (
