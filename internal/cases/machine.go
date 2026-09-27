@@ -24,13 +24,16 @@ var stateOrder = []string{
 	StateResolvido,
 }
 
-// SeedOccurredAt is the fixed occurred_at for RaiseSeed writes.
-var SeedOccurredAt = time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+// AtRiskRemainingMinutes is the SLA remaining threshold for the manager panel.
+// A non-resolved case with this many minutes or fewer (or already overdue) is at risk.
+const AtRiskRemainingMinutes = 60
 
 // CaseRow is one cases table row.
 type CaseRow struct {
 	ID              string
 	CustomerID      string
+	SignalID        string
+	AdvisorID       string
 	State           string
 	SLATotalMinutes int
 	Escalated       bool
@@ -64,12 +67,14 @@ type CasePayload struct {
 type OpenInput struct {
 	ID         string
 	CustomerID string
+	SignalID   string
+	AdvisorID  string
 	Segment    string
 	Factors    ClockFactors
 	OccurredAt time.Time
 }
 
-// Tx is the write side of one Open / Advance / RaiseSeed / HandleBreach transaction.
+// Tx is the write side of one Open / Advance / HandleBreach transaction.
 type Tx interface {
 	InsertCase(ctx context.Context, row CaseRow) error
 	UpdateCase(ctx context.Context, row CaseRow) error
@@ -110,6 +115,9 @@ func Open(ctx context.Context, store Store, in OpenInput) error {
 	if in.CustomerID == "" {
 		return fmt.Errorf("cases: customer id is required")
 	}
+	if in.AdvisorID == "" {
+		return fmt.Errorf("cases: advisor id is required")
+	}
 	occurredAt := in.OccurredAt
 	if occurredAt.IsZero() {
 		occurredAt = time.Now().UTC()
@@ -120,6 +128,8 @@ func Open(ctx context.Context, store Store, in OpenInput) error {
 	row := CaseRow{
 		ID:              in.ID,
 		CustomerID:      in.CustomerID,
+		SignalID:        in.SignalID,
+		AdvisorID:       in.AdvisorID,
 		State:           StateAberto,
 		SLATotalMinutes: total,
 		Escalated:       false,
@@ -200,64 +210,19 @@ func Advance(ctx context.Context, store Store, caseID, to string) error {
 	return nil
 }
 
-// RaiseSeed writes the three design seed cases. A second call adds nothing.
-// Seed rows are already past Aberto; only a live Open arms a delay.
-// Escalated seed cases never arm a delay either.
-func RaiseSeed(ctx context.Context, store Store) error {
-	if store == nil {
-		return fmt.Errorf("cases: store is required")
-	}
-	for _, row := range seedCases() {
-		if err := raiseOneSeed(ctx, store, row); err != nil {
-			return fmt.Errorf("cases: raise seed %s: %w", row.ID, err)
-		}
-	}
-	return nil
+// RemainingMinutes returns SLA minutes left at now (may be negative when overdue).
+func RemainingMinutes(row CaseRow, now time.Time) int {
+	elapsed := int(now.Sub(row.OpenedAt).Minutes())
+	return row.SLATotalMinutes - elapsed
 }
 
-func seedCases() []CaseRow {
-	return []CaseRow{
-		{
-			ID:              "k1042",
-			CustomerID:      "c02",
-			State:           StateEmAtendimento,
-			SLATotalMinutes: 120,
-			Escalated:       false,
-			OpenedAt:        SeedOccurredAt.Add(-25 * time.Minute),
-		},
-		{
-			ID:              "k1038",
-			CustomerID:      "c07",
-			State:           StateAguardandoCliente,
-			SLATotalMinutes: 120,
-			Escalated:       true,
-			OpenedAt:        SeedOccurredAt.Add(-65 * time.Minute),
-		},
-		{
-			ID:              "k1031",
-			CustomerID:      "c09",
-			State:           StateResolvido,
-			SLATotalMinutes: 60,
-			Escalated:       false,
-			OpenedAt:        SeedOccurredAt.Add(-400 * time.Minute),
-		},
+// IsAtRisk reports whether a non-resolved case is at or past the at-risk threshold.
+func IsAtRisk(row CaseRow, now time.Time) bool {
+	if row.State == StateResolvido {
+		return false
 	}
-}
-
-func raiseOneSeed(ctx context.Context, store Store, row CaseRow) error {
-	return store.WithTx(ctx, func(tx Tx) error {
-		claimed, err := tx.ClaimInbox(ctx, "seed-"+row.ID)
-		if err != nil {
-			return fmt.Errorf("cases: claim inbox: %w", err)
-		}
-		if !claimed {
-			return nil
-		}
-		if err := tx.InsertCase(ctx, row); err != nil {
-			return fmt.Errorf("cases: insert case: %w", err)
-		}
-		return nil
-	})
+	remaining := RemainingMinutes(row, now)
+	return remaining <= AtRiskRemainingMinutes
 }
 
 // PermanentDeliveryError marks a dead-letter body that must not be requeued.

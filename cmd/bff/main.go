@@ -14,6 +14,9 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
+	advisoryv1 "github.com/leohteixeira/advisor-radar/gen/advisory/v1"
+	casesv1 "github.com/leohteixeira/advisor-radar/gen/cases/v1"
+	triagev1 "github.com/leohteixeira/advisor-radar/gen/triage/v1"
 	"github.com/leohteixeira/advisor-radar/internal/bff"
 	"github.com/leohteixeira/advisor-radar/internal/event"
 )
@@ -44,6 +47,41 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	defer tlCleanup()
 
+	var queue bff.QueueSource = bff.EmptyQueue{}
+	var review bff.ReviewSource = bff.EmptyReview{}
+	var casesSrc bff.CaseSource = bff.EmptyCases{}
+	var cleanups []func()
+	defer func() {
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			cleanups[i]()
+		}
+	}()
+
+	if target := os.Getenv("ADVISORY_GRPC_TARGET"); target != "" {
+		conn, err := bff.DialGRPC(target)
+		if err != nil {
+			return fmt.Errorf("bff: dial advisory: %w", err)
+		}
+		cleanups = append(cleanups, func() { _ = conn.Close() })
+		queue = bff.NewGRPCQueue(advisoryv1.NewAdvisoryServiceClient(conn))
+	}
+	if target := os.Getenv("TRIAGE_GRPC_TARGET"); target != "" {
+		conn, err := bff.DialGRPC(target)
+		if err != nil {
+			return fmt.Errorf("bff: dial triage: %w", err)
+		}
+		cleanups = append(cleanups, func() { _ = conn.Close() })
+		review = bff.NewGRPCReview(triagev1.NewTriageServiceClient(conn))
+	}
+	if target := os.Getenv("CASES_GRPC_TARGET"); target != "" {
+		conn, err := bff.DialGRPC(target)
+		if err != nil {
+			return fmt.Errorf("bff: dial cases: %w", err)
+		}
+		cleanups = append(cleanups, func() { _ = conn.Close() })
+		casesSrc = bff.NewGRPCCases(casesv1.NewCasesServiceClient(conn))
+	}
+
 	if addr == "" && brokerURL == "" {
 		<-ctx.Done()
 		return nil
@@ -59,7 +97,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if addr != "" {
 		httpSrv = &http.Server{
 			Addr:              addr,
-			Handler:           bff.NewHandler(board, actions, tl),
+			Handler:           bff.NewHandler(board, actions, tl, queue, review, casesSrc),
 			ReadHeaderTimeout: 5 * time.Second,
 			BaseContext:       func(net.Listener) context.Context { return runCtx },
 		}

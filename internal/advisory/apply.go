@@ -7,13 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/leohteixeira/advisor-radar/internal/book"
 	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/identity"
 	"github.com/leohteixeira/advisor-radar/internal/sim"
 )
-
-// SeedOccurredAt is the fixed occurred_at for RaiseSeed alerts.
-var SeedOccurredAt = time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 
 // OutboxRow is one unpublished or published outbox record.
 type OutboxRow struct {
@@ -45,7 +42,7 @@ type AlertPayload struct {
 	Days   int     `json:"days,omitempty"`
 }
 
-// Tx is the write side of one Apply / RaiseSeed transaction.
+// Tx is the write side of one Apply transaction.
 type Tx interface {
 	ClaimInbox(ctx context.Context, eventID string) (bool, error)
 	InsertAlert(ctx context.Context, row AlertRow) error
@@ -113,7 +110,7 @@ func ApplySilence(
 		ids[RuleKeySilence] = alertID
 	}
 	if occurredAt.IsZero() {
-		occurredAt = SeedOccurredAt
+		occurredAt = time.Now().UTC()
 	}
 	return raise(ctx, store, raiseInput{
 		sourceEventID: sourceEventID,
@@ -122,44 +119,6 @@ func ApplySilence(
 		decisions:     []Decision{d},
 		alertIDs:      ids,
 	})
-}
-
-// RaiseSeed writes the seven seed alerts from SIGNALS s11–s17. A second call
-// adds nothing.
-func RaiseSeed(ctx context.Context, store Store) error {
-	if store == nil {
-		return fmt.Errorf("advisory: store is required")
-	}
-	for _, fact := range seedFacts() {
-		if fact.payload != nil {
-			decisions := EvaluateAccount(*fact.payload)
-			if err := raise(ctx, store, raiseInput{
-				sourceEventID: fact.sourceEventID,
-				customerID:    fact.customerID,
-				occurredAt:    SeedOccurredAt,
-				decisions:     decisions,
-				alertIDs:      fact.alertIDs,
-			}); err != nil {
-				return fmt.Errorf("advisory: raise seed %s: %w", fact.sourceEventID, err)
-			}
-			continue
-		}
-		c := book.Clients[fact.customerID]
-		if err := ApplySilence(
-			ctx,
-			store,
-			fact.customerID,
-			fact.days,
-			c.AUM,
-			c.AUM,
-			fact.sourceEventID,
-			fact.alertIDs[RuleKeySilence],
-			SeedOccurredAt,
-		); err != nil {
-			return fmt.Errorf("advisory: raise seed %s: %w", fact.sourceEventID, err)
-		}
-	}
-	return nil
 }
 
 // Publish sends each unpublished outbox row once. A broker error leaves that
@@ -244,10 +203,17 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 		}
 
 		for _, d := range in.decisions {
-			alertID := liveAlertID(in.sourceEventID, d.RuleKey)
+			alertID := ""
 			if in.alertIDs != nil {
 				if fixed, ok := in.alertIDs[d.RuleKey]; ok {
 					alertID = fixed
+				}
+			}
+			if alertID == "" {
+				var err error
+				alertID, err = identity.NewV7()
+				if err != nil {
+					return fmt.Errorf("advisory: generate alert id: %w", err)
 				}
 			}
 
@@ -304,10 +270,6 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 		return fmt.Errorf("advisory: raise: %w", err)
 	}
 	return nil
-}
-
-func liveAlertID(sourceEventID, ruleKey string) string {
-	return "al-" + sourceEventID + "-" + ruleKey
 }
 
 func decodeAccountPayload(raw any) (sim.AccountPayload, error) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -15,7 +16,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"golang.org/x/time/rate"
+	"google.golang.org/grpc"
 
+	triagev1 "github.com/leohteixeira/advisor-radar/gen/triage/v1"
 	"github.com/leohteixeira/advisor-radar/internal/envfile"
 	"github.com/leohteixeira/advisor-radar/internal/event"
 	"github.com/leohteixeira/advisor-radar/internal/jev"
@@ -46,6 +49,7 @@ func main() {
 
 func run(ctx context.Context, logger *slog.Logger) error {
 	dsn := os.Getenv("TRIAGE_DATABASE_URL")
+	grpcAddr := os.Getenv("TRIAGE_GRPC_ADDR")
 	if dsn == "" {
 		// No database in CI process tests; wait for signal only.
 		<-ctx.Done()
@@ -59,13 +63,48 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	defer pool.Close()
 
 	store := triagepipe.NewPGXStore(pool)
-	if err := store.EnsureSchema(ctx); err != nil {
-		return err
-	}
+	reviewer := triagepipe.NewReviewReader(pool)
 
 	brokerURL := os.Getenv("TRIAGE_BROKER_URL")
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errCh := make(chan error, 3)
+	workers := 0
+	var grpcSrv *grpc.Server
+
+	if grpcAddr != "" {
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			return fmt.Errorf("triage: grpc listen: %w", err)
+		}
+		grpcSrv = grpc.NewServer()
+		triagev1.RegisterTriageServiceServer(grpcSrv, triagepipe.NewGRPCServer(reviewer))
+		workers++
+		go func() {
+			logger.Info("grpc listening", "service", "triage", "addr", grpcAddr)
+			err := grpcSrv.Serve(lis)
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				errCh <- fmt.Errorf("triage: grpc serve: %w", err)
+				return
+			}
+			errCh <- nil
+		}()
+	}
+
 	if brokerURL == "" {
+		if workers == 0 {
+			<-ctx.Done()
+			return nil
+		}
 		<-ctx.Done()
+		cancel()
+		if grpcSrv != nil {
+			grpcSrv.GracefulStop()
+		}
+		for i := 0; i < workers; i++ {
+			<-errCh
+		}
 		return nil
 	}
 
@@ -74,6 +113,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 	session, cleanup, err := dialAMQP(ctx, brokerURL)
 	if err != nil {
+		cancel()
+		if grpcSrv != nil {
+			grpcSrv.Stop()
+		}
 		return err
 	}
 	defer cleanup()
@@ -97,10 +140,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 	publisher := &amqpPublisher{ch: pubCh, exchange: session.exchange}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	errCh := make(chan error, 2)
+	workers += 2
 	go func() {
 		errCh <- triagepipe.RunPublisher(runCtx, store, publisher, time.Second)
 	}()
@@ -111,12 +151,21 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	select {
 	case <-ctx.Done():
 		cancel()
-		<-errCh
-		<-errCh
+		if grpcSrv != nil {
+			grpcSrv.GracefulStop()
+		}
+		for i := 0; i < workers; i++ {
+			<-errCh
+		}
 		return nil
 	case err := <-errCh:
 		cancel()
-		<-errCh
+		if grpcSrv != nil {
+			grpcSrv.Stop()
+		}
+		for i := 1; i < workers; i++ {
+			<-errCh
+		}
 		if ctx.Err() != nil {
 			return nil
 		}

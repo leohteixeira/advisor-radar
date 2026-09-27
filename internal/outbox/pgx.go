@@ -19,29 +19,6 @@ func NewPGXStore(pool *pgxpool.Pool) *PGXStore {
 	return &PGXStore{pool: pool}
 }
 
-// EnsureSchema creates the outbox table when it is missing.
-func (s *PGXStore) EnsureSchema(ctx context.Context) error {
-	statements := []string{
-		`CREATE TABLE IF NOT EXISTS outbox (
-    id           BIGSERIAL PRIMARY KEY,
-    event_id     TEXT        NOT NULL,
-    routing_key  TEXT        NOT NULL,
-    payload      JSONB       NOT NULL,
-    published_at TIMESTAMPTZ NULL,
-    CONSTRAINT outbox_event_id_key UNIQUE (event_id)
-)`,
-		`CREATE INDEX IF NOT EXISTS outbox_unpublished_idx
-    ON outbox (id)
-    WHERE published_at IS NULL`,
-	}
-	for _, q := range statements {
-		if _, err := s.pool.Exec(ctx, q); err != nil {
-			return fmt.Errorf("outbox pgx: ensure schema: %w", err)
-		}
-	}
-	return nil
-}
-
 type pgxTx struct {
 	tx pgx.Tx
 }

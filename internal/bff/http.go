@@ -7,49 +7,92 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/leohteixeira/advisor-radar/internal/identity"
 )
 
-// Handler serves the queue, SSE stream, actions proxy, seed cases, timeline,
-// review queue, and manager panel.
+// Handler serves the queue, SSE stream, actions proxy, cases, timeline,
+// review queue, manager panel, and customer detail.
 type Handler struct {
 	board    *Board
 	actions  ActionsClient
-	cases    *CaseBoard
-	review   *ReviewQueue
+	queue    QueueSource
+	cases    CaseSource
+	review   ReviewSource
 	timeline TimelineClient
 	now      func() time.Time
 }
 
-// NewHandler returns an HTTP handler. A nil actions client is treated as unavailable.
-// A nil timeline client serves the in-process c01 seed.
-func NewHandler(board *Board, actions ActionsClient, tl TimelineClient) http.Handler {
+// NewHandler returns an HTTP handler. Nil sources are treated as empty.
+func NewHandler(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource) http.Handler {
 	if actions == nil {
 		actions = UnavailableActions{}
 	}
 	if tl == nil {
-		tl = NewSeedTimeline()
+		tl = EmptyTimeline{}
+	}
+	if queue == nil {
+		queue = EmptyQueue{}
+	}
+	if review == nil {
+		review = EmptyReview{}
+	}
+	if cases == nil {
+		cases = EmptyCases{}
 	}
 	h := &Handler{
 		board:    board,
 		actions:  actions,
-		cases:    NewCaseBoard(),
-		review:   NewReviewQueue(),
+		queue:    queue,
+		cases:    cases,
+		review:   review,
 		timeline: tl,
 		now:      time.Now,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/queue", h.queue)
+	mux.HandleFunc("GET /v1/queue", h.queueHandler)
 	mux.HandleFunc("GET /v1/queue/stream", h.stream)
 	mux.HandleFunc("GET /v1/cases", h.listCases)
 	mux.HandleFunc("POST /v1/cases/{id}/advance", h.advanceCase)
 	mux.HandleFunc("PUT /v1/actions/{id}", h.putAction)
 	mux.HandleFunc("DELETE /v1/actions/{id}", h.deleteAction)
 	mux.HandleFunc("GET /v1/actions", h.listActions)
+	mux.HandleFunc("GET /v1/customers/{id}", h.getCustomer)
 	mux.HandleFunc("GET /v1/customers/{id}/timeline", h.customerTimeline)
 	mux.HandleFunc("GET /v1/review", h.listReview)
 	mux.HandleFunc("PUT /v1/review/{id}", h.correctReview)
 	mux.HandleFunc("GET /v1/manager", h.manager)
 	return mux
+}
+
+func (h *Handler) getCustomer(w http.ResponseWriter, r *http.Request) {
+	if err := r.Context().Err(); err != nil {
+		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
+		return
+	}
+	id, err := identity.ParseV7(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	c, err := h.queue.GetCustomer(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrCustomerNotFound) || status.Code(err) == codes.NotFound {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
+		if status.Code(err) == codes.InvalidArgument {
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(c)
 }
 
 func (h *Handler) customerTimeline(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +101,10 @@ func (h *Handler) customerTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	if _, err := identity.ParseV7(id); err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
 	q := r.URL.Query().Get("q")
 	kind := r.URL.Query().Get("kind")
 	items, err := h.timeline.Search(r.Context(), id, q, kind)
@@ -72,17 +119,29 @@ func (h *Handler) customerTimeline(w http.ResponseWriter, r *http.Request) {
 		Items []TimelineEntry `json:"items"`
 	}{Items: items}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		return
-	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
-func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) queueHandler(w http.ResponseWriter, r *http.Request) {
 	if err := r.Context().Err(); err != nil {
 		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 		return
 	}
-	items := h.board.Items()
+	items, err := h.queue.ListQueue(r.Context())
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	seen := make(map[string]struct{}, len(items))
+	for _, it := range items {
+		seen[it.ID] = struct{}{}
+	}
+	for _, live := range h.board.Items() {
+		if _, ok := seen[live.ID]; ok {
+			continue
+		}
+		items = append(items, live)
+	}
 	actions, err := h.actions.List(r.Context())
 	if err != nil && !errors.Is(err, ErrActionsUnavailable) {
 		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
@@ -103,13 +162,12 @@ func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, item)
 	}
+	h.enrichSignals(r.Context(), out)
 	body := struct {
 		Items []Signal `json:"items"`
 	}{Items: out}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		return
-	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +185,16 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
 
 	lastID := r.Header.Get("Last-Event-ID")
 	_ = h.board.Stream(r.Context(), lastID, func(ev StreamEvent) error {
-		if _, err := fmt.Fprintf(w, "id: %s\nevent: signal\ndata: %s\n\n", ev.ID, ev.Data); err != nil {
+		data := ev.Data
+		var sig Signal
+		if err := json.Unmarshal(ev.Data, &sig); err == nil {
+			items := []Signal{sig}
+			h.enrichSignals(r.Context(), items)
+			if b, err := json.Marshal(items[0]); err == nil {
+				data = b
+			}
+		}
+		if _, err := fmt.Fprintf(w, "id: %s\nevent: signal\ndata: %s\n\n", ev.ID, data); err != nil {
 			return fmt.Errorf("bff: write sse: %w", err)
 		}
 		flusher.Flush()
@@ -140,31 +207,53 @@ func (h *Handler) listCases(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 		return
 	}
+	items, states, err := h.cases.ListCases(r.Context())
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	if items == nil {
+		items = []Case{}
+	}
+	if states == nil {
+		states = CaseStates
+	}
+	h.enrichCases(r.Context(), items)
 	body := struct {
 		Items  []Case   `json:"items"`
 		States []string `json:"states"`
-	}{Items: h.cases.Items(), States: CaseStates}
+	}{Items: items, States: states}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		return
-	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func (h *Handler) advanceCase(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	c, ok := h.cases.Advance(id)
-	if !ok {
-		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+	id, err := identity.ParseV7(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
+	c, err := h.cases.Advance(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrCaseNotFound) || status.Code(err) == codes.NotFound {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	items := []Case{c}
+	h.enrichCases(r.Context(), items)
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(c); err != nil {
-		return
-	}
+	_ = json.NewEncoder(w).Encode(items[0])
 }
 
 func (h *Handler) putAction(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id, err := identity.ParseV7(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
 	action, err := decodeProxyAction(r)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
@@ -192,8 +281,12 @@ func (h *Handler) putAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteAction(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	err := h.actions.Undo(r.Context(), id)
+	id, err := identity.ParseV7(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	err = h.actions.Undo(r.Context(), id)
 	if errors.Is(err, ErrActionsUnavailable) {
 		http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 		return
@@ -222,9 +315,7 @@ func (h *Handler) listActions(w http.ResponseWriter, r *http.Request) {
 	body := struct {
 		Items []SignalAction `json:"items"`
 	}{Items: rows}
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		return
-	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func (h *Handler) listReview(w http.ResponseWriter, r *http.Request) {
@@ -232,17 +323,20 @@ func (h *Handler) listReview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 		return
 	}
-	items := h.review.Items()
+	items, err := h.review.ListReview(r.Context())
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
 	if items == nil {
 		items = []ReviewRow{}
 	}
+	h.enrichReviews(r.Context(), items)
 	body := struct {
 		Items []ReviewRow `json:"items"`
 	}{Items: items}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		return
-	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func (h *Handler) correctReview(w http.ResponseWriter, r *http.Request) {
@@ -250,29 +344,33 @@ func (h *Handler) correctReview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 		return
 	}
-	id := r.PathValue("id")
+	id, err := identity.ParseV7(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
 	intent, err := decodeReviewIntent(r)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
-	row, err := h.review.Correct(id, intent)
-	if errors.Is(err, ErrInvalidIntent) {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
-	}
-	if errors.Is(err, ErrReviewNotFound) {
-		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-		return
-	}
+	row, err := h.review.Correct(r.Context(), id, intent)
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		code := status.Code(err)
+		switch {
+		case errors.Is(err, ErrInvalidIntent) || code == codes.InvalidArgument:
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		case errors.Is(err, ErrReviewNotFound) || code == codes.NotFound:
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		default:
+			http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		}
 		return
 	}
+	rows := []ReviewRow{row}
+	h.enrichReviews(r.Context(), rows)
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(row); err != nil {
-		return
-	}
+	_ = json.NewEncoder(w).Encode(rows[0])
 }
 
 func (h *Handler) manager(w http.ResponseWriter, r *http.Request) {
@@ -280,11 +378,72 @@ func (h *Handler) manager(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 		return
 	}
-	snap := ManagerSnapshotSeed()
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(snap); err != nil {
+	snap, err := h.buildManager(r)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(snap)
+}
+
+func (h *Handler) buildManager(r *http.Request) (ManagerSnapshot, error) {
+	ops, err := h.queue.ListOperators(r.Context())
+	if err != nil {
+		return ManagerSnapshot{}, err
+	}
+	names := make(map[string]string, len(ops))
+	for _, o := range ops {
+		names[o.ID] = o.Name
+	}
+	backlogRaw, err := h.cases.Backlog(r.Context())
+	if err != nil {
+		return ManagerSnapshot{}, err
+	}
+	backlog := make([]ManagerBacklog, 0, len(backlogRaw))
+	for _, b := range backlogRaw {
+		name := names[b.Advisor]
+		if name == "" {
+			name = b.Advisor
+		}
+		backlog = append(backlog, ManagerBacklog{Advisor: name, Open: b.Open, Risk: b.Risk, Overdue: b.Overdue})
+	}
+	avgToday, avgYest, err := h.queue.ContactMetrics(r.Context())
+	if err != nil {
+		return ManagerSnapshot{}, err
+	}
+	reviewPct, fallbackPct, intents, err := h.review.IntentStats(r.Context())
+	if err != nil {
+		return ManagerSnapshot{}, err
+	}
+	atRiskRaw, err := h.cases.ListAtRisk(r.Context())
+	if err != nil {
+		return ManagerSnapshot{}, err
+	}
+	atRisk := make([]ManagerAtRisk, 0, len(atRiskRaw))
+	for _, a := range atRiskRaw {
+		cust, err := h.queue.GetCustomer(r.Context(), a.Client)
+		name := a.Client
+		seg := ""
+		if err == nil {
+			name = cust.Name
+			seg = cust.Segment
+		}
+		advisor := names[a.Advisor]
+		if advisor == "" {
+			advisor = a.Advisor
+		}
+		atRisk = append(atRisk, ManagerAtRisk{
+			ID: a.ID, Client: name, Advisor: advisor, Segment: seg, Remaining: a.Remaining,
+		})
+	}
+	if intents == nil {
+		intents = map[string]int{}
+	}
+	return ManagerSnapshot{
+		Backlog: backlog, AvgFirstContactMin: avgToday, AvgFirstContactYesterday: avgYest,
+		ReviewPct: reviewPct, FallbackPct: fallbackPct, Intents: intents, AtRisk: atRisk,
+	}, nil
 }
 
 func decodeProxyAction(r *http.Request) (string, error) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"google.golang.org/grpc"
 
+	casesv1 "github.com/leohteixeira/advisor-radar/gen/cases/v1"
 	"github.com/leohteixeira/advisor-radar/internal/cases"
 )
 
@@ -34,6 +37,7 @@ func main() {
 
 func run(ctx context.Context, logger *slog.Logger) error {
 	dsn := os.Getenv("CASES_DATABASE_URL")
+	grpcAddr := os.Getenv("CASES_GRPC_ADDR")
 	if dsn == "" {
 		// No database in CI process tests; wait for signal only.
 		<-ctx.Done()
@@ -47,24 +51,72 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	defer pool.Close()
 
 	store := cases.NewPGXStore(pool)
-	if err := store.EnsureSchema(ctx); err != nil {
-		return err
-	}
-	if err := cases.RaiseSeed(ctx, store); err != nil {
-		return fmt.Errorf("cases: raise seed: %w", err)
-	}
-	logger.Info("seed cases raised", "service", "cases")
+	reader := cases.NewCaseReader(pool)
 
 	brokerURL := os.Getenv("CASES_BROKER_URL")
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errCh := make(chan error, 3)
+	workers := 0
+	var grpcSrv *grpc.Server
+	var amqpCleanup func()
+
+	if grpcAddr != "" {
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			return fmt.Errorf("cases: grpc listen: %w", err)
+		}
+		grpcSrv = grpc.NewServer()
+		casesv1.RegisterCasesServiceServer(grpcSrv, cases.NewGRPCServer(reader, store))
+		workers++
+		go func() {
+			logger.Info("grpc listening", "service", "cases", "addr", grpcAddr)
+			err := grpcSrv.Serve(lis)
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				errCh <- fmt.Errorf("cases: grpc serve: %w", err)
+				return
+			}
+			errCh <- nil
+		}()
+	}
+
 	if brokerURL == "" {
-		<-ctx.Done()
-		return nil
+		if workers == 0 {
+			<-ctx.Done()
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			cancel()
+			if grpcSrv != nil {
+				grpcSrv.GracefulStop()
+			}
+			for i := 0; i < workers; i++ {
+				<-errCh
+			}
+			return nil
+		case err := <-errCh:
+			cancel()
+			if grpcSrv != nil {
+				grpcSrv.Stop()
+			}
+			for i := 1; i < workers; i++ {
+				<-errCh
+			}
+			return err
+		}
 	}
 
 	session, cleanup, err := dialAMQP(ctx, brokerURL)
 	if err != nil {
+		cancel()
+		if grpcSrv != nil {
+			grpcSrv.Stop()
+		}
 		return err
 	}
+	amqpCleanup = cleanup
 	defer cleanup()
 
 	pubCh, err := session.conn.Channel()
@@ -85,10 +137,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 	publisher := &amqpPublisher{ch: pubCh, exchange: session.exchange}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	errCh := make(chan error, 2)
+	workers += 2
 	go func() {
 		errCh <- cases.RunPublisher(runCtx, store, publisher, time.Second)
 	}()
@@ -99,12 +148,24 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	select {
 	case <-ctx.Done():
 		cancel()
-		<-errCh
-		<-errCh
+		if grpcSrv != nil {
+			grpcSrv.GracefulStop()
+		}
+		if amqpCleanup != nil {
+			amqpCleanup()
+		}
+		for i := 0; i < workers; i++ {
+			<-errCh
+		}
 		return nil
 	case err := <-errCh:
 		cancel()
-		<-errCh
+		if grpcSrv != nil {
+			grpcSrv.Stop()
+		}
+		for i := 1; i < workers; i++ {
+			<-errCh
+		}
 		if ctx.Err() != nil {
 			return nil
 		}

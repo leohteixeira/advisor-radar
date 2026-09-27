@@ -7,8 +7,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/leohteixeira/advisor-radar/internal/book"
 )
 
 // PGXStore is a PostgreSQL Store for the advisory database.
@@ -19,74 +17,6 @@ type PGXStore struct {
 // NewPGXStore wraps a pgx pool as a Store.
 func NewPGXStore(pool *pgxpool.Pool) *PGXStore {
 	return &PGXStore{pool: pool}
-}
-
-// EnsureSchema creates book, inbox, alerts, and outbox when missing.
-func (s *PGXStore) EnsureSchema(ctx context.Context) error {
-	statements := []string{
-		`CREATE TABLE IF NOT EXISTS book (
-    customer_id TEXT PRIMARY KEY,
-    name        TEXT             NOT NULL,
-    segment     TEXT             NOT NULL,
-    aum         DOUBLE PRECISION NOT NULL,
-    advisor     TEXT             NOT NULL,
-    since       TEXT             NOT NULL
-)`,
-		`CREATE TABLE IF NOT EXISTS inbox (
-    event_id     TEXT        PRIMARY KEY,
-    received_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-)`,
-		`CREATE TABLE IF NOT EXISTS alerts (
-    id              TEXT        PRIMARY KEY,
-    customer_id     TEXT        NOT NULL,
-    kind            TEXT        NOT NULL,
-    rule            TEXT        NOT NULL,
-    source_event_id TEXT        NOT NULL,
-    raised_at       TIMESTAMPTZ NOT NULL,
-    payload         JSONB       NOT NULL
-)`,
-		`CREATE TABLE IF NOT EXISTS outbox (
-    id           BIGSERIAL PRIMARY KEY,
-    event_id     TEXT        NOT NULL,
-    routing_key  TEXT        NOT NULL,
-    payload      JSONB       NOT NULL,
-    published_at TIMESTAMPTZ NULL,
-    CONSTRAINT advisory_outbox_event_id_key UNIQUE (event_id)
-)`,
-		`CREATE INDEX IF NOT EXISTS advisory_outbox_unpublished_idx
-    ON outbox (id)
-    WHERE published_at IS NULL`,
-		`CREATE TABLE IF NOT EXISTS signal_action (
-    signal_id     TEXT PRIMARY KEY,
-    contacted_at  TIMESTAMPTZ NULL,
-    snoozed_until TIMESTAMPTZ NULL
-)`,
-	}
-	for _, q := range statements {
-		if _, err := s.pool.Exec(ctx, q); err != nil {
-			return fmt.Errorf("advisory pgx: ensure schema: %w", err)
-		}
-	}
-	return nil
-}
-
-// SeedBook upserts the 22-client seed book.
-func (s *PGXStore) SeedBook(ctx context.Context) error {
-	const q = `
-INSERT INTO book (customer_id, name, segment, aum, advisor, since)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (customer_id) DO UPDATE SET
-    name = EXCLUDED.name,
-    segment = EXCLUDED.segment,
-    aum = EXCLUDED.aum,
-    advisor = EXCLUDED.advisor,
-    since = EXCLUDED.since`
-	for _, c := range book.Clients {
-		if _, err := s.pool.Exec(ctx, q, c.ID, c.Name, c.Segment, c.AUM, c.Advisor, c.Since); err != nil {
-			return fmt.Errorf("advisory pgx: seed book %s: %w", c.ID, err)
-		}
-	}
-	return nil
 }
 
 type pgxTx struct {

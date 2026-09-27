@@ -1,4 +1,3 @@
-// Package bff serves the in-memory advisor queue over HTTP and SSE.
 package bff
 
 import (
@@ -12,11 +11,13 @@ import (
 
 const ringCapacity = 64
 
-// Signal is one queue card. Field names match SIGNALS / STREAM in mock-data.js.
+// Signal is one queue card. Field names match the frontend contract.
 type Signal struct {
 	ID          string             `json:"id"`
 	Kind        string             `json:"kind"`
 	Client      string             `json:"client"`
+	Name        string             `json:"name,omitempty"`
+	Segment     string             `json:"segment,omitempty"`
 	Ago         int                `json:"ago,omitempty"`
 	Text        string             `json:"text,omitempty"`
 	Intent      string             `json:"intent,omitempty"`
@@ -51,7 +52,7 @@ type subscriber struct {
 	mu       sync.Mutex
 }
 
-// Board is the in-memory queue and SSE ring. It has no database.
+// Board is the in-memory live queue and SSE ring. Seeded cast lives in Postgres.
 type Board struct {
 	mu    sync.Mutex
 	items []Signal
@@ -60,16 +61,16 @@ type Board struct {
 	subs  map[*subscriber]struct{}
 }
 
-// NewBoard returns a board seeded with signals s01–s17.
+// NewBoard returns an empty board; GET /v1/queue loads the cast via advisory.
 func NewBoard() *Board {
 	return &Board{
-		items: seedSignals(),
+		items: nil,
 		seen:  make(map[string]struct{}),
 		subs:  make(map[*subscriber]struct{}),
 	}
 }
 
-// Items returns a copy of the current queue.
+// Items returns a copy of the live (SSE-fed) queue items.
 func (b *Board) Items() []Signal {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -240,9 +241,6 @@ func (b *Board) appendLive(sig Signal) error {
 }
 
 // Subscribe registers for live SSE frames.
-// An empty lastEventID starts from live only.
-// A known lastEventID replays later retained events.
-// An unknown lastEventID replays the retained window.
 func (b *Board) Subscribe(lastEventID string) (<-chan StreamEvent, func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -366,29 +364,5 @@ func confidenceBand(prob float64) string {
 		return "média"
 	default:
 		return "baixa"
-	}
-}
-
-func seedSignals() []Signal {
-	i := func(v int) *int { return &v }
-	b := func(v bool) *bool { return &v }
-	return []Signal{
-		{ID: "s01", Kind: "message", Client: "c01", Ago: 12, Text: "Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.", Intent: "Reclamação", Dist: map[string]float64{"Reclamação": 0.82, "Encerramento": 0.11, "Operacional": 0.04, "Resgate": 0.03}, Frustration: i(2), Churn: b(true), ChurnConf: "alta", Human: b(false), Channel: "chat"},
-		{ID: "s02", Kind: "message", Client: "c02", Ago: 25, Text: "Já é a terceira vez que eu explico o mesmo problema e ninguém resolve. Um absurdo.", Intent: "Reclamação", Dist: map[string]float64{"Reclamação": 0.91, "Operacional": 0.06, "Encerramento": 0.03}, Frustration: i(3), Churn: b(false), ChurnConf: "média", Human: b(false), Channel: "e-mail"},
-		{ID: "s03", Kind: "message", Client: "c03", Ago: 8, Text: "Consegue pedir para o meu assessor me ligar?", Intent: "Contato", Dist: map[string]float64{"Contato": 0.94, "Operacional": 0.04, "Investimento": 0.02}, Frustration: i(0), Churn: b(false), ChurnConf: "alta", Human: b(true), Channel: "chat"},
-		{ID: "s04", Kind: "message", Client: "c04", Ago: 100, Text: "Vendi ações com lucro em julho. Tenho que pagar DARF?", Intent: "Tributação", Dist: map[string]float64{"Tributação": 0.88, "Investimento": 0.08, "Operacional": 0.04}, Frustration: i(0), Churn: b(false), ChurnConf: "alta", Human: b(false), Channel: "e-mail"},
-		{ID: "s05", Kind: "message", Client: "c05", Ago: 33, Text: "Preciso sacar 5 mil dólares e trazer de volta para o Brasil.", Intent: "Resgate", Dist: map[string]float64{"Resgate": 0.54, "Câmbio": 0.31, "Operacional": 0.10, "Encerramento": 0.05}, Frustration: i(0), Churn: b(false), ChurnConf: "média", Human: b(false), Channel: "chat"},
-		{ID: "s06", Kind: "message", Client: "c06", Ago: 50, Text: "Meu cartão foi recusado na viagem, o que eu faço?", Intent: "Operacional", Dist: map[string]float64{"Operacional": 0.71, "Reclamação": 0.19, "Contato": 0.10}, Frustration: i(1), Churn: b(false), ChurnConf: "alta", Human: b(false), Channel: "chat", Fallback: true},
-		{ID: "s07", Kind: "message", Client: "c07", Ago: 65, Text: "Quero encerrar minha conta. Como faço para transferir os ativos?", Intent: "Encerramento", Dist: map[string]float64{"Encerramento": 0.86, "Resgate": 0.09, "Operacional": 0.05}, Frustration: i(0), Churn: b(true), ChurnConf: "alta", Human: b(false), Channel: "e-mail"},
-		{ID: "s08", Kind: "message", Client: "c08", Ago: 120, Text: "Qual a cotação que vocês usam no câmbio? Está muito diferente do Google.", Intent: "Câmbio", Dist: map[string]float64{"Câmbio": 0.79, "Reclamação": 0.15, "Operacional": 0.06}, Frustration: i(1), Churn: b(false), ChurnConf: "alta", Human: b(false), Channel: "chat"},
-		{ID: "s09", Kind: "message", Client: "c09", Ago: 185, Text: "Vocês têm alguma recomendação de renda fixa com vencimento em 2028?", Intent: "Investimento", Dist: map[string]float64{"Investimento": 0.93, "Operacional": 0.05, "Tributação": 0.02}, Frustration: i(0), Churn: b(false), ChurnConf: "alta", Human: b(false), Channel: "e-mail"},
-		{ID: "s10", Kind: "message", Client: "c10", Ago: 18, Text: "Estou frustrado com a demora pra liberar a transferência. Alguém pode me explicar?", Intent: "Operacional", Dist: map[string]float64{"Operacional": 0.58, "Reclamação": 0.35, "Contato": 0.07}, Frustration: i(2), Churn: b(false), ChurnConf: "média", Human: b(true), Channel: "chat"},
-		{ID: "s11", Kind: "alert", Client: "c11", Ago: 22, Alert: "saque", Amount: 190000, Before: 640000, After: 450000, Rule: "Saque acima de 20% do patrimônio em 24 horas", Reason: "Saque de US$ 190.000,00, 30% do patrimônio"},
-		{ID: "s12", Kind: "alert", Client: "c12", Ago: 180, Alert: "queda", Amount: -22000, Before: 130000, After: 108000, Rule: "Queda acima de 15% em 5 dias úteis", Reason: "Patrimônio caiu 17% em 5 dias"},
-		{ID: "s13", Kind: "alert", Client: "c13", Ago: 240, Alert: "aporte", Amount: 60000, Before: 8000, After: 68000, Rule: "Aporte maior que o patrimônio anterior", Reason: "Aporte de US$ 60.000,00, 7,5× o patrimônio"},
-		{ID: "s14", Kind: "alert", Client: "c13", Ago: 238, Alert: "segmento", Before: 8000, After: 68000, From: "Essencial", To: "Advance", Rule: "Patrimônio cruzou a faixa de US$ 10 mil", Reason: "Subiu de Essencial para Advance"},
-		{ID: "s15", Kind: "alert", Client: "c14", Ago: 1440, Alert: "contato", Days: 94, Before: 175000, After: 175000, Rule: "Sem contato há mais de 90 dias", Reason: "Último contato há 94 dias"},
-		{ID: "s16", Kind: "alert", Client: "c15", Ago: 6, Alert: "saque", Amount: 300000, Before: 1250000, After: 950000, Rule: "Saque acima de 20% do patrimônio em 24 horas", Reason: "Saque de US$ 300.000,00, 24% do patrimônio"},
-		{ID: "s17", Kind: "alert", Client: "c16", Ago: 300, Alert: "queda", Amount: -2100, Before: 9600, After: 7500, Rule: "Queda acima de 15% em 5 dias úteis", Reason: "Patrimônio caiu 22% em 5 dias"},
 	}
 }

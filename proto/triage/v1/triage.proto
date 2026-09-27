@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package triage.v1;
+
+option go_package = "github.com/leohteixeira/advisor-radar/gen/triage/v1;triagev1";
+
+service TriageService {
+  rpc ListReview(ListReviewRequest) returns (ListReviewResponse);
+  rpc CorrectIntent(CorrectIntentRequest) returns (ReviewItem);
+  rpc IntentStats(IntentStatsRequest) returns (IntentStatsResponse);
+}
+
+message ListReviewRequest {}
+
+message ReviewItem {
+  string id = 1;
+  string client = 2;
+  string text = 3;
+  string dist_json = 4;
+  int32 ago = 5;
+  bool fallback = 6;
+  string intent = 7;
+  bool corrected = 8;
+}
+
+message ListReviewResponse {
+  repeated ReviewItem items = 1;
+}
+
+message CorrectIntentRequest {
+  string id = 1;
+  string intent = 2;
+}
+
+message IntentStatsRequest {}
+
+message IntentStatsResponse {
+  int32 review_pct = 1;
+  int32 fallback_pct = 2;
+  map<string, int32> intents = 3;
+}

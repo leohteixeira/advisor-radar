@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package advisory.v1;
+
+option go_package = "github.com/leohteixeira/advisor-radar/gen/advisory/v1;advisoryv1";
+
+service AdvisoryService {
+  rpc GetCustomer(GetCustomerRequest) returns (Customer);
+  rpc ListOperators(ListOperatorsRequest) returns (ListOperatorsResponse);
+  rpc ListQueue(ListQueueRequest) returns (ListQueueResponse);
+  rpc ContactMetrics(ContactMetricsRequest) returns (ContactMetricsResponse);
+}
+
+message GetCustomerRequest {
+  string customer_id = 1;
+}
+
+message Customer {
+  string id = 1;
+  string name = 2;
+  string segment = 3;
+  double aum = 4;
+  string advisor = 5;
+  string since = 6;
+}
+
+message ListOperatorsRequest {}
+
+message Operator {
+  string id = 1;
+  string name = 2;
+}
+
+message ListOperatorsResponse {
+  repeated Operator items = 1;
+}
+
+message ListQueueRequest {}
+
+message QueueSignal {
+  string id = 1;
+  string kind = 2;
+  string client = 3;
+  int32 ago = 4;
+  string payload_json = 5;
+  string name = 6;
+  string segment = 7;
+}
+
+message ListQueueResponse {
+  repeated QueueSignal items = 1;
+}
+
+message ContactMetricsRequest {}
+
+message ContactMetricsResponse {
+  int32 avg_first_contact_min = 1;
+  int32 avg_first_contact_yesterday = 2;
+}

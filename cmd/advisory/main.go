@@ -15,7 +15,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"google.golang.org/grpc"
 
+	advisoryv1 "github.com/leohteixeira/advisor-radar/gen/advisory/v1"
 	"github.com/leohteixeira/advisor-radar/internal/advisory"
 	"github.com/leohteixeira/advisor-radar/internal/event"
 )
@@ -38,11 +40,13 @@ func main() {
 func run(ctx context.Context, logger *slog.Logger) error {
 	dsn := os.Getenv("ADVISORY_DATABASE_URL")
 	httpAddr := os.Getenv("ADVISORY_HTTP_ADDR")
+	grpcAddr := os.Getenv("ADVISORY_GRPC_ADDR")
 	brokerURL := os.Getenv("ADVISORY_BROKER_URL")
 
 	var actionStore advisory.ActionStore = advisory.NewMemoryActionStore()
 	var store *advisory.PGXStore
 	var pool *pgxpool.Pool
+	var reader *advisory.BookReader
 
 	if dsn != "" {
 		var err error
@@ -54,19 +58,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 		store = advisory.NewPGXStore(pool)
 		actionStore = store
-		if err := store.EnsureSchema(ctx); err != nil {
-			return err
-		}
-		if err := store.SeedBook(ctx); err != nil {
-			return err
-		}
-		if err := advisory.RaiseSeed(ctx, store); err != nil {
-			return fmt.Errorf("advisory: raise seed: %w", err)
-		}
-		logger.Info("seed alerts raised", "service", "advisory")
+		reader = advisory.NewBookReader(pool)
 	}
 
-	if dsn == "" && httpAddr == "" {
+	if dsn == "" && httpAddr == "" && grpcAddr == "" {
 		<-ctx.Done()
 		return nil
 	}
@@ -74,9 +69,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errCh := make(chan error, 3)
+	errCh := make(chan error, 4)
 	workers := 0
 	var httpSrv *http.Server
+	var grpcSrv *grpc.Server
 	var amqpCleanup func()
 
 	if httpAddr != "" {
@@ -93,6 +89,26 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			err := httpSrv.ListenAndServe()
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- fmt.Errorf("advisory: listen: %w", err)
+				return
+			}
+			errCh <- nil
+		}()
+	}
+
+	if grpcAddr != "" && reader != nil {
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			cancel()
+			return fmt.Errorf("advisory: grpc listen: %w", err)
+		}
+		grpcSrv = grpc.NewServer()
+		advisoryv1.RegisterAdvisoryServiceServer(grpcSrv, advisory.NewGRPCServer(reader))
+		workers++
+		go func() {
+			logger.Info("grpc listening", "service", "advisory", "addr", grpcAddr)
+			err := grpcSrv.Serve(lis)
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				errCh <- fmt.Errorf("advisory: grpc serve: %w", err)
 				return
 			}
 			errCh <- nil
@@ -153,6 +169,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			defer shutdownCancel()
 			_ = httpSrv.Shutdown(shutdownCtx)
 		}
+		if grpcSrv != nil {
+			grpcSrv.GracefulStop()
+		}
 		if amqpCleanup != nil {
 			amqpCleanup()
 		}
@@ -164,6 +183,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		cancel()
 		if httpSrv != nil {
 			_ = httpSrv.Close()
+		}
+		if grpcSrv != nil {
+			grpcSrv.Stop()
 		}
 		if amqpCleanup != nil {
 			amqpCleanup()

@@ -20,46 +20,6 @@ func NewPGXStore(pool *pgxpool.Pool) *PGXStore {
 	return &PGXStore{pool: pool}
 }
 
-// EnsureSchema creates cases, inbox, and outbox when missing.
-func (s *PGXStore) EnsureSchema(ctx context.Context) error {
-	statements := []string{
-		`CREATE TABLE IF NOT EXISTS cases (
-    id                 TEXT        PRIMARY KEY,
-    customer_id        TEXT        NOT NULL,
-    state              TEXT        NOT NULL,
-    sla_total_minutes  INTEGER     NOT NULL,
-    escalated          BOOLEAN     NOT NULL DEFAULT false,
-    opened_at          TIMESTAMPTZ NOT NULL
-)`,
-		`CREATE TABLE IF NOT EXISTS inbox (
-    event_id    TEXT        PRIMARY KEY,
-    received_at TIMESTAMPTZ NOT NULL DEFAULT now()
-)`,
-		`CREATE TABLE IF NOT EXISTS outbox (
-    id           BIGSERIAL PRIMARY KEY,
-    event_id     TEXT        NOT NULL,
-    routing_key  TEXT        NOT NULL,
-    payload      JSONB       NOT NULL,
-    published_at TIMESTAMPTZ NULL,
-    CONSTRAINT cases_outbox_event_id_key UNIQUE (event_id)
-)`,
-		`CREATE INDEX IF NOT EXISTS cases_outbox_unpublished_idx
-    ON outbox (id)
-    WHERE published_at IS NULL`,
-		`CREATE TABLE IF NOT EXISTS sla_delay (
-    case_id      TEXT        PRIMARY KEY,
-    ttl_ms       INTEGER     NOT NULL,
-    published_at TIMESTAMPTZ NULL
-)`,
-	}
-	for _, q := range statements {
-		if _, err := s.pool.Exec(ctx, q); err != nil {
-			return fmt.Errorf("cases pgx: ensure schema: %w", err)
-		}
-	}
-	return nil
-}
-
 type pgxTx struct {
 	tx pgx.Tx
 }
@@ -96,13 +56,15 @@ type rowQuerier interface {
 
 func getCase(ctx context.Context, q rowQuerier, id string) (CaseRow, bool, error) {
 	const query = `
-SELECT id, customer_id, state, sla_total_minutes, escalated, opened_at
+SELECT id, customer_id, COALESCE(signal_id::text, ''), advisor_id, state, sla_total_minutes, escalated, opened_at
 FROM cases
 WHERE id = $1`
 	var row CaseRow
 	err := q.QueryRow(ctx, query, id).Scan(
 		&row.ID,
 		&row.CustomerID,
+		&row.SignalID,
+		&row.AdvisorID,
 		&row.State,
 		&row.SLATotalMinutes,
 		&row.Escalated,
@@ -133,14 +95,16 @@ ON CONFLICT (event_id) DO NOTHING`
 // InsertCase stages one case row. Conflicts on id are ignored.
 func (t *pgxTx) InsertCase(ctx context.Context, row CaseRow) error {
 	const q = `
-INSERT INTO cases (id, customer_id, state, sla_total_minutes, escalated, opened_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO cases (id, customer_id, signal_id, advisor_id, state, sla_total_minutes, escalated, opened_at)
+VALUES ($1, $2, NULLIF($3, '')::uuid, $4, $5, $6, $7, $8)
 ON CONFLICT (id) DO NOTHING`
 	_, err := t.tx.Exec(
 		ctx,
 		q,
 		row.ID,
 		row.CustomerID,
+		row.SignalID,
+		row.AdvisorID,
 		row.State,
 		row.SLATotalMinutes,
 		row.Escalated,

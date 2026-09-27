@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package cases.v1;
+
+option go_package = "github.com/leohteixeira/advisor-radar/gen/cases/v1;casesv1";
+
+service CasesService {
+  rpc ListCases(ListCasesRequest) returns (ListCasesResponse);
+  rpc AdvanceCase(AdvanceCaseRequest) returns (Case);
+  rpc ListAtRisk(ListAtRiskRequest) returns (ListAtRiskResponse);
+  rpc BacklogByAdvisor(BacklogByAdvisorRequest) returns (BacklogByAdvisorResponse);
+}
+
+message ListCasesRequest {}
+
+message CaseHistoryEntry {
+  int32 ago = 1;
+  string kind = 2;
+  string text = 3;
+}
+
+message Case {
+  string id = 1;
+  string client = 2;
+  string signal = 3;
+  int32 state = 4;
+  int32 opened_ago = 5;
+  int32 sla_total = 6;
+  bool escalated = 7;
+  repeated CaseHistoryEntry history = 8;
+  string advisor_id = 9;
+  int32 remaining_minutes = 10;
+}
+
+message ListCasesResponse {
+  repeated Case items = 1;
+  repeated string states = 2;
+}
+
+message AdvanceCaseRequest {
+  string id = 1;
+}
+
+message ListAtRiskRequest {}
+
+message AtRiskCase {
+  string id = 1;
+  string client_id = 2;
+  string advisor_id = 3;
+  int32 remaining = 4;
+}
+
+message ListAtRiskResponse {
+  repeated AtRiskCase items = 1;
+}
+
+message BacklogByAdvisorRequest {}
+
+message AdvisorBacklog {
+  string advisor_id = 1;
+  int32 open = 2;
+  int32 risk = 3;
+  int32 overdue = 4;
+}
+
+message BacklogByAdvisorResponse {
+  repeated AdvisorBacklog items = 1;
+}

@@ -43,14 +43,6 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	defer pool.Close()
 
 	store := outbox.NewPGXStore(pool)
-	if err := store.EnsureSchema(ctx); err != nil {
-		return err
-	}
-	if err := outbox.Fire(ctx, store); err != nil {
-		return fmt.Errorf("account-sim: fire: %w", err)
-	}
-	logger.Info("market day fired", "service", "account-sim")
-
 	brokerURL := os.Getenv("ACCOUNT_SIM_BROKER_URL")
 	if brokerURL == "" {
 		<-ctx.Done()

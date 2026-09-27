@@ -5,8 +5,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/leohteixeira/advisor-radar/internal/sim"
 )
 
 // Row is one unpublished or published outbox record.
@@ -16,12 +14,12 @@ type Row struct {
 	Payload    []byte
 }
 
-// Tx is the write side of a single Fire transaction.
+// Tx is the write side of a single insert transaction.
 type Tx interface {
 	Insert(ctx context.Context, row Row) error
 }
 
-// Store persists outbox rows. Declared here for the Fire/Publish consumers.
+// Store persists outbox rows. Declared here for the Publish consumers.
 type Store interface {
 	WithTx(ctx context.Context, fn func(Tx) error) error
 	ListUnpublished(ctx context.Context) ([]Row, error)
@@ -31,37 +29,6 @@ type Store interface {
 // Broker accepts one event body under a routing key.
 type Broker interface {
 	Publish(ctx context.Context, routingKey string, body []byte) error
-}
-
-// Fire writes the market-day burst into the outbox in one transaction.
-// Inserts are idempotent on event_id; a second fire adds no rows.
-func Fire(ctx context.Context, store Store) error {
-	if store == nil {
-		return fmt.Errorf("outbox: store is required")
-	}
-
-	envelopes := sim.MarketDay()
-	err := store.WithTx(ctx, func(tx Tx) error {
-		for _, env := range envelopes {
-			body, err := env.MarshalBody()
-			if err != nil {
-				return fmt.Errorf("outbox: marshal %s: %w", env.EventID, err)
-			}
-			row := Row{
-				EventID:    env.EventID,
-				RoutingKey: env.Name,
-				Payload:    body,
-			}
-			if err := tx.Insert(ctx, row); err != nil {
-				return fmt.Errorf("outbox: insert %s: %w", env.EventID, err)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("outbox: fire: %w", err)
-	}
-	return nil
 }
 
 // Publish sends each unpublished row once. A broker error leaves that row

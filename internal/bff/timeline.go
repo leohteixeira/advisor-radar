@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	timelinev1 "github.com/leohteixeira/advisor-radar/gen/timeline/v1"
-	"github.com/leohteixeira/advisor-radar/internal/timeline"
 )
 
 // TimelineEntry is one customer 360 row as returned by the BFF.
@@ -28,23 +27,12 @@ type TimelineClient interface {
 	Search(ctx context.Context, customerID, query, kind string) ([]TimelineEntry, error)
 }
 
-// SeedTimeline serves the in-process c01 seed when TIMELINE_GRPC_TARGET is unset.
-type SeedTimeline struct {
-	index *timeline.Index
-}
-
-// NewSeedTimeline returns a client backed by the memory seed.
-func NewSeedTimeline() *SeedTimeline {
-	return &SeedTimeline{index: timeline.NewIndex()}
-}
+// EmptyTimeline returns no rows (used when TIMELINE_GRPC_TARGET is unset).
+type EmptyTimeline struct{}
 
 // Search implements TimelineClient.
-func (s *SeedTimeline) Search(ctx context.Context, customerID, query, kind string) ([]TimelineEntry, error) {
-	items, err := s.index.Search(ctx, customerID, query, kind)
-	if err != nil {
-		return nil, fmt.Errorf("bff: timeline seed: %w", err)
-	}
-	return toBFFEntries(items), nil
+func (EmptyTimeline) Search(context.Context, string, string, string) ([]TimelineEntry, error) {
+	return []TimelineEntry{}, nil
 }
 
 // GRPCTimeline dials the timeline-indexer. It does not keep a local copy of rows.
@@ -57,10 +45,10 @@ func NewGRPCTimeline(client timelinev1.TimelineServiceClient) *GRPCTimeline {
 	return &GRPCTimeline{client: client}
 }
 
-// NewTimelineClient returns SeedTimeline when target is empty, otherwise a gRPC client.
+// NewTimelineClient returns EmptyTimeline when target is empty, otherwise a gRPC client.
 func NewTimelineClient(target string) (TimelineClient, func(), error) {
 	if target == "" {
-		return NewSeedTimeline(), func() {}, nil
+		return EmptyTimeline{}, func() {}, nil
 	}
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -97,20 +85,4 @@ func (g *GRPCTimeline) Search(ctx context.Context, customerID, query, kind strin
 		})
 	}
 	return out, nil
-}
-
-func toBFFEntries(items []timeline.Entry) []TimelineEntry {
-	out := make([]TimelineEntry, 0, len(items))
-	for _, e := range items {
-		out = append(out, TimelineEntry{
-			EventID:    e.EventID,
-			CustomerID: e.CustomerID,
-			Kind:       e.Kind,
-			Title:      e.Title,
-			Text:       e.Text,
-			Meta:       e.Meta,
-			Ago:        e.Ago,
-		})
-	}
-	return out
 }

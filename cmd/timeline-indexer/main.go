@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"google.golang.org/grpc"
 
@@ -43,6 +44,30 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	var elastic *timeline.ElasticStore
 	if esURL != "" {
 		elastic = timeline.NewElasticStore(esURL)
+	}
+
+	var pools []*pgxpool.Pool
+	for _, envKey := range []string{
+		"ACCOUNT_SIM_DATABASE_URL",
+		"ADVISORY_DATABASE_URL",
+		"CASES_DATABASE_URL",
+	} {
+		dsn := os.Getenv(envKey)
+		if dsn == "" {
+			continue
+		}
+		pool, err := pgxpool.New(ctx, dsn)
+		if err != nil {
+			return fmt.Errorf("timeline-indexer: connect %s: %w", envKey, err)
+		}
+		defer pool.Close()
+		pools = append(pools, pool)
+	}
+	if len(pools) > 0 {
+		if err := timeline.ReplayOutboxes(ctx, idx, elastic, pools...); err != nil {
+			return fmt.Errorf("timeline-indexer: replay: %w", err)
+		}
+		logger.Info("outboxes replayed", "service", "timeline-indexer", "pools", len(pools))
 	}
 
 	if grpcAddr == "" && brokerURL == "" {
@@ -208,10 +233,12 @@ func runConsumer(ctx context.Context, idx *timeline.Index, elastic *timeline.Ela
 	}
 	keys := []string{
 		event.NameAccountEventRecorded,
+		event.NameMessageReceived,
 		event.NameMessageTriaged,
 		event.NameAlertRaised,
 		event.NameCaseOpened,
 		event.NameCaseStatusChanged,
+		"advisory.note.recorded",
 	}
 	for _, key := range keys {
 		if err := ch.QueueBind(queueName, key, exchange, false, nil); err != nil {

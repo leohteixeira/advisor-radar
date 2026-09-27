@@ -43,17 +43,12 @@ type Index struct {
 	byCust  map[string][]Entry
 }
 
-// NewIndex returns an index seeded with the design TIMELINES.c01 rows.
+// NewIndex returns an empty in-memory customer timeline.
 func NewIndex() *Index {
-	idx := &Index{
+	return &Index{
 		byEvent: make(map[string]struct{}),
 		byCust:  make(map[string][]Entry),
 	}
-	for _, e := range seedC01() {
-		idx.byEvent[e.EventID] = struct{}{}
-		idx.byCust[e.CustomerID] = append(idx.byCust[e.CustomerID], e)
-	}
-	return idx
 }
 
 // Search returns entries for customerID filtered by optional query and kind chip.
@@ -183,22 +178,26 @@ func entryFromEvent(name, eventID, customerID string, at time.Time, payload json
 		}
 		title := p.Title
 		if title == "" {
-			title = strings.ToUpper(kind[:1]) + kind[1:]
+			title = kindTitle(kind)
 		}
 		return Entry{EventID: eventID, CustomerID: customerID, Kind: kind, Title: title, Text: p.Text, Meta: p.Meta, Ago: ago}, nil
-	case event.NameMessageTriaged:
+	case event.NameMessageReceived, event.NameMessageTriaged:
 		var p struct {
 			Text    string `json:"text"`
 			Intent  string `json:"intent"`
 			Channel string `json:"channel"`
+			Title   string `json:"title"`
 			Meta    string `json:"meta"`
 		}
 		if err := json.Unmarshal(payload, &p); err != nil {
 			return Entry{}, fmt.Errorf("timeline: decode message payload: %w", err)
 		}
-		title := "Mensagem"
-		if p.Channel != "" {
-			title = "Mensagem · " + p.Channel
+		title := p.Title
+		if title == "" {
+			title = "Mensagem"
+			if p.Channel != "" {
+				title = "Mensagem · " + p.Channel
+			}
 		}
 		meta := p.Meta
 		if meta == "" {
@@ -237,6 +236,25 @@ func entryFromEvent(name, eventID, customerID string, at time.Time, payload json
 			}
 		}
 		return Entry{EventID: eventID, CustomerID: customerID, Kind: "caso", Title: title, Text: p.Text, Meta: p.Meta, Ago: ago}, nil
+	case "advisory.note.recorded":
+		var p struct {
+			Kind  string `json:"kind"`
+			Title string `json:"title"`
+			Text  string `json:"text"`
+			Meta  string `json:"meta"`
+		}
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return Entry{}, fmt.Errorf("timeline: decode note payload: %w", err)
+		}
+		kind := p.Kind
+		if kind == "" {
+			kind = "nota"
+		}
+		title := p.Title
+		if title == "" {
+			title = "Nota do assessor"
+		}
+		return Entry{EventID: eventID, CustomerID: customerID, Kind: kind, Title: title, Text: p.Text, Meta: p.Meta, Ago: ago}, nil
 	default:
 		return Entry{}, fmt.Errorf("timeline: unsupported event %q", name)
 	}
@@ -265,17 +283,4 @@ func minutesAgo(at time.Time) int {
 		d = -d
 	}
 	return int(d.Minutes())
-}
-
-func seedC01() []Entry {
-	const cust = "c01"
-	return []Entry{
-		{EventID: "tl-c01-msg-1", CustomerID: cust, Kind: "mensagem", Title: "Mensagem · chat", Text: "Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.", Meta: "Reclamação · Frustrado · risco de saída", Ago: 12},
-		{EventID: "tl-c01-msg-2", CustomerID: cust, Kind: "mensagem", Title: "Mensagem · e-mail", Text: "A transferência que pedi na segunda ainda não caiu. Podem verificar?", Meta: "Operacional · Incomodado", Ago: 1500},
-		{EventID: "tl-c01-nota-1", CustomerID: cust, Kind: "nota", Title: "Nota do assessor", Text: "Cliente pretende comprar imóvel em Orlando no 1º semestre. Precisa de liquidez em março.", Meta: "Ana Paula Ribeiro", Ago: 2900},
-		{EventID: "tl-c01-saque-1", CustomerID: cust, Kind: "saque", Title: "Saque", Text: "US$ 20.000,00 para conta nos EUA", Meta: "Sem alerta · 7% do patrimônio", Ago: 4400},
-		{EventID: "tl-c01-caso-1", CustomerID: cust, Kind: "caso", Title: "Caso k0977 resolvido", Text: "Dúvida sobre DARF de venda de ETF", Meta: "Tributação · 2 dias", Ago: 10100},
-		{EventID: "tl-c01-aporte-1", CustomerID: cust, Kind: "aporte", Title: "Aporte", Text: "US$ 45.000,00", Meta: "Câmbio a 5,42", Ago: 21000},
-		{EventID: "tl-c01-tel-1", CustomerID: cust, Kind: "telefone", Title: "Ligação", Text: "Revisão semestral da carteira · 32 min", Meta: "Ana Paula Ribeiro", Ago: 43000},
-	}
 }
