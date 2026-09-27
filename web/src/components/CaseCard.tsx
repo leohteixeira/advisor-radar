@@ -1,21 +1,19 @@
-import { clientName, clientSegment } from '../domain/clients';
+import type { DecoratedCase } from '../domain/queueVisual';
 import { CASE_STATES } from '../domain/types';
-import type { CaseItem } from '../domain/types';
 
 interface CaseCardProps {
-  caseItem: CaseItem;
+  row: DecoratedCase;
   onAdvance: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export function CaseCard({ caseItem, onAdvance, onOpen }: CaseCardProps) {
-  const name = clientName(caseItem.client);
-  const segment = clientSegment(caseItem.client);
+export function CaseCard({ row, onAdvance, onOpen }: CaseCardProps) {
+  const { caseItem } = row;
   const stateLabel = CASE_STATES[caseItem.state] ?? 'Aberto';
-  const canAdvance = caseItem.state < CASE_STATES.length - 1;
+  const canAdvance = caseItem.state < 3 && row.nextLabel !== '';
 
   return (
-    <article className="case-card" data-testid={`case-${caseItem.id}`}>
+    <article className={`case-card case-card--${row.slaTone}`} data-testid={`case-${caseItem.id}`}>
       <button
         type="button"
         className="case-card__open"
@@ -23,18 +21,29 @@ export function CaseCard({ caseItem, onAdvance, onOpen }: CaseCardProps) {
         aria-label={`Abrir caso ${caseItem.id}`}
       >
         <div className="case-card__top">
-          <strong className="case-card__name">{name}</strong>
-          <span className="case-card__id">{caseItem.id}</span>
+          <strong className="case-card__name">{row.name}</strong>
+          <span className={`case-card__count case-card__count--${row.slaTone}`}>{row.countdown}</span>
+        </div>
+        <div className="case-card__badges">
+          <span className={`signal-card__segment signal-card__segment--${row.segment.toLowerCase()}`}>
+            {row.segment}
+          </span>
+          <span className={`case-card__state case-card__state--${caseItem.state}`}>SLA {row.slaState}</span>
         </div>
         <p className="case-card__meta">
-          {segment} · {stateLabel}
-          {caseItem.escalated ? ' · Escalonado' : ''}
+          <span className="case-card__id">{caseItem.id}</span> · {row.origin}
         </p>
+        {caseItem.escalated ? (
+          <span className="case-card__escalated">Escalonado automaticamente</span>
+        ) : null}
+        {row.lastText ? <p className="case-card__last">{row.lastText}</p> : null}
       </button>
       {canAdvance ? (
-        <button type="button" onClick={() => onAdvance(caseItem.id)}>
-          Avançar
-        </button>
+        <div className="case-card__actions">
+          <button type="button" className="case-card__advance" onClick={() => onAdvance(caseItem.id)}>
+            {row.nextLabel} →
+          </button>
+        </div>
       ) : null}
     </article>
   );
