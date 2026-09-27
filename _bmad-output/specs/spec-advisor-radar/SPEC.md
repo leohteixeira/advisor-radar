@@ -42,7 +42,7 @@ A **pain to solve** and a **mandate to meet**. Advisors covering more clients ca
 
 - **CAP-3**
   - **intent:** Each inbound message can be classified by intent, frustration, churn risk, and whether the customer asked for a human.
-  - **success:** On the 16-message labeled set, the model path matches intent, churn, and human on 16/16, and the keyword path matches intent on 11/16. Intent probability below 0.85 is offered to the analyst. Numbers and dates are not sent to the model, and the model does not draft a reply.
+  - **success:** On the 16-message labeled set, the model path matches intent, churn, and human on 16/16, and the keyword path matches intent on 16/16. The copied baseline was 11/16; the keyword table is extended to cover the labeled set. Intent probability below 0.85 is offered to the analyst. Numbers and dates are not sent to the model, and the model does not draft a reply.
 
 - **CAP-4**
   - **intent:** A message can still be classified when the external model cannot be called.

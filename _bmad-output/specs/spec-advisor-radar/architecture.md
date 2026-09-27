@@ -81,9 +81,9 @@ Wire intents, question text, keyword tables, and the HTTP contract are in `triag
 
 `Result` carries intent, probability of the chosen intent, frustration score from 0 to 3, churn probability, human-request probability, classifier name (`jev` or `heuristic`), model version, degraded flag, latency, and gateway cost when present. Record `model` from the response on every result. Do not depend on a confidence field. Human review uses the chosen intent's probability and the 0.85 gate. The degraded flag does not add a second gate.
 
-`Fallback` applies a timeout to the primary. If the caller's context is already canceled, return that error and do not classify. Any other primary error runs the heuristic, sets `Degraded`, and invokes the degrade hook. The prototype's `NeedsReview` treats degraded as review; whether the product queue does too is an open question in the SPEC.
+`Fallback` applies a timeout to the primary. If the caller's context is already canceled, return that error and do not classify. Any other primary error runs the heuristic, sets `Degraded`, and invokes the degrade hook. The prototype's `NeedsReview` treats degraded as review. The product queue does not: review is intent probability below 0.85 only.
 
-The labeled set is the 16 Portuguese messages in `radar-triage/testdata/messages.json`, copied with the package. The probe prints intent, churn, and human accuracy, p50 and p95 latency, and cost for Jev and the heuristic. Boolean probe cutoff is 0.5. The review gate stays 0.85. Known baseline after the label fix: Jev 16/16 on intent, churn, and human; heuristic 11/16 on intent; p50 about 290 ms.
+The labeled set is the 16 Portuguese messages in `radar-triage/testdata/messages.json`, copied with the package. The probe prints intent, churn, and human accuracy, p50 and p95 latency, and cost for Jev and the heuristic. Boolean probe cutoff is 0.5. The review gate stays 0.85. Known baseline after the label fix: Jev 16/16 on intent, churn, and human; the copied heuristic was 11/16 on intent and is extended to 16/16 on the labeled set; p50 about 290 ms.
 
 ## Resilience
 

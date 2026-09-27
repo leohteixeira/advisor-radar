@@ -73,4 +73,4 @@ The prototype `NeedsReview` is `Degraded || IntentProb < threshold`, and its tes
 
 ## Probe
 
-Copy `testdata/messages.json` with the package. The probe runs Jev and the heuristic on that file and prints per-message intent, probability, frustration, churn, human, heuristic intent, and latency, plus accuracy, p50, p95, and cost. Boolean fields count as true at 0.5. A value already in the environment wins over a `.env` file. Baseline after the label correction: Jev 16/16 intent, 16/16 churn, 16/16 human; heuristic 11/16 intent; p50 about 290 ms.
+Copy `testdata/messages.json` with the package. The probe runs Jev and the heuristic on that file and prints per-message intent, probability, frustration, churn, human, heuristic intent, and latency, plus accuracy, p50, p95, and cost. Boolean fields count as true at 0.5. A value already in the environment wins over a `.env` file. Baseline after the label correction: Jev 16/16 intent, 16/16 churn, 16/16 human; the copied heuristic was 11/16 intent and is extended to 16/16 on the labeled set; p50 about 290 ms.
