@@ -15,6 +15,7 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/book"
 	"github.com/leohteixeira/advisor-radar/internal/cases"
 	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/identity"
 )
 
 type memStore struct {
@@ -341,9 +342,10 @@ func TestOpen_AdvanceComplaint(t *testing.T) {
 	err := cases.Open(ctx, store, cases.OpenInput{
 		ID:         "k-open-c02",
 		CustomerID: "c02",
+		AdvisorID:  identity.MustNewV7(),
 		Segment:    book.SegmentAdvance,
 		Factors:    cases.ClockFactors{Frustration: 3},
-		OccurredAt: cases.SeedOccurredAt,
+		OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -379,8 +381,9 @@ func TestAdvance_ForwardPath(t *testing.T) {
 	if err := cases.Open(ctx, store, cases.OpenInput{
 		ID:         "k-adv",
 		CustomerID: "c02",
+		AdvisorID:  identity.MustNewV7(),
 		Segment:    book.SegmentAdvance,
-		OccurredAt: cases.SeedOccurredAt,
+		OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -425,8 +428,9 @@ func TestAdvance_BackwardRejected(t *testing.T) {
 	if err := cases.Open(ctx, store, cases.OpenInput{
 		ID:         "k-back",
 		CustomerID: "c02",
+		AdvisorID:  identity.MustNewV7(),
 		Segment:    book.SegmentAdvance,
-		OccurredAt: cases.SeedOccurredAt,
+		OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -452,8 +456,9 @@ func TestAdvance_PastEndRejected(t *testing.T) {
 	if err := cases.Open(ctx, store, cases.OpenInput{
 		ID:         "k-end",
 		CustomerID: "c02",
+		AdvisorID:  identity.MustNewV7(),
 		Segment:    book.SegmentAdvance,
-		OccurredAt: cases.SeedOccurredAt,
+		OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -477,47 +482,6 @@ func TestAdvance_PastEndRejected(t *testing.T) {
 	}
 }
 
-func TestRaiseSeed_Twice(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	store := newMemStore()
-
-	if err := cases.RaiseSeed(ctx, store); err != nil {
-		t.Fatalf("first RaiseSeed: %v", err)
-	}
-	want := map[string]struct {
-		state     string
-		escalated bool
-	}{
-		"k1042": {state: cases.StateEmAtendimento, escalated: false},
-		"k1038": {state: cases.StateAguardandoCliente, escalated: true},
-		"k1031": {state: cases.StateResolvido, escalated: false},
-	}
-	if store.caseCount() != 3 {
-		t.Fatalf("cases = %d, want 3", store.caseCount())
-	}
-	for id, w := range want {
-		row := store.mustCase(t, id)
-		if row.State != w.state {
-			t.Fatalf("%s state = %q, want %q", id, row.State, w.state)
-		}
-		if row.Escalated != w.escalated {
-			t.Fatalf("%s escalated = %v, want %v", id, row.Escalated, w.escalated)
-		}
-	}
-	if store.delayCount() != 0 {
-		t.Fatalf("seed delays = %d, want 0", store.delayCount())
-	}
-
-	if err := cases.RaiseSeed(ctx, store); err != nil {
-		t.Fatalf("second RaiseSeed: %v", err)
-	}
-	if store.caseCount() != 3 {
-		t.Fatalf("after second RaiseSeed cases = %d, want 3", store.caseCount())
-	}
-}
-
 func TestHandleBreach_Idempotent(t *testing.T) {
 	t.Parallel()
 
@@ -526,15 +490,16 @@ func TestHandleBreach_Idempotent(t *testing.T) {
 	if err := cases.Open(ctx, store, cases.OpenInput{
 		ID:         "k-breach",
 		CustomerID: "c02",
+		AdvisorID:  identity.MustNewV7(),
 		Segment:    book.SegmentAdvance,
 		Factors:    cases.ClockFactors{Frustration: 2},
-		OccurredAt: cases.SeedOccurredAt,
+		OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	before := store.mustCase(t, "k-breach")
 
-	if err := cases.HandleBreach(ctx, store, "k-breach", cases.SeedOccurredAt); err != nil {
+	if err := cases.HandleBreach(ctx, store, "k-breach", time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("first HandleBreach: %v", err)
 	}
 	after := store.mustCase(t, "k-breach")
@@ -555,7 +520,7 @@ func TestHandleBreach_Idempotent(t *testing.T) {
 		t.Fatalf("breach outbox rows = %d, want 1", breachCount)
 	}
 
-	if err := cases.HandleBreach(ctx, store, "k-breach", cases.SeedOccurredAt); err != nil {
+	if err := cases.HandleBreach(ctx, store, "k-breach", time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("second HandleBreach: %v", err)
 	}
 	if store.outboxCount() != 2 { // opened + one breach
@@ -604,9 +569,10 @@ func TestPublish_BrokerRefusesThenAccepts(t *testing.T) {
 	if err := cases.Open(ctx, store, cases.OpenInput{
 		ID:         "k-pub",
 		CustomerID: "c02",
+		AdvisorID:  identity.MustNewV7(),
 		Segment:    book.SegmentAdvance,
 		Factors:    cases.ClockFactors{Frustration: 2},
-		OccurredAt: cases.SeedOccurredAt,
+		OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -619,7 +585,7 @@ func TestPublish_BrokerRefusesThenAccepts(t *testing.T) {
 		t.Fatalf("published = %d, want 1 after opened", store.publishedCount())
 	}
 
-	if err := cases.HandleBreach(ctx, store, "k-pub", cases.SeedOccurredAt); err != nil {
+	if err := cases.HandleBreach(ctx, store, "k-pub", time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("HandleBreach: %v", err)
 	}
 
@@ -663,9 +629,10 @@ func TestOpen_Rollback(t *testing.T) {
 	err := cases.Open(ctx, store, cases.OpenInput{
 		ID:         "k-roll",
 		CustomerID: "c02",
+		AdvisorID:  identity.MustNewV7(),
 		Segment:    book.SegmentAdvance,
 		Factors:    cases.ClockFactors{Frustration: 2},
-		OccurredAt: cases.SeedOccurredAt,
+		OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 	})
 	if err == nil {
 		t.Fatal("Open error = nil, want wrapped insert error")
@@ -710,9 +677,10 @@ func TestPublishDelays_OnceAfterAck(t *testing.T) {
 	if err := cases.Open(ctx, store, cases.OpenInput{
 		ID:         "k-delay",
 		CustomerID: "c02",
+		AdvisorID:  identity.MustNewV7(),
 		Segment:    book.SegmentAdvance,
 		Factors:    cases.ClockFactors{Frustration: 3},
-		OccurredAt: cases.SeedOccurredAt,
+		OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -821,9 +789,10 @@ func TestRunPublisher_RetriesThenStops(t *testing.T) {
 	if err := cases.Open(ctx, store, cases.OpenInput{
 		ID:         "k-run",
 		CustomerID: "c02",
+		AdvisorID:  identity.MustNewV7(),
 		Segment:    book.SegmentAdvance,
 		Factors:    cases.ClockFactors{Frustration: 2},
-		OccurredAt: cases.SeedOccurredAt,
+		OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -892,8 +861,9 @@ func TestApplyBreachDelivery_PlainAndJSON(t *testing.T) {
 		if err := cases.Open(ctx, store, cases.OpenInput{
 			ID:         "k-plain",
 			CustomerID: "c02",
+			AdvisorID:  identity.MustNewV7(),
 			Segment:    book.SegmentAdvance,
-			OccurredAt: cases.SeedOccurredAt,
+			OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 		}); err != nil {
 			t.Fatalf("Open: %v", err)
 		}
@@ -924,8 +894,9 @@ func TestApplyBreachDelivery_PlainAndJSON(t *testing.T) {
 		if err := cases.Open(ctx, store, cases.OpenInput{
 			ID:         "k-json",
 			CustomerID: "c02",
+			AdvisorID:  identity.MustNewV7(),
 			Segment:    book.SegmentAdvance,
-			OccurredAt: cases.SeedOccurredAt,
+			OccurredAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 		}); err != nil {
 			t.Fatalf("Open: %v", err)
 		}

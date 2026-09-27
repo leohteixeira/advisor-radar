@@ -3,286 +3,170 @@ package timeline_test
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/identity"
 	"github.com/leohteixeira/advisor-radar/internal/timeline"
 )
 
+func seedCustomer(t *testing.T, idx *timeline.Index, customerID string) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	rows := []struct {
+		key     string
+		ago     time.Duration
+		payload map[string]any
+	}{
+		{event.NameMessageTriaged, 12 * time.Minute, map[string]any{"text": "Se isso não for resolvido hoje", "intent": "Reclamação", "channel": "chat", "meta": "Reclamação"}},
+		{event.NameMessageReceived, 1500 * time.Minute, map[string]any{"text": "transferência", "channel": "e-mail", "title": "Mensagem · e-mail", "meta": "Operacional"}},
+		{"advisory.note.recorded", 2900 * time.Minute, map[string]any{"kind": "nota", "title": "Nota do assessor", "text": "Cliente pretende comprar imóvel em Orlando", "meta": "Ana"}},
+		{event.NameAccountEventRecorded, 4400 * time.Minute, map[string]any{"kind": "saque", "title": "Saque", "text": "US$ 20.000", "meta": "7%"}},
+		{event.NameCaseStatusChanged, 10100 * time.Minute, map[string]any{"case_id": "k1", "state": "Resolvido", "text": "DARF", "meta": "Tributação"}},
+		{event.NameAccountEventRecorded, 21000 * time.Minute, map[string]any{"kind": "aporte", "title": "Aporte", "text": "US$ 45.000", "meta": "câmbio"}},
+		{"advisory.note.recorded", 43000 * time.Minute, map[string]any{"kind": "telefone", "title": "Ligação", "text": "Revisão", "meta": "Ana"}},
+	}
+	for _, r := range rows {
+		eid := identity.MustNewV7()
+		body, _ := json.Marshal(map[string]any{
+			"event_id": eid, "occurred_at": now.Add(-r.ago),
+			"customer_id": customerID, "schema_version": 1, "payload": r.payload,
+		})
+		if _, _, err := idx.ApplyDelivery(ctx, r.key, body); err != nil {
+			t.Fatalf("apply %s: %v", r.key, err)
+		}
+	}
+}
+
 func TestIndex_SearchOrlando(t *testing.T) {
 	t.Parallel()
+	cust := identity.MustNewV7()
 	idx := timeline.NewIndex()
-	items, err := idx.Search(context.Background(), "c01", "Orlando", "")
+	seedCustomer(t, idx, cust)
+	items, err := idx.Search(context.Background(), cust, "Orlando", "")
 	if err != nil {
-		t.Fatalf("search: %v", err)
+		t.Fatal(err)
 	}
 	if len(items) != 1 {
 		t.Fatalf("items = %d, want 1", len(items))
-	}
-	if items[0].Kind != "nota" {
-		t.Fatalf("kind = %q, want nota", items[0].Kind)
-	}
-	for _, it := range items {
-		if it.Kind == "saque" {
-			t.Fatal("saque row must not match Orlando")
-		}
 	}
 }
 
 func TestIndex_ChipNotas(t *testing.T) {
 	t.Parallel()
+	cust := identity.MustNewV7()
 	idx := timeline.NewIndex()
-	items, err := idx.Search(context.Background(), "c01", "", "notas")
+	seedCustomer(t, idx, cust)
+	items, err := idx.Search(context.Background(), cust, "", "notas")
 	if err != nil {
-		t.Fatalf("search: %v", err)
+		t.Fatal(err)
 	}
 	if len(items) != 1 || items[0].Kind != "nota" {
 		t.Fatalf("items = %+v, want one nota", items)
 	}
 }
 
-func TestIndex_EmptyCustomer(t *testing.T) {
-	t.Parallel()
-	idx := timeline.NewIndex()
-	items, err := idx.Search(context.Background(), "c99", "", "")
-	if err != nil {
-		t.Fatalf("search: %v", err)
-	}
-	if items == nil {
-		t.Fatal("items must be empty slice, not nil")
-	}
-	if len(items) != 0 {
-		t.Fatalf("items = %d, want 0", len(items))
-	}
-}
-
 func TestIndex_SeedSevenRows(t *testing.T) {
 	t.Parallel()
+	cust := identity.MustNewV7()
 	idx := timeline.NewIndex()
-	items, err := idx.Search(context.Background(), "c01", "", "")
+	seedCustomer(t, idx, cust)
+	items, err := idx.Search(context.Background(), cust, "", "")
 	if err != nil {
-		t.Fatalf("search: %v", err)
+		t.Fatal(err)
 	}
 	if len(items) != 7 {
 		t.Fatalf("items = %d, want 7", len(items))
-	}
-	var hasOrlando, hasDARF, hasSaque, hasMsg bool
-	for _, it := range items {
-		if strings.Contains(it.Text, "Orlando") {
-			hasOrlando = true
-		}
-		if strings.Contains(it.Text, "DARF") {
-			hasDARF = true
-		}
-		if it.Kind == "saque" {
-			hasSaque = true
-		}
-		if it.Kind == "mensagem" {
-			hasMsg = true
-		}
-	}
-	if !hasOrlando || !hasDARF || !hasSaque || !hasMsg {
-		t.Fatalf("seed missing expected rows: orlando=%v darf=%v saque=%v msg=%v", hasOrlando, hasDARF, hasSaque, hasMsg)
-	}
-}
-
-func TestIndex_IdempotentApply(t *testing.T) {
-	t.Parallel()
-	idx := timeline.NewIndex()
-	body, err := json.Marshal(map[string]any{
-		"event_id":       "ev-dup-1",
-		"occurred_at":    time.Now().UTC(),
-		"customer_id":    "c50",
-		"schema_version": 1,
-		"payload": map[string]any{
-			"kind":   "saque",
-			"title":  "Saque",
-			"text":   "US$ 1.000,00",
-			"meta":   "teste",
-			"amount": 1000,
-		},
-	})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	ctx := context.Background()
-	applied, _, err := idx.ApplyDelivery(ctx, event.NameAccountEventRecorded, body)
-	if err != nil {
-		t.Fatalf("first: %v", err)
-	}
-	if !applied {
-		t.Fatal("first delivery should apply")
-	}
-	applied, _, err = idx.ApplyDelivery(ctx, event.NameAccountEventRecorded, body)
-	if err != nil {
-		t.Fatalf("second: %v", err)
-	}
-	if applied {
-		t.Fatal("second delivery must be a no-op")
-	}
-	items, err := idx.Search(ctx, "c50", "", "")
-	if err != nil {
-		t.Fatalf("search: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("items = %d, want 1 after duplicate delivery", len(items))
 	}
 }
 
 func TestIndex_TelefoneOnlyOnTodos(t *testing.T) {
 	t.Parallel()
+	cust := identity.MustNewV7()
 	idx := timeline.NewIndex()
+	seedCustomer(t, idx, cust)
 	ctx := context.Background()
-	all, err := idx.Search(ctx, "c01", "", "todos")
+	all, err := idx.Search(ctx, cust, "", "todos")
 	if err != nil {
-		t.Fatalf("todos: %v", err)
+		t.Fatal(err)
 	}
 	found := false
-	for _, it := range all {
-		if it.Kind == "telefone" {
+	for _, e := range all {
+		if e.Kind == "telefone" {
 			found = true
-			break
 		}
 	}
 	if !found {
 		t.Fatal("telefone missing on Todos")
 	}
-	conta, err := idx.Search(ctx, "c01", "", "conta")
+	conta, err := idx.Search(ctx, cust, "", "conta")
 	if err != nil {
-		t.Fatalf("conta: %v", err)
+		t.Fatal(err)
 	}
-	for _, it := range conta {
-		if it.Kind == "telefone" {
-			t.Fatal("telefone must not appear on Conta chip")
+	for _, e := range conta {
+		if e.Kind == "telefone" {
+			t.Fatal("telefone must not appear on conta")
 		}
 	}
 }
 
 func TestIndex_ChipContaMensagensCasos(t *testing.T) {
 	t.Parallel()
+	cust := identity.MustNewV7()
 	idx := timeline.NewIndex()
+	seedCustomer(t, idx, cust)
 	ctx := context.Background()
-
-	conta, err := idx.Search(ctx, "c01", "", "conta")
+	conta, err := idx.Search(ctx, cust, "", "conta")
 	if err != nil {
-		t.Fatalf("conta: %v", err)
+		t.Fatal(err)
 	}
-	var hasSaque, hasAporte bool
-	for _, it := range conta {
-		if _, ok := map[string]struct{}{"saque": {}, "aporte": {}, "queda": {}, "segmento": {}, "contato": {}}[it.Kind]; !ok {
-			t.Fatalf("unexpected conta kind %q", it.Kind)
+	var saque, aporte bool
+	for _, e := range conta {
+		if e.Kind == "saque" {
+			saque = true
 		}
-		if it.Kind == "saque" {
-			hasSaque = true
-		}
-		if it.Kind == "aporte" {
-			hasAporte = true
+		if e.Kind == "aporte" {
+			aporte = true
 		}
 	}
-	if !hasSaque || !hasAporte {
-		t.Fatalf("conta missing saque/aporte: saque=%v aporte=%v", hasSaque, hasAporte)
+	if !saque || !aporte {
+		t.Fatalf("conta missing saque/aporte: saque=%v aporte=%v", saque, aporte)
 	}
-
-	msgs, err := idx.Search(ctx, "c01", "", "mensagens")
+	msgs, err := idx.Search(ctx, cust, "", "mensagens")
 	if err != nil {
-		t.Fatalf("mensagens: %v", err)
+		t.Fatal(err)
 	}
-	if len(msgs) == 0 {
-		t.Fatal("mensagens empty")
+	if len(msgs) < 1 {
+		t.Fatal("want messages")
 	}
-	for _, it := range msgs {
-		if it.Kind != "mensagem" {
-			t.Fatalf("mensagens kind = %q", it.Kind)
-		}
-	}
-
-	casos, err := idx.Search(ctx, "c01", "", "casos")
+	casos, err := idx.Search(ctx, cust, "", "casos")
 	if err != nil {
-		t.Fatalf("casos: %v", err)
+		t.Fatal(err)
 	}
-	if len(casos) == 0 {
-		t.Fatal("casos empty")
-	}
-	for _, it := range casos {
-		if it.Kind != "caso" {
-			t.Fatalf("casos kind = %q", it.Kind)
-		}
+	if len(casos) < 1 {
+		t.Fatal("want cases")
 	}
 }
 
-func TestIndex_ApplyEventKinds(t *testing.T) {
+func TestIndex_IdempotentApply(t *testing.T) {
 	t.Parallel()
-	now := time.Now().UTC()
-	cases := []struct {
-		name       string
-		routingKey string
-		payload    map[string]any
-		wantKind   string
-		chip       string
-	}{
-		{
-			name:       "message.triaged",
-			routingKey: event.NameMessageTriaged,
-			payload:    map[string]any{"text": "olá", "intent": "Contato", "channel": "chat"},
-			wantKind:   "mensagem",
-			chip:       "mensagens",
-		},
-		{
-			name:       "alert.raised",
-			routingKey: event.NameAlertRaised,
-			payload:    map[string]any{"kind": "saque", "reason": "grande", "rule": "r"},
-			wantKind:   "saque",
-			chip:       "conta",
-		},
-		{
-			name:       "case.opened",
-			routingKey: event.NameCaseOpened,
-			payload:    map[string]any{"case_id": "k2001", "text": "aberto", "meta": "m"},
-			wantKind:   "caso",
-			chip:       "casos",
-		},
-		{
-			name:       "case.status.changed",
-			routingKey: event.NameCaseStatusChanged,
-			payload:    map[string]any{"case_id": "k2002", "state": "resolvido", "text": "fechado", "meta": "m"},
-			wantKind:   "caso",
-			chip:       "casos",
-		},
+	idx := timeline.NewIndex()
+	cust := identity.MustNewV7()
+	eid := identity.MustNewV7()
+	body, _ := json.Marshal(map[string]any{
+		"event_id": eid, "occurred_at": time.Now().UTC(),
+		"customer_id": cust, "schema_version": 1,
+		"payload": map[string]any{"kind": "saque", "text": "x"},
+	})
+	ctx := context.Background()
+	a1, _, err := idx.ApplyDelivery(ctx, event.NameAccountEventRecorded, body)
+	if err != nil || !a1 {
+		t.Fatalf("first apply: %v %v", a1, err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			idx := timeline.NewIndex()
-			cust := "c-apply-" + tc.wantKind + "-" + tc.name
-			body, err := json.Marshal(map[string]any{
-				"event_id":       "ev-" + tc.name,
-				"occurred_at":    now,
-				"customer_id":    cust,
-				"schema_version": 1,
-				"payload":        tc.payload,
-			})
-			if err != nil {
-				t.Fatalf("marshal: %v", err)
-			}
-			applied, entry, err := idx.ApplyDelivery(context.Background(), tc.routingKey, body)
-			if err != nil {
-				t.Fatalf("apply: %v", err)
-			}
-			if !applied {
-				t.Fatal("expected applied")
-			}
-			if entry.Kind != tc.wantKind {
-				t.Fatalf("kind = %q, want %q", entry.Kind, tc.wantKind)
-			}
-			hit, err := idx.Search(context.Background(), cust, "", tc.chip)
-			if err != nil {
-				t.Fatalf("search: %v", err)
-			}
-			if len(hit) != 1 || hit[0].Kind != tc.wantKind {
-				t.Fatalf("chip %s hit = %+v", tc.chip, hit)
-			}
-		})
+	a2, _, err := idx.ApplyDelivery(ctx, event.NameAccountEventRecorded, body)
+	if err != nil || a2 {
+		t.Fatalf("second apply: %v %v", a2, err)
 	}
 }

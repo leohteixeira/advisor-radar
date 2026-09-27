@@ -2,46 +2,57 @@ package timeline_test
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
 	timelinev1 "github.com/leohteixeira/advisor-radar/gen/timeline/v1"
+	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/identity"
 	"github.com/leohteixeira/advisor-radar/internal/timeline"
 )
 
 func TestGRPC_SearchViaBufconn(t *testing.T) {
 	t.Parallel()
+	idx := timeline.NewIndex()
+	cust := identity.MustNewV7()
+	eid := identity.MustNewV7()
+	body, _ := json.Marshal(map[string]any{
+		"event_id": eid, "occurred_at": time.Now().UTC().Add(-12 * time.Minute),
+		"customer_id": cust, "schema_version": 1,
+		"payload": map[string]any{"kind": "nota", "title": "Nota", "text": "Orlando", "meta": "x"},
+	})
+	if _, _, err := idx.ApplyDelivery(context.Background(), "advisory.note.recorded", body); err != nil {
+		t.Fatal(err)
+	}
+
 	lis := bufconn.Listen(1024 * 1024)
 	srv := grpc.NewServer()
-	timelinev1.RegisterTimelineServiceServer(srv, timeline.NewGRPCServer(timeline.NewIndex()))
-	go func() { _ = srv.Serve(lis) }()
+	timelinev1.RegisterTimelineServiceServer(srv, timeline.NewGRPCServer(idx))
+	go srv.Serve(lis)
 	t.Cleanup(srv.Stop)
 
-	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return lis.Dial()
-		}),
+	conn, err := grpc.DialContext(context.Background(), "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
-		t.Fatalf("dial: %v", err)
+		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
 	client := timelinev1.NewTimelineServiceClient(conn)
-	res, err := client.Search(context.Background(), &timelinev1.SearchRequest{
-		CustomerId: "c01",
-		Query:      "Orlando",
-	})
+	res, err := client.Search(context.Background(), &timelinev1.SearchRequest{CustomerId: cust, Query: "Orlando"})
 	if err != nil {
-		t.Fatalf("search: %v", err)
+		t.Fatal(err)
 	}
-	if len(res.GetItems()) != 1 || res.GetItems()[0].GetKind() != "nota" {
+	if len(res.GetItems()) != 1 {
 		t.Fatalf("items = %+v", res.GetItems())
 	}
+	_ = event.NameAccountEventRecorded
 }

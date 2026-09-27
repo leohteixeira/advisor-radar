@@ -6,24 +6,6 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/book"
 )
 
-func TestClients_SegmentMatchesAUM(t *testing.T) {
-	t.Parallel()
-
-	if len(book.Clients) != 22 {
-		t.Fatalf("Clients len = %d, want 22", len(book.Clients))
-	}
-
-	for id, c := range book.Clients {
-		got := book.SegmentFromAssets(c.AUM)
-		if got != c.Segment {
-			t.Errorf("%s: SegmentFromAssets(%.0f) = %q, want %q", id, c.AUM, got, c.Segment)
-		}
-		if c.ID != id {
-			t.Errorf("Clients[%s].ID = %q, want %q", id, c.ID, id)
-		}
-	}
-}
-
 func TestSegmentFromAssets_Bounds(t *testing.T) {
 	t.Parallel()
 

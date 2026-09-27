@@ -231,45 +231,6 @@ func (b *fakeBroker) sentCount() int {
 	return len(b.sent)
 }
 
-func TestRaiseSeed_Twice(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	store := newMemStore()
-
-	if err := advisory.RaiseSeed(ctx, store); err != nil {
-		t.Fatalf("first RaiseSeed: %v", err)
-	}
-	want := map[string]string{
-		"al-s11": advisory.KindSaque,
-		"al-s12": advisory.KindQueda,
-		"al-s13": advisory.KindAporte,
-		"al-s14": advisory.KindSegmento,
-		"al-s15": advisory.KindContato,
-		"al-s16": advisory.KindSaque,
-		"al-s17": advisory.KindQueda,
-	}
-	if store.alertCount() != 7 {
-		t.Fatalf("after first RaiseSeed alerts = %d, want 7", store.alertCount())
-	}
-	got := store.alertKinds()
-	for id, kind := range want {
-		if got[id] != kind {
-			t.Fatalf("alert %s kind = %q, want %q", id, got[id], kind)
-		}
-	}
-	if store.outboxCount() != 7 {
-		t.Fatalf("outbox = %d, want 7", store.outboxCount())
-	}
-
-	if err := advisory.RaiseSeed(ctx, store); err != nil {
-		t.Fatalf("second RaiseSeed: %v", err)
-	}
-	if store.alertCount() != 7 {
-		t.Fatalf("after second RaiseSeed alerts = %d, want 7", store.alertCount())
-	}
-}
-
 func TestApply_CrossingDeposit(t *testing.T) {
 	t.Parallel()
 
@@ -278,7 +239,7 @@ func TestApply_CrossingDeposit(t *testing.T) {
 	env := event.Envelope{
 		Name:          event.NameAccountEventRecorded,
 		EventID:       "ev-c13-deposit",
-		OccurredAt:    advisory.SeedOccurredAt,
+		OccurredAt:    time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 		CustomerID:    "c13",
 		SchemaVersion: event.SchemaVersionMVP,
 		Payload: sim.AccountPayload{
@@ -295,17 +256,25 @@ func TestApply_CrossingDeposit(t *testing.T) {
 	if len(kinds) != 2 {
 		t.Fatalf("alerts = %d, want 2: %v", len(kinds), kinds)
 	}
-	wantIDs := map[string]string{
-		"al-ev-c13-deposit-deposit": advisory.KindAporte,
-		"al-ev-c13-deposit-segment": advisory.KindSegmento,
+	found := map[string]bool{}
+	for _, kind := range kinds {
+		found[kind] = true
 	}
-	for id, kind := range wantIDs {
-		if kinds[id] != kind {
-			t.Fatalf("alert %s kind = %q, want %q", id, kinds[id], kind)
-		}
+	if !found[advisory.KindAporte] || !found[advisory.KindSegmento] {
+		t.Fatalf("kinds = %v, want aporte and segmento", kinds)
 	}
 	store.mu.Lock()
-	seg := store.alerts["al-ev-c13-deposit-segment"]
+	var seg advisory.AlertRow
+	for _, row := range store.alerts {
+		var payload advisory.AlertPayload
+		if err := json.Unmarshal(row.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if payload.Kind == advisory.KindSegmento {
+			seg = row
+			break
+		}
+	}
 	store.mu.Unlock()
 	var payload advisory.AlertPayload
 	if err := json.Unmarshal(seg.Payload, &payload); err != nil {
@@ -324,7 +293,7 @@ func TestApply_ExactWithdrawal(t *testing.T) {
 	env := event.Envelope{
 		Name:          event.NameAccountEventRecorded,
 		EventID:       "ev-exact-withdrawal",
-		OccurredAt:    advisory.SeedOccurredAt,
+		OccurredAt:    time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 		CustomerID:    "c01",
 		SchemaVersion: event.SchemaVersionMVP,
 		Payload: sim.AccountPayload{
@@ -350,7 +319,7 @@ func TestApply_ExactDrop(t *testing.T) {
 	env := event.Envelope{
 		Name:          event.NameAccountEventRecorded,
 		EventID:       "ev-exact-drop",
-		OccurredAt:    advisory.SeedOccurredAt,
+		OccurredAt:    time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 		CustomerID:    "c01",
 		SchemaVersion: event.SchemaVersionMVP,
 		Payload: sim.AccountPayload{
@@ -376,7 +345,7 @@ func TestApply_EqualDeposit(t *testing.T) {
 	env := event.Envelope{
 		Name:          event.NameAccountEventRecorded,
 		EventID:       "ev-equal-deposit",
-		OccurredAt:    advisory.SeedOccurredAt,
+		OccurredAt:    time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 		CustomerID:    "c03",
 		SchemaVersion: event.SchemaVersionMVP,
 		Payload: sim.AccountPayload{
@@ -402,7 +371,7 @@ func TestApply_SameBand(t *testing.T) {
 	env := event.Envelope{
 		Name:          event.NameAccountEventRecorded,
 		EventID:       "ev-same-band",
-		OccurredAt:    advisory.SeedOccurredAt,
+		OccurredAt:    time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 		CustomerID:    "c02",
 		SchemaVersion: event.SchemaVersionMVP,
 		Payload: sim.AccountPayload{
@@ -428,14 +397,14 @@ func TestApplySilence_Boundary(t *testing.T) {
 	ctx := context.Background()
 	store := newMemStore()
 
-	if err := advisory.ApplySilence(ctx, store, "c14", 90, 175000, 175000, "seed-s15", "al-s15", advisory.SeedOccurredAt); err != nil {
+	if err := advisory.ApplySilence(ctx, store, "c14", 90, 175000, 175000, "seed-s15", "al-s15", time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("ApplySilence 90: %v", err)
 	}
 	if store.alertCount() != 0 {
 		t.Fatalf("after 90 days alerts = %d, want 0", store.alertCount())
 	}
 
-	if err := advisory.ApplySilence(ctx, store, "c14", 94, 175000, 175000, "seed-s15", "al-s15", advisory.SeedOccurredAt); err != nil {
+	if err := advisory.ApplySilence(ctx, store, "c14", 94, 175000, 175000, "seed-s15", "al-s15", time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("ApplySilence 94: %v", err)
 	}
 	if store.alertCount() != 1 {
@@ -455,7 +424,7 @@ func TestApply_Redelivery(t *testing.T) {
 	env := event.Envelope{
 		Name:          event.NameAccountEventRecorded,
 		EventID:       "ev-redeliver",
-		OccurredAt:    advisory.SeedOccurredAt,
+		OccurredAt:    time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 		CustomerID:    "c19",
 		SchemaVersion: event.SchemaVersionMVP,
 		Payload: sim.AccountPayload{
@@ -476,155 +445,6 @@ func TestApply_Redelivery(t *testing.T) {
 	}
 }
 
-func TestPublish_BrokerRefusesThenAccepts(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	store := newMemStore()
-	if err := advisory.RaiseSeed(ctx, store); err != nil {
-		t.Fatalf("RaiseSeed: %v", err)
-	}
-
-	wantRules := map[string]string{
-		"al-s11": advisory.RuleWithdrawal,
-		"al-s12": advisory.RuleDrop,
-		"al-s13": advisory.RuleDeposit,
-		"al-s14": advisory.RuleSegment,
-		"al-s15": advisory.RuleSilence,
-		"al-s16": advisory.RuleWithdrawal,
-		"al-s17": advisory.RuleDrop,
-	}
-	store.mu.Lock()
-	for id, wantRule := range wantRules {
-		row, ok := store.alerts[id]
-		if !ok {
-			store.mu.Unlock()
-			t.Fatalf("missing seed alert %s", id)
-		}
-		if row.Rule != wantRule {
-			store.mu.Unlock()
-			t.Fatalf("alert %s rule = %q, want %q", id, row.Rule, wantRule)
-		}
-	}
-	store.mu.Unlock()
-
-	unpublished, err := store.ListUnpublished(ctx)
-	if err != nil {
-		t.Fatalf("ListUnpublished: %v", err)
-	}
-	if len(unpublished) != 7 {
-		t.Fatalf("unpublished = %d, want 7", len(unpublished))
-	}
-	for _, row := range unpublished {
-		if row.RoutingKey != event.NameAlertRaised {
-			t.Fatalf("outbox %s routing key = %q, want %q", row.EventID, row.RoutingKey, event.NameAlertRaised)
-		}
-		if len(row.Payload) == 0 {
-			t.Fatalf("outbox %s body is empty", row.EventID)
-		}
-	}
-
-	refuse := errors.New("broker refused")
-	broker := &fakeBroker{refuseID: "al-s11", refuseErr: refuse}
-	err = advisory.Publish(ctx, store, broker)
-	if err == nil {
-		t.Fatal("Publish error = nil, want wrapped broker error")
-	}
-	if !errors.Is(err, refuse) {
-		t.Fatalf("Publish error = %v, want wrap of %v", err, refuse)
-	}
-	if store.publishedCount() != 0 {
-		t.Fatalf("published = %d, want 0 after refuse", store.publishedCount())
-	}
-
-	broker.refuseID = ""
-	if err := advisory.Publish(ctx, store, broker); err != nil {
-		t.Fatalf("Publish after accept: %v", err)
-	}
-	if store.publishedCount() != 7 {
-		t.Fatalf("published = %d, want 7", store.publishedCount())
-	}
-	if broker.sentCount() != 7 {
-		t.Fatalf("sent = %d, want 7", broker.sentCount())
-	}
-	broker.mu.Lock()
-	sent := append([]advisory.OutboxRow(nil), broker.sent...)
-	broker.mu.Unlock()
-	for _, row := range sent {
-		if row.RoutingKey != event.NameAlertRaised {
-			t.Fatalf("sent %s routing key = %q, want %q", row.EventID, row.RoutingKey, event.NameAlertRaised)
-		}
-		if len(row.Payload) == 0 {
-			t.Fatalf("sent %s body is empty", row.EventID)
-		}
-	}
-
-	if err := advisory.Publish(ctx, store, broker); err != nil {
-		t.Fatalf("second Publish: %v", err)
-	}
-	if broker.sentCount() != 7 {
-		t.Fatalf("after second Publish sent = %d, want 7", broker.sentCount())
-	}
-}
-
-func TestRunPublisher_RetriesThenStops(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	store := newMemStore()
-	refuse := errors.New("broker refused")
-	broker := &fakeBroker{refuseID: "al-s11", refuseErr: refuse}
-	if err := advisory.RaiseSeed(ctx, store); err != nil {
-		t.Fatalf("RaiseSeed: %v", err)
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- advisory.RunPublisher(ctx, store, broker, 15*time.Millisecond)
-	}()
-
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		broker.mu.Lock()
-		attempts := broker.attempts
-		broker.mu.Unlock()
-		if attempts > 0 && store.publishedCount() == 0 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	broker.mu.Lock()
-	attempts := broker.attempts
-	broker.mu.Unlock()
-	if attempts == 0 || store.publishedCount() != 0 {
-		t.Fatalf("attempts=%d published=%d, want a refused attempt and 0 published", attempts, store.publishedCount())
-	}
-
-	broker.mu.Lock()
-	broker.refuseID = ""
-	broker.mu.Unlock()
-
-	deadline = time.Now().Add(time.Second)
-	for store.publishedCount() != 7 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if store.publishedCount() != 7 {
-		t.Fatalf("published = %d, want 7 after broker recovers", store.publishedCount())
-	}
-
-	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("RunPublisher error = %v, want nil", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("RunPublisher did not return after cancel")
-	}
-}
-
 func TestApply_Rollback(t *testing.T) {
 	t.Parallel()
 
@@ -634,7 +454,7 @@ func TestApply_Rollback(t *testing.T) {
 	env := event.Envelope{
 		Name:          event.NameAccountEventRecorded,
 		EventID:       "ev-rollback",
-		OccurredAt:    advisory.SeedOccurredAt,
+		OccurredAt:    time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
 		CustomerID:    "c19",
 		SchemaVersion: event.SchemaVersionMVP,
 		Payload: sim.AccountPayload{
@@ -659,109 +479,5 @@ func TestApply_Rollback(t *testing.T) {
 	}
 	if store.outboxCount() != 0 {
 		t.Fatalf("outbox = %d, want 0 after rollback", store.outboxCount())
-	}
-}
-
-func TestApply_MarketDay(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	store := newMemStore()
-
-	for _, env := range sim.MarketDay() {
-		if err := advisory.Apply(ctx, store, env); err != nil {
-			t.Fatalf("Apply %s: %v", env.EventID, err)
-		}
-	}
-
-	want := map[string]string{
-		"al-md-n02-withdrawal": advisory.KindSaque,
-		"al-md-n05-drop":       advisory.KindQueda,
-	}
-	if store.alertCount() != 2 {
-		t.Fatalf("alerts = %d, want 2; got %v", store.alertCount(), store.alertKinds())
-	}
-	got := store.alertKinds()
-	for id, kind := range want {
-		if got[id] != kind {
-			t.Fatalf("alert %s kind = %q, want %q", id, got[id], kind)
-		}
-	}
-}
-
-func TestApply_MarketDayJSONMap(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	store := newMemStore()
-
-	for _, seed := range sim.MarketDay() {
-		if seed.Name != event.NameAccountEventRecorded {
-			continue
-		}
-		body, err := seed.MarshalBody()
-		if err != nil {
-			t.Fatalf("MarshalBody %s: %v", seed.EventID, err)
-		}
-		var raw map[string]any
-		if err := json.Unmarshal(body, &raw); err != nil {
-			t.Fatalf("unmarshal %s: %v", seed.EventID, err)
-		}
-		occurredAt, err := time.Parse(time.RFC3339Nano, raw["occurred_at"].(string))
-		if err != nil {
-			t.Fatalf("parse occurred_at %s: %v", seed.EventID, err)
-		}
-		env := event.Envelope{
-			Name:          event.NameAccountEventRecorded,
-			EventID:       raw["event_id"].(string),
-			OccurredAt:    occurredAt,
-			CustomerID:    raw["customer_id"].(string),
-			SchemaVersion: int(raw["schema_version"].(float64)),
-			Payload:       raw["payload"],
-		}
-		if err := advisory.Apply(ctx, store, env); err != nil {
-			t.Fatalf("Apply %s: %v", env.EventID, err)
-		}
-	}
-
-	want := map[string]string{
-		"al-md-n02-withdrawal": advisory.KindSaque,
-		"al-md-n05-drop":       advisory.KindQueda,
-	}
-	if store.alertCount() != 2 {
-		t.Fatalf("alerts = %d, want 2; got %v", store.alertCount(), store.alertKinds())
-	}
-	got := store.alertKinds()
-	for id, kind := range want {
-		if got[id] != kind {
-			t.Fatalf("alert %s kind = %q, want %q", id, got[id], kind)
-		}
-	}
-}
-
-func TestApply_Message(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	store := newMemStore()
-	env := event.Envelope{
-		Name:          event.NameMessageReceived,
-		EventID:       "md-n01",
-		OccurredAt:    sim.MarketDayOccurredAt,
-		CustomerID:    "c18",
-		SchemaVersion: event.SchemaVersionMVP,
-		Payload: sim.MessagePayload{
-			Channel: "email",
-			Text:    "ignored",
-		},
-	}
-	if err := advisory.Apply(ctx, store, env); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	if store.alertCount() != 0 {
-		t.Fatalf("alerts = %d, want 0", store.alertCount())
-	}
-	if store.inboxCount() != 0 {
-		t.Fatalf("inbox = %d, want 0", store.inboxCount())
 	}
 }
