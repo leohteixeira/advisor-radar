@@ -654,6 +654,228 @@ func TestHTTP_TimelineSearchError502(t *testing.T) {
 	}
 }
 
+func TestHTTP_ReviewQueue(t *testing.T) {
+	t.Parallel()
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/review", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	var body struct {
+		Items []bff.ReviewRow `json:"items"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Items) != 7 {
+		t.Fatalf("items = %d, want 7", len(body.Items))
+	}
+	wantIDs := []string{"r01", "r02", "r03", "r04", "r05", "r06", "r07"}
+	for i, id := range wantIDs {
+		if body.Items[i].ID != id {
+			t.Fatalf("items[%d].id = %q, want %q", i, body.Items[i].ID, id)
+		}
+	}
+	var r05 *bff.ReviewRow
+	for i := range body.Items {
+		if topProb(body.Items[i].Dist) >= 0.85 {
+			t.Fatalf("%s top probability %.2f must be below 0.85", body.Items[i].ID, topProb(body.Items[i].Dist))
+		}
+		if body.Items[i].ID == "r05" {
+			r05 = &body.Items[i]
+		}
+	}
+	if r05 == nil {
+		t.Fatal("r05 missing")
+	}
+	if r05.Intent != "Reclamação" {
+		t.Fatalf("r05 intent = %q, want Reclamação", r05.Intent)
+	}
+	if r05.Dist["Reclamação"] != 0.82 {
+		t.Fatalf("r05 Reclamação = %v, want 0.82", r05.Dist["Reclamação"])
+	}
+	if !body.Items[5].Fallback {
+		t.Fatal("r06 should be the fallback row")
+	}
+	for _, item := range body.Items {
+		if item.ID == "r85" {
+			t.Fatal("row at exactly 0.85 must be absent")
+		}
+	}
+}
+
+func TestHTTP_ReviewCorrect(t *testing.T) {
+	t.Parallel()
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
+	req := httptest.NewRequest(http.MethodPut, "/v1/review/r05", strings.NewReader(`{"intent":"Operacional"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	var row bff.ReviewRow
+	if err := json.Unmarshal(rr.Body.Bytes(), &row); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if row.Intent != "Operacional" {
+		t.Fatalf("intent = %q, want Operacional", row.Intent)
+	}
+	if !row.Corrected {
+		t.Fatal("corrected should be true")
+	}
+
+	get := httptest.NewRequest(http.MethodGet, "/v1/review", nil)
+	getRR := httptest.NewRecorder()
+	h.ServeHTTP(getRR, get)
+	var body struct {
+		Items []bff.ReviewRow `json:"items"`
+	}
+	if err := json.Unmarshal(getRR.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode get: %v", err)
+	}
+	found := false
+	for _, item := range body.Items {
+		if item.ID == "r05" {
+			found = true
+			if item.Intent != "Operacional" {
+				t.Fatalf("second get intent = %q", item.Intent)
+			}
+			if !item.Corrected {
+				t.Fatal("second get corrected should stay true")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("r05 missing after correction")
+	}
+}
+
+func TestHTTP_ReviewUnknownID(t *testing.T) {
+	t.Parallel()
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
+	req := httptest.NewRequest(http.MethodPut, "/v1/review/r99", strings.NewReader(`{"intent":"Operacional"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+
+	get := httptest.NewRequest(http.MethodGet, "/v1/review", nil)
+	getRR := httptest.NewRecorder()
+	h.ServeHTTP(getRR, get)
+	var body struct {
+		Items []bff.ReviewRow `json:"items"`
+	}
+	if err := json.Unmarshal(getRR.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, item := range body.Items {
+		if item.ID == "r05" {
+			if item.Intent != "Reclamação" {
+				t.Fatalf("r05 intent = %q, want Reclamação", item.Intent)
+			}
+			if item.Corrected {
+				t.Fatal("r05 must stay uncorrected after unknown id")
+			}
+			return
+		}
+	}
+	t.Fatal("r05 missing")
+}
+
+func TestHTTP_ReviewBadIntent(t *testing.T) {
+	t.Parallel()
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
+	req := httptest.NewRequest(http.MethodPut, "/v1/review/r05", strings.NewReader(`{"intent":"foo"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+
+	get := httptest.NewRequest(http.MethodGet, "/v1/review", nil)
+	getRR := httptest.NewRecorder()
+	h.ServeHTTP(getRR, get)
+	var body struct {
+		Items []bff.ReviewRow `json:"items"`
+	}
+	if err := json.Unmarshal(getRR.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, item := range body.Items {
+		if item.ID == "r05" && item.Intent != "Reclamação" {
+			t.Fatalf("r05 intent changed to %q after bad intent", item.Intent)
+		}
+		if item.ID == "r05" && item.Corrected {
+			t.Fatal("r05 must stay uncorrected after bad intent")
+		}
+	}
+}
+
+func TestHTTP_ManagerSnapshot(t *testing.T) {
+	t.Parallel()
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/manager", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	var snap bff.ManagerSnapshot
+	if err := json.Unmarshal(rr.Body.Bytes(), &snap); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if snap.AvgFirstContactMin != 14 {
+		t.Fatalf("avgFirstContactMin = %d, want 14", snap.AvgFirstContactMin)
+	}
+	if snap.ReviewPct != 18 {
+		t.Fatalf("reviewPct = %d, want 18", snap.ReviewPct)
+	}
+	if snap.FallbackPct != 6 {
+		t.Fatalf("fallbackPct = %d, want 6", snap.FallbackPct)
+	}
+	var ana *bff.ManagerBacklog
+	for i := range snap.Backlog {
+		if snap.Backlog[i].Advisor == "Ana Paula Ribeiro" {
+			ana = &snap.Backlog[i]
+			break
+		}
+	}
+	if ana == nil {
+		t.Fatal("Ana Paula Ribeiro missing from backlog")
+	}
+	if ana.Open != 17 || ana.Risk != 4 || ana.Overdue != 1 {
+		t.Fatalf("ana = %+v, want open 17 risk 4 overdue 1", ana)
+	}
+	byID := map[string]bff.ManagerAtRisk{}
+	for _, row := range snap.AtRisk {
+		byID[row.ID] = row
+	}
+	if byID["k1042"].Remaining != 46 {
+		t.Fatalf("k1042 remaining = %d, want 46", byID["k1042"].Remaining)
+	}
+	if byID["k1044"].Remaining != -8 {
+		t.Fatalf("k1044 remaining = %d, want -8 (overdue)", byID["k1044"].Remaining)
+	}
+}
+
+func topProb(dist map[string]float64) float64 {
+	var top float64
+	first := true
+	for _, v := range dist {
+		if first || v > top {
+			top = v
+			first = false
+		}
+	}
+	return top
+}
+
 func TestHTTP_TimelineViaGRPCBufconn(t *testing.T) {
 	t.Parallel()
 	lis := bufconn.Listen(1024 * 1024)
