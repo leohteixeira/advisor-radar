@@ -1,0 +1,4 @@
+CREATE DATABASE account_sim;
+CREATE DATABASE advisory;
+CREATE DATABASE triage;
+CREATE DATABASE cases;
