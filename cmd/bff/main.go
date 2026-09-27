@@ -37,6 +37,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	board := bff.NewBoard()
 	addr := os.Getenv("BFF_HTTP_ADDR")
 	brokerURL := os.Getenv("BFF_BROKER_URL")
+	actions := bff.NewActionsClient(os.Getenv("ADVISORY_HTTP_URL"))
 
 	if addr == "" && brokerURL == "" {
 		<-ctx.Done()
@@ -53,7 +54,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if addr != "" {
 		httpSrv = &http.Server{
 			Addr:              addr,
-			Handler:           bff.NewHandler(board),
+			Handler:           bff.NewHandler(board, actions),
 			ReadHeaderTimeout: 5 * time.Second,
 			BaseContext:       func(net.Listener) context.Context { return runCtx },
 		}

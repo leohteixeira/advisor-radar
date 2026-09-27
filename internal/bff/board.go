@@ -36,6 +36,7 @@ type Signal struct {
 	Days        int                `json:"days,omitempty"`
 	Rule        string             `json:"rule,omitempty"`
 	Reason      string             `json:"reason,omitempty"`
+	ContactedAt *time.Time         `json:"contacted_at,omitempty"`
 }
 
 // StreamEvent is one retained SSE frame (event name is always "signal").

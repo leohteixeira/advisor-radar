@@ -35,3 +35,9 @@ CREATE TABLE IF NOT EXISTS outbox (
 CREATE INDEX IF NOT EXISTS advisory_outbox_unpublished_idx
     ON outbox (id)
     WHERE published_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS signal_action (
+    signal_id     TEXT PRIMARY KEY,
+    contacted_at  TIMESTAMPTZ NULL,
+    snoozed_until TIMESTAMPTZ NULL
+);

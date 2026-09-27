@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -35,76 +37,140 @@ func main() {
 
 func run(ctx context.Context, logger *slog.Logger) error {
 	dsn := os.Getenv("ADVISORY_DATABASE_URL")
-	if dsn == "" {
-		// No database in CI process tests; wait for signal only.
-		<-ctx.Done()
-		return nil
-	}
-
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		return fmt.Errorf("advisory: connect database: %w", err)
-	}
-	defer pool.Close()
-
-	store := advisory.NewPGXStore(pool)
-	if err := store.EnsureSchema(ctx); err != nil {
-		return err
-	}
-	if err := store.SeedBook(ctx); err != nil {
-		return err
-	}
-	if err := advisory.RaiseSeed(ctx, store); err != nil {
-		return fmt.Errorf("advisory: raise seed: %w", err)
-	}
-	logger.Info("seed alerts raised", "service", "advisory")
-
+	httpAddr := os.Getenv("ADVISORY_HTTP_ADDR")
 	brokerURL := os.Getenv("ADVISORY_BROKER_URL")
-	if brokerURL == "" {
+
+	var actionStore advisory.ActionStore = advisory.NewMemoryActionStore()
+	var store *advisory.PGXStore
+	var pool *pgxpool.Pool
+
+	if dsn != "" {
+		var err error
+		pool, err = pgxpool.New(ctx, dsn)
+		if err != nil {
+			return fmt.Errorf("advisory: connect database: %w", err)
+		}
+		defer pool.Close()
+
+		store = advisory.NewPGXStore(pool)
+		actionStore = store
+		if err := store.EnsureSchema(ctx); err != nil {
+			return err
+		}
+		if err := store.SeedBook(ctx); err != nil {
+			return err
+		}
+		if err := advisory.RaiseSeed(ctx, store); err != nil {
+			return fmt.Errorf("advisory: raise seed: %w", err)
+		}
+		logger.Info("seed alerts raised", "service", "advisory")
+	}
+
+	if dsn == "" && httpAddr == "" {
 		<-ctx.Done()
 		return nil
 	}
-
-	session, cleanup, err := dialAMQP(ctx, brokerURL)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	pubCh, err := session.conn.Channel()
-	if err != nil {
-		return fmt.Errorf("advisory: open publish channel: %w", err)
-	}
-	defer pubCh.Close()
-
-	consumeCh, err := session.conn.Channel()
-	if err != nil {
-		return fmt.Errorf("advisory: open consume channel: %w", err)
-	}
-	defer consumeCh.Close()
-
-	publisher := &amqpPublisher{ch: pubCh, exchange: session.exchange}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errCh := make(chan error, 2)
-	go func() {
-		errCh <- advisory.RunPublisher(runCtx, store, publisher, time.Second)
-	}()
-	go func() {
-		errCh <- runConsumer(runCtx, store, consumeCh, session.exchange)
-	}()
+	errCh := make(chan error, 3)
+	workers := 0
+	var httpSrv *http.Server
+	var amqpCleanup func()
+
+	if httpAddr != "" {
+		actions := advisory.NewActions(actionStore, nil)
+		httpSrv = &http.Server{
+			Addr:              httpAddr,
+			Handler:           advisory.NewActionsHandler(actions),
+			ReadHeaderTimeout: 5 * time.Second,
+			BaseContext:       func(net.Listener) context.Context { return runCtx },
+		}
+		workers++
+		go func() {
+			logger.Info("http listening", "service", "advisory", "addr", httpAddr)
+			err := httpSrv.ListenAndServe()
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- fmt.Errorf("advisory: listen: %w", err)
+				return
+			}
+			errCh <- nil
+		}()
+	}
+
+	if store != nil && brokerURL != "" {
+		session, cleanup, err := dialAMQP(ctx, brokerURL)
+		if err != nil {
+			cancel()
+			if httpSrv != nil {
+				_ = httpSrv.Close()
+			}
+			return err
+		}
+		amqpCleanup = cleanup
+
+		pubCh, err := session.conn.Channel()
+		if err != nil {
+			cleanup()
+			cancel()
+			if httpSrv != nil {
+				_ = httpSrv.Close()
+			}
+			return fmt.Errorf("advisory: open publish channel: %w", err)
+		}
+		consumeCh, err := session.conn.Channel()
+		if err != nil {
+			_ = pubCh.Close()
+			cleanup()
+			cancel()
+			if httpSrv != nil {
+				_ = httpSrv.Close()
+			}
+			return fmt.Errorf("advisory: open consume channel: %w", err)
+		}
+
+		publisher := &amqpPublisher{ch: pubCh, exchange: session.exchange}
+		workers += 2
+		go func() {
+			errCh <- advisory.RunPublisher(runCtx, store, publisher, time.Second)
+		}()
+		go func() {
+			errCh <- runConsumer(runCtx, store, consumeCh, session.exchange)
+		}()
+	}
+
+	if workers == 0 {
+		<-ctx.Done()
+		return nil
+	}
 
 	select {
 	case <-ctx.Done():
 		cancel()
-		<-errCh
-		<-errCh
+		if httpSrv != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			_ = httpSrv.Shutdown(shutdownCtx)
+		}
+		if amqpCleanup != nil {
+			amqpCleanup()
+		}
+		for i := 0; i < workers; i++ {
+			<-errCh
+		}
 		return nil
 	case err := <-errCh:
 		cancel()
-		<-errCh
+		if httpSrv != nil {
+			_ = httpSrv.Close()
+		}
+		if amqpCleanup != nil {
+			amqpCleanup()
+		}
+		for i := 1; i < workers; i++ {
+			<-errCh
+		}
 		if ctx.Err() != nil {
 			return nil
 		}
