@@ -38,6 +38,11 @@ function Icon({ d, size = 14 }: { d: string; size?: number }) {
   );
 }
 
+const ICON_SEARCH = ICONS.search ?? '';
+const ICON_CHEVRON = ICONS.chevron ?? '';
+const ICON_CHECK = ICONS.check ?? '';
+const ICON_CLOSE = ICONS.close ?? '';
+
 export function FilterBar({
   query,
   onQuery,
@@ -69,7 +74,7 @@ export function FilterBar({
       <div className="filter-bar__row">
         <label className="filter-bar__search">
           <span className="filter-bar__search-icon">
-            <Icon d={ICONS.search} size={15} />
+            <Icon d={ICON_SEARCH} size={15} />
           </span>
           <input
             value={query}
@@ -93,7 +98,7 @@ export function FilterBar({
               >
                 {g.label}
                 {selected.length > 0 ? <span className="filter-bar__count">{selected.length}</span> : null}
-                <Icon d={ICONS.chevron} size={12} />
+                <Icon d={ICON_CHEVRON} size={12} />
               </button>
               {isOpen ? (
                 <>
@@ -110,7 +115,7 @@ export function FilterBar({
                           onClick={() => onToggleOption(g.key, o.label)}
                         >
                           <span className={on ? 'filter-bar__box filter-bar__box--on' : 'filter-bar__box'}>
-                            {on ? <Icon d={ICONS.check} size={11} /> : null}
+                            {on ? <Icon d={ICON_CHECK} size={11} /> : null}
                           </span>
                           <span>{o.label}</span>
                           <span className="filter-bar__option-count">{o.count}</span>
@@ -129,7 +134,7 @@ export function FilterBar({
           {tags.map((t) => (
             <button key={t.key} type="button" className="filter-bar__tag" onClick={t.remove}>
               {t.label}
-              <Icon d={ICONS.close} size={11} />
+              <Icon d={ICON_CLOSE} size={11} />
             </button>
           ))}
           <button type="button" className="filter-bar__clear" onClick={onClear}>

@@ -1,20 +1,20 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Persona } from '../domain/types';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
-const PERSONAS: { id: Persona; label: string }[] = [
-  { id: 'queue', label: 'Fila' },
-  { id: 'review', label: 'Revisão de triagem' },
-  { id: 'manager', label: 'Painel da assessoria' },
-];
+const PERSONAS = [
+  { to: '/fila', label: 'Fila' },
+  { to: '/revisao', label: 'Revisão de triagem' },
+  { to: '/painel', label: 'Painel da assessoria' },
+] as const;
 
 interface AppShellProps {
-  children: ReactNode;
-  persona: Persona;
-  onPersonaChange: (persona: Persona) => void;
+  children?: ReactNode;
 }
 
-export function AppShell({ children, persona, onPersonaChange }: AppShellProps) {
+export function AppShell({ children }: AppShellProps) {
   const [dark, setDark] = useState(() => document.documentElement.dataset.theme === 'dark');
+  const location = useLocation();
+  const isQueue = location.pathname === '/fila' || location.pathname.endsWith('/fila');
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
@@ -32,20 +32,17 @@ export function AppShell({ children, persona, onPersonaChange }: AppShellProps) 
           Advisor Radar
         </div>
         <nav className="app-shell__persona" aria-label="Persona">
-          {PERSONAS.map((p) => {
-            const active = p.id === persona;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                className={active ? 'persona-switch__btn persona-switch__btn--active' : 'persona-switch__btn'}
-                aria-current={active ? 'page' : undefined}
-                onClick={() => onPersonaChange(p.id)}
-              >
-                {p.label}
-              </button>
-            );
-          })}
+          {PERSONAS.map((p) => (
+            <NavLink
+              key={p.to}
+              to={p.to}
+              className={({ isActive }) =>
+                isActive ? 'persona-switch__btn persona-switch__btn--active' : 'persona-switch__btn'
+              }
+            >
+              {p.label}
+            </NavLink>
+          ))}
         </nav>
         <button
           type="button"
@@ -63,8 +60,8 @@ export function AppShell({ children, persona, onPersonaChange }: AppShellProps) 
           </svg>
         </button>
       </header>
-      <main className={persona === 'queue' ? 'app-shell__main app-shell__main--queue' : 'app-shell__main'}>
-        {children}
+      <main className={isQueue ? 'app-shell__main app-shell__main--queue' : 'app-shell__main'}>
+        {children ?? <Outlet />}
       </main>
     </div>
   );

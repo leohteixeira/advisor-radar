@@ -1,20 +1,17 @@
 import { useEffect, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import type { CaseItem, Signal } from '../domain/types';
 import { ALERT_LABELS, CASE_STATES } from '../domain/types';
-import { CLIENTS, clientName, clientSegment } from '../domain/clients';
-import { Timeline360 } from './Timeline360';
 
 const FRUSTRATION = ['Calmo', 'Incomodado', 'Frustrado', 'Muito frustrado'];
 
 export type DetailSelection =
   | { type: 'signal'; signal: Signal }
-  | { type: 'case'; caseItem: CaseItem }
-  | { type: 'client'; clientId: string };
+  | { type: 'case'; caseItem: CaseItem };
 
 interface DetailModalProps {
   selection: DetailSelection;
   onClose: () => void;
-  onOpenClient: (clientId: string) => void;
   desktop: boolean;
 }
 
@@ -43,19 +40,22 @@ function typeLabel(signal: Signal): string {
   return signal.intent ?? 'Mensagem';
 }
 
-function firstName(clientId: string): string {
-  return clientName(clientId).split(' ')[0] ?? clientName(clientId);
+function displayName(item: { name?: string; client: string }): string {
+  return item.name ?? item.client;
 }
 
-function MessageDetail({
-  signal,
-  onOpenClient,
-}: {
-  signal: Signal;
-  onOpenClient: (id: string) => void;
-}) {
-  const name = clientName(signal.client);
-  const segment = clientSegment(signal.client);
+function displaySegment(item: { segment?: string }): string {
+  return item.segment ?? 'Essencial';
+}
+
+function firstName(item: { name?: string; client: string }): string {
+  const full = displayName(item);
+  return full.split(' ')[0] ?? full;
+}
+
+function MessageDetail({ signal }: { signal: Signal }) {
+  const name = displayName(signal);
+  const segment = displaySegment(signal);
   const frust = FRUSTRATION[signal.frustration ?? 0] ?? 'Calmo';
   const review = needsReview(signal);
 
@@ -86,26 +86,16 @@ function MessageDetail({
         ) : null}
       </div>
       {signal.contacted_at ? <p className="detail__contacted">Contatado</p> : null}
-      <button
-        type="button"
-        className="detail__360"
-        onClick={() => onOpenClient(signal.client)}
-      >
-        Ver visão 360 de {firstName(signal.client)} →
-      </button>
+      <Link to={`/clientes/${signal.client}`} className="detail__360">
+        Ver visão 360 de {firstName(signal)} →
+      </Link>
     </div>
   );
 }
 
-function AlertDetail({
-  signal,
-  onOpenClient,
-}: {
-  signal: Signal;
-  onOpenClient: (id: string) => void;
-}) {
-  const name = clientName(signal.client);
-  const segment = clientSegment(signal.client);
+function AlertDetail({ signal }: { signal: Signal }) {
+  const name = displayName(signal);
+  const segment = displaySegment(signal);
   const label = ALERT_LABELS[signal.alert ?? ''] ?? 'Alerta';
 
   return (
@@ -123,26 +113,16 @@ function AlertDetail({
       ) : null}
       {signal.rule ? <p className="detail__rule">{signal.rule}</p> : null}
       {signal.contacted_at ? <p className="detail__contacted">Contatado</p> : null}
-      <button
-        type="button"
-        className="detail__360"
-        onClick={() => onOpenClient(signal.client)}
-      >
-        Ver visão 360 de {firstName(signal.client)} →
-      </button>
+      <Link to={`/clientes/${signal.client}`} className="detail__360">
+        Ver visão 360 de {firstName(signal)} →
+      </Link>
     </div>
   );
 }
 
-function CaseDetail({
-  caseItem,
-  onOpenClient,
-}: {
-  caseItem: CaseItem;
-  onOpenClient: (id: string) => void;
-}) {
-  const name = clientName(caseItem.client);
-  const segment = clientSegment(caseItem.client);
+function CaseDetail({ caseItem }: { caseItem: CaseItem }) {
+  const name = displayName(caseItem);
+  const segment = displaySegment(caseItem);
   const stateLabel = CASE_STATES[caseItem.state] ?? 'Aberto';
 
   return (
@@ -176,18 +156,14 @@ function CaseDetail({
           );
         })}
       </ol>
-      <button
-        type="button"
-        className="detail__360"
-        onClick={() => onOpenClient(caseItem.client)}
-      >
-        Ver visão 360 de {firstName(caseItem.client)} →
-      </button>
+      <Link to={`/clientes/${caseItem.client}`} className="detail__360">
+        Ver visão 360 de {firstName(caseItem)} →
+      </Link>
     </div>
   );
 }
 
-export function DetailModal({ selection, onClose, onOpenClient, desktop }: DetailModalProps) {
+export function DetailModal({ selection, onClose, desktop }: DetailModalProps) {
   useEffect(() => {
     if (!desktop) {
       return;
@@ -203,28 +179,15 @@ export function DetailModal({ selection, onClose, onOpenClient, desktop }: Detai
 
   let body: ReactNode;
   let dialogLabel = 'Detalhe';
-  if (selection.type === 'client') {
-    const info = CLIENTS[selection.clientId];
-    dialogLabel = info?.name ?? selection.clientId;
-    body = (
-      <Timeline360
-        clientId={selection.clientId}
-        name={info?.name ?? selection.clientId}
-        segment={info?.segment ?? 'Essencial'}
-        aum={info?.aum}
-        advisor={info?.advisor}
-        since={info?.since}
-      />
-    );
-  } else if (selection.type === 'case') {
-    dialogLabel = clientName(selection.caseItem.client);
-    body = <CaseDetail caseItem={selection.caseItem} onOpenClient={onOpenClient} />;
+  if (selection.type === 'case') {
+    dialogLabel = displayName(selection.caseItem);
+    body = <CaseDetail caseItem={selection.caseItem} />;
   } else if (selection.signal.kind === 'alert') {
-    dialogLabel = clientName(selection.signal.client);
-    body = <AlertDetail signal={selection.signal} onOpenClient={onOpenClient} />;
+    dialogLabel = displayName(selection.signal);
+    body = <AlertDetail signal={selection.signal} />;
   } else {
-    dialogLabel = clientName(selection.signal.client);
-    body = <MessageDetail signal={selection.signal} onOpenClient={onOpenClient} />;
+    dialogLabel = displayName(selection.signal);
+    body = <MessageDetail signal={selection.signal} />;
   }
 
   const wrapped = (

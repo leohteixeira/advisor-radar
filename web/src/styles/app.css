@@ -112,6 +112,9 @@ button {
   min-height: 52px;
   box-shadow: inset 0 -2px 0 transparent;
   white-space: nowrap;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
 }
 
 .persona-switch__btn:hover {
@@ -358,6 +361,32 @@ button {
   color: inherit;
   padding: 0;
   min-height: 0;
+  text-decoration: none;
+}
+
+.customer-screen {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.customer-screen__back {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ar-touch);
+  margin-bottom: 12px;
+  color: var(--ar-ink-2);
+  text-decoration: none;
+  font: 500 14px/1.2 var(--ar-font-sans);
+}
+
+.customer-screen__back:hover {
+  color: var(--ar-ink);
+}
+
+a.detail__360 {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 .signal-card__top,

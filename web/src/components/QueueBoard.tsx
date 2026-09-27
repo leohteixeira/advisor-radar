@@ -21,7 +21,6 @@ interface QueueBoardProps {
   emptyTitle: string;
   emptyText: string;
   onRetry: () => void;
-  onOpen: (id: string) => void;
   onViewCase: (id: string) => void;
   onOpenCase: (id: string) => void;
   onContacted: (id: string) => void;
@@ -39,7 +38,6 @@ export function QueueBoard({
   emptyTitle,
   emptyText,
   onRetry,
-  onOpen,
   onViewCase,
   onOpenCase,
   onContacted,
@@ -144,7 +142,6 @@ export function QueueBoard({
                     <SignalCard
                       key={row.signal.id}
                       row={row}
-                      onOpen={onOpen}
                       onOpenCase={onOpenCase}
                       onContacted={onContacted}
                       onSnooze={onSnooze}

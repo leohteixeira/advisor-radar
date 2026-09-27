@@ -5,13 +5,13 @@ import {
   fetchCases,
   fetchQueue,
   putAction,
+  queueStreamUrl,
 } from '../api/bff';
 import { DetailModal, type DetailSelection } from '../components/DetailModal';
 import { FilterBar, type FilterGroup } from '../components/FilterBar';
 import { NewItemsPill } from '../components/NewItemsPill';
 import { QueueBoard } from '../components/QueueBoard';
 import { Toast } from '../components/Toast';
-import { clientName } from '../domain/clients';
 import type { CaseItem, Signal } from '../domain/types';
 import {
   ANDAMENTO_OPTIONS,
@@ -112,8 +112,7 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
       if (closed) {
         return;
       }
-      const url = '/v1/queue/stream';
-      es = new EventSource(url);
+      es = new EventSource(queueStreamUrl());
       es.addEventListener('signal', (ev) => {
         const msg = ev as MessageEvent<string>;
         if (msg.lastEventId) {
@@ -149,22 +148,11 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
     setIncoming([]);
   };
 
-  const onOpen = (id: string) => {
-    const signal = items.find((s) => s.id === id);
-    if (signal) {
-      setSelection({ type: 'signal', signal });
-    }
-  };
-
   const onViewCase = (id: string) => {
     const caseItem = cases.find((c) => c.id === id);
     if (caseItem) {
       setSelection({ type: 'case', caseItem });
     }
-  };
-
-  const onOpenClient = (clientId: string) => {
-    setSelection({ type: 'client', clientId });
   };
 
   const onOpenCase = (id: string) => {
@@ -175,6 +163,8 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
     const opened: CaseItem = {
       id: `k-local-${id}`,
       client: signal.client,
+      name: signal.name,
+      segment: signal.segment,
       signal: id,
       state: 0,
       openedAgo: 0,
@@ -198,13 +188,14 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
   const onContacted = async (id: string) => {
     try {
       await putAction(id, 'contact');
+      const hit = items.find((s) => s.id === id);
       setItems((prev) =>
         prev.map((s) =>
           s.id === id ? { ...s, contacted_at: new Date().toISOString() } : s,
         ),
       );
       setToast({
-        text: `${clientName(items.find((s) => s.id === id)?.client ?? '')} marcada como contatada`,
+        text: `${hit?.name ?? hit?.client ?? 'Cliente'} marcada como contatada`,
         undoId: id,
       });
     } catch {
@@ -266,12 +257,12 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
       .filter((row) => row.caseItem.state === state && caseMatches(row, decorated, query, filters))
       .sort((a, b) => a.rem - b.rem);
   const showSignals = columnVisible('Novo sinal', filters, null);
-  const caseColumns = [0, 1, 2, 3]
-    .filter((state) => columnVisible(ANDAMENTO_OPTIONS[state + 1], filters, state))
+  const caseColumns = ([0, 1, 2, 3] as const)
+    .filter((state) => columnVisible(ANDAMENTO_OPTIONS[state + 1] ?? '', filters, state))
     .map((state) => ({
       key: `k${state}`,
-      label: ANDAMENTO_OPTIONS[state + 1],
-      accent: (['info', 'brand', 'warn', 'ok'] as const)[state],
+      label: ANDAMENTO_OPTIONS[state + 1] ?? '',
+      accent: (['info', 'brand', 'warn', 'ok'] as const)[state] ?? 'info',
       cases: visibleCases(state),
     }));
   const resolved = cases.filter((c) => c.state === 3).length;
@@ -400,7 +391,6 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
               : 'Nenhum cliente precisa de atenção agora. Novos sinais aparecem aqui em tempo real.'
           }
           onRetry={() => void load()}
-          onOpen={onOpen}
           onViewCase={onViewCase}
           onOpenCase={onOpenCase}
           onContacted={(id) => void onContacted(id)}
@@ -409,20 +399,10 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
         />
       ) : null}
       {selection && !desktop ? (
-        <DetailModal
-          selection={selection}
-          onClose={() => setSelection(null)}
-          onOpenClient={onOpenClient}
-          desktop={false}
-        />
+        <DetailModal selection={selection} onClose={() => setSelection(null)} desktop={false} />
       ) : null}
       {selection && desktop ? (
-        <DetailModal
-          selection={selection}
-          onClose={() => setSelection(null)}
-          onOpenClient={onOpenClient}
-          desktop
-        />
+        <DetailModal selection={selection} onClose={() => setSelection(null)} desktop />
       ) : null}
       {toast ? (
         <Toast text={toast.text} onUndo={toast.undoId ? () => void onUndo() : undefined} />

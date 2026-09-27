@@ -17,7 +17,12 @@ export type CaseState = 'Aberto' | 'Em atendimento' | 'Aguardando cliente' | 'Re
 export interface Signal {
   id: string;
   kind: 'message' | 'alert';
+  /** Customer UUIDv7. */
   client: string;
+  /** Display name from the BFF book lookup. */
+  name?: string;
+  /** Segment from the BFF book lookup. */
+  segment?: Segment | string;
   ago?: number;
   text?: string;
   intent?: Intent | string;
@@ -48,7 +53,12 @@ export interface CaseHistoryEntry {
 
 export interface CaseItem {
   id: string;
+  /** Customer UUIDv7. */
   client: string;
+  /** Display name from the BFF book lookup. */
+  name?: string;
+  /** Segment from the BFF book lookup. */
+  segment?: Segment | string;
   signal: string;
   state: number;
   openedAgo: number;
@@ -78,7 +88,12 @@ export interface TimelineEntry {
 
 export interface ReviewRow {
   id: string;
+  /** Customer UUIDv7. */
   client: string;
+  /** Display name from the BFF book lookup. */
+  name?: string;
+  /** Segment from the BFF book lookup. */
+  segment?: Segment | string;
   text: string;
   dist: Record<string, number>;
   ago: number;
@@ -111,8 +126,6 @@ export interface ManagerSnapshot {
   intents: Record<string, number>;
   atRisk: ManagerAtRisk[];
 }
-
-export type Persona = 'queue' | 'review' | 'manager';
 
 export const CASE_STATES: CaseState[] = [
   'Aberto',

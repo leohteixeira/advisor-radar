@@ -1,8 +1,8 @@
+import { Link } from 'react-router-dom';
 import type { DecoratedSignal } from '../domain/queueVisual';
 
 interface SignalCardProps {
   row: DecoratedSignal;
-  onOpen: (id: string) => void;
   onOpenCase: (id: string) => void;
   onContacted: (id: string) => void;
   onSnooze: (id: string) => void;
@@ -21,7 +21,6 @@ function Bars({ filled, heights }: { filled: number; heights: number[] }) {
 
 export function SignalCard({
   row,
-  onOpen,
   onOpenCase,
   onContacted,
   onSnooze,
@@ -35,10 +34,9 @@ export function SignalCard({
       className={justArrived ? `signal-card signal-card--${tone} signal-card--arrive` : `signal-card signal-card--${tone}`}
       data-testid={`signal-${signal.id}`}
     >
-      <button
-        type="button"
+      <Link
+        to={`/clientes/${signal.client}`}
         className="signal-card__open"
-        onClick={() => onOpen(signal.id)}
         aria-label={`Abrir ${row.name}`}
       >
         <div className="signal-card__top">
@@ -83,7 +81,7 @@ export function SignalCard({
           {row.needsReview ? <span className="signal-tag signal-tag--review">Precisa de revisão</span> : null}
           {signal.fallback ? <span className="signal-tag signal-tag--fallback">Classificação simplificada</span> : null}
         </div>
-      </button>
+      </Link>
       <div className="signal-card__actions">
         <button type="button" onClick={() => onOpenCase(signal.id)}>
           Abrir caso

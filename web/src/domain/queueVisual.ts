@@ -1,4 +1,3 @@
-import { clientName, clientSegment } from './clients';
 import { ALERT_LABELS, type CaseItem, type Signal } from './types';
 
 export const FRUSTRATION = ['Calmo', 'Incomodado', 'Frustrado', 'Muito frustrado'] as const;
@@ -160,7 +159,7 @@ function slaToneOf(rem: number, state: SlaState): 'ok' | 'due' | 'over' {
 }
 
 export function signalSla(signal: Signal, segment: string): { rem: number; state: SlaState; text: string } {
-  let total = SEGMENT_SLA[segment] ?? SEGMENT_SLA.Essencial;
+  let total = SEGMENT_SLA[segment] ?? SEGMENT_SLA.Essencial ?? 1440;
   const frustration = signal.frustration ?? 0;
   if (signal.churn || frustration >= 2 || signal.human || signal.alert === 'saque') {
     total = Math.round(total / 2);
@@ -172,7 +171,8 @@ export function signalSla(signal: Signal, segment: string): { rem: number; state
 }
 
 export function decorateSignal(signal: Signal): DecoratedSignal {
-  const segment = clientSegment(signal.client);
+  const segment = signal.segment ?? 'Essencial';
+  const name = signal.name ?? signal.client;
   const sla = signalSla(signal, segment);
   const isMsg = signal.kind === 'message';
   const frustration = signal.frustration ?? 0;
@@ -199,14 +199,14 @@ export function decorateSignal(signal: Signal): DecoratedSignal {
 
   return {
     signal,
-    name: clientName(signal.client),
+    name,
     segment,
     slaText: sla.text,
     slaState: sla.state,
     slaTone: slaToneOf(sla.rem, sla.state),
     accent: crit ? 'crit' : warn ? 'warn' : 'neutral',
     typeLabel,
-    icon: ICONS[typeKey] ?? ICONS.mensagem,
+    icon: ICONS[typeKey] ?? ICONS.mensagem ?? '',
     agoText: agoText(signal.ago),
     conf,
     confBars: conf === 'alta' ? 3 : conf === 'média' ? 2 : conf === 'baixa' ? 1 : 0,
@@ -223,7 +223,8 @@ function pad(n: number): string {
 }
 
 export function decorateCase(caseItem: CaseItem, signals: Signal[]): DecoratedCase {
-  const segment = clientSegment(caseItem.client);
+  const segment = caseItem.segment ?? 'Essencial';
+  const name = caseItem.name ?? caseItem.client;
   const done = caseItem.state === 3;
   const rem = caseItem.slaTotal - caseItem.openedAgo;
   const slaState: SlaState = done
@@ -248,7 +249,7 @@ export function decorateCase(caseItem: CaseItem, signals: Signal[]): DecoratedCa
 
   return {
     caseItem,
-    name: clientName(caseItem.client),
+    name,
     segment,
     slaState,
     slaTone: done ? 'done' : slaToneOf(rem, slaState),
@@ -343,7 +344,9 @@ export function caseMatches(
 
 export function motivoOptions(): string[] {
   return [
-    ...['saque', 'queda', 'aporte', 'segmento', 'contato'].map((k) => ALERT_LABELS[k]),
+    ...(['saque', 'queda', 'aporte', 'segmento', 'contato'] as const)
+      .map((k) => ALERT_LABELS[k])
+      .filter((label): label is string => Boolean(label)),
     ...INTENT_OPTIONS,
   ];
 }

@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { correctReview, fetchReview } from '../api/bff';
 import { Toast } from '../components/Toast';
-import { clientName, clientSegment } from '../domain/clients';
 import type { Intent, ReviewRow } from '../domain/types';
+
+function rowName(row: ReviewRow): string {
+  return row.name ?? row.client;
+}
+
+function rowSegment(row: ReviewRow): string {
+  return row.segment ?? 'Essencial';
+}
 
 function sortedDist(dist: Record<string, number>): [string, number][] {
   return Object.entries(dist).sort((a, b) => b[1] - a[1]);
@@ -120,8 +127,8 @@ export function ReviewScreen() {
             data-testid={`review-${row.id}`}
           >
             <div className="review-card__top">
-              <span className="review-card__name">{clientName(row.client)}</span>
-              <span className="review-card__segment">{clientSegment(row.client)}</span>
+              <span className="review-card__name">{rowName(row)}</span>
+              <span className="review-card__segment">{rowSegment(row)}</span>
               <span className="review-card__ago">{agoText(row.ago)}</span>
             </div>
             <blockquote className="review-card__quote">“{row.text}”</blockquote>

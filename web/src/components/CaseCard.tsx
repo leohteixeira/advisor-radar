@@ -1,5 +1,4 @@
 import type { DecoratedCase } from '../domain/queueVisual';
-import { CASE_STATES } from '../domain/types';
 
 interface CaseCardProps {
   row: DecoratedCase;
@@ -9,7 +8,6 @@ interface CaseCardProps {
 
 export function CaseCard({ row, onAdvance, onOpen }: CaseCardProps) {
   const { caseItem } = row;
-  const stateLabel = CASE_STATES[caseItem.state] ?? 'Aberto';
   const canAdvance = caseItem.state < 3 && row.nextLabel !== '';
 
   return (

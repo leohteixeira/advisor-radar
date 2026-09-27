@@ -1,18 +1,20 @@
-import { useState } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
-import type { Persona } from './domain/types';
+import { CustomerScreen } from './screens/CustomerScreen';
 import { ManagerScreen } from './screens/ManagerScreen';
 import { QueueScreen } from './screens/QueueScreen';
 import { ReviewScreen } from './screens/ReviewScreen';
 
 export function App() {
-  const [persona, setPersona] = useState<Persona>('queue');
-
   return (
-    <AppShell persona={persona} onPersonaChange={setPersona}>
-      {persona === 'queue' ? <QueueScreen /> : null}
-      {persona === 'review' ? <ReviewScreen /> : null}
-      {persona === 'manager' ? <ManagerScreen /> : null}
-    </AppShell>
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route index element={<Navigate to="fila" replace />} />
+        <Route path="fila" element={<QueueScreen />} />
+        <Route path="revisao" element={<ReviewScreen />} />
+        <Route path="painel" element={<ManagerScreen />} />
+        <Route path="clientes/:id" element={<CustomerScreen />} />
+      </Route>
+    </Routes>
   );
 }
