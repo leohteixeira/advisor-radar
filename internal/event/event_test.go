@@ -129,6 +129,9 @@ func TestEnvelope_ValidateAndMarshalBody(t *testing.T) {
 				if _, ok := fields["name"]; ok {
 					t.Fatal("body must omit name")
 				}
+				if _, ok := fields["payload"]; ok {
+					t.Fatal("nil payload must be omitted from body")
+				}
 				return
 			}
 
@@ -142,5 +145,45 @@ func TestEnvelope_ValidateAndMarshalBody(t *testing.T) {
 				t.Fatal("MarshalBody() error = nil, want wrapped validation error")
 			}
 		})
+	}
+}
+
+func TestEnvelope_MarshalBody_WithPayload(t *testing.T) {
+	t.Parallel()
+
+	env := event.Envelope{
+		Name:          event.NameMessageReceived,
+		EventID:       "md-n01",
+		OccurredAt:    time.Date(2026, 9, 27, 15, 0, 0, 0, time.UTC),
+		CustomerID:    "c18",
+		SchemaVersion: event.SchemaVersionMVP,
+		Payload: map[string]any{
+			"channel": "email",
+			"text":    "hello",
+		},
+	}
+
+	body, err := env.MarshalBody()
+	if err != nil {
+		t.Fatalf("MarshalBody: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(body, &fields); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(fields) != 5 {
+		t.Fatalf("body field count = %d, want 5: %v", len(fields), fields)
+	}
+	for _, key := range []string{"event_id", "occurred_at", "customer_id", "schema_version", "payload"} {
+		if _, ok := fields[key]; !ok {
+			t.Fatalf("body missing %q", key)
+		}
+	}
+	payload, ok := fields["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload type = %T, want object", fields["payload"])
+	}
+	if payload["channel"] != "email" {
+		t.Fatalf("payload.channel = %v, want email", payload["channel"])
 	}
 }
