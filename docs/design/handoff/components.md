@@ -8,11 +8,11 @@ type Segment = 'Essencial' | 'Advance' | 'Singular';
 type AlertType = 'saque' | 'queda' | 'aporte' | 'segmento' | 'contato' | 'risco';
 type Intent = 'Operacional' | 'Câmbio' | 'Tributação' | 'Investimento' | 'Resgate' | 'Reclamação' | 'Encerramento' | 'Contato';
 type Frustration = 0 | 1 | 2 | 3;               // Calmo, Incomodado, Frustrado, Muito frustrado
-type Confidence = 'alta' | 'média' | 'baixa';   // ≥0.75, ≥0.5, <0.5 — abaixo de "alta" vai para revisão
+type Confidence = 'alta' | 'média' | 'baixa';   // ≥0.75, ≥0.5, <0.5 — faixas só de exibição; revisão quando a intenção < 0.85
 type CaseState = 'Aberto' | 'Em atendimento' | 'Aguardando cliente' | 'Resolvido';
 type SlaState = 'No prazo' | 'Vencendo' | 'Vencido'; // Vencendo = restante < max(33% do total, 20 min)
 ```
-Faixas (Avenue): Essencial até US$ 10.000 · Advance US$ 10.000–200.000 · Singular acima de US$ 200.000. SLA base por segmento (min): Essencial 1440 · Advance 240 · Singular 60. Reduz pela metade se risco de saída, frustração ≥ Frustrado, pedido humano ou saque relevante.
+Faixas fictícias: Essencial até US$ 10.000 inclusive · Advance acima de US$ 10.000 até US$ 200.000 inclusive · Singular acima de US$ 200.000. SLA base por segmento (min): Essencial 1440 · Advance 240 · Singular 60. Reduz pela metade se risco de saída, frustração ≥ Frustrado, pedido humano ou saque relevante.
 
 ## Componentes (`src/components/`)
 | Arquivo | Props principais | Onde aparece |

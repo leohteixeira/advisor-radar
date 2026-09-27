@@ -38,9 +38,10 @@ application code, and no frontend yet.
   module when building the `triage` service. Do not import it across the repository boundary.
   Keep the `Classifier` port, the Jev adapter, the keyword heuristic, and the `Fallback`
   decorator. Numbers and dates stay in code and never go to the model. The model decides; it
-  does not draft text. Human review applies when intent probability is below the calibrated
-  threshold (currently 0.7). When the external model is down, classification is heuristic and
-  marked degraded.
+  does not draft text. Human review applies when intent probability is below 0.85. A degraded
+  result is marked and does not enter review unless its probability is also below 0.85. When the
+  external model is down, classification is heuristic and marked degraded. The public demo host
+  is leohts.tech.
 - Frontend: React, TypeScript, and Vite, mobile-first. It talks to the BFF only, through
   versioned HTTP/JSON, plus one SSE connection for the advisor queue. Business rules, scoring,
   and SLA stay in the backend. Shipped UI copy is Portuguese. Data, names, and branding are

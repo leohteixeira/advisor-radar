@@ -90,12 +90,15 @@ export const STREAM = [
   { id: 'n06', kind: 'message', client: 'c21', text: 'Como declaro os dividendos recebidos em dólar?', intent: 'Tributação', dist: { 'Tributação': 0.85, 'Investimento': 0.1, 'Operacional': 0.05 }, frustration: 0, churn: false, churnConf: 'alta', human: false, channel: 'e-mail' },
 ];
 
-// Fila de revisão do analista (certeza baixa/média).
+// Fila de revisão do analista: maior probabilidade de intenção abaixo de 0,85.
 export const REVIEW = [
   { id: 'r01', client: 'c05', text: 'Preciso sacar 5 mil dólares e trazer de volta para o Brasil.', dist: { 'Resgate': 0.54, 'Câmbio': 0.31, 'Operacional': 0.10, 'Encerramento': 0.05 }, ago: 33 },
   { id: 'r02', client: 'c10', text: 'Estou frustrado com a demora pra liberar a transferência. Alguém pode me explicar?', dist: { 'Operacional': 0.58, 'Reclamação': 0.35, 'Contato': 0.07 }, ago: 18 },
   { id: 'r03', client: 'c21', text: 'Quero mandar dinheiro pra minha filha que estuda fora.', dist: { 'Câmbio': 0.41, 'Operacional': 0.38, 'Investimento': 0.12, 'Resgate': 0.09 }, ago: 44 },
   { id: 'r04', client: 'c22', text: 'Isso aqui não está batendo com o extrato.', dist: { 'Operacional': 0.45, 'Reclamação': 0.40, 'Tributação': 0.15 }, ago: 71 },
+  { id: 'r05', client: 'c01', text: 'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.', dist: { 'Reclamação': 0.82, 'Encerramento': 0.11, 'Operacional': 0.04, 'Resgate': 0.03 }, ago: 12 },
+  { id: 'r06', client: 'c06', text: 'Meu cartão foi recusado na viagem, o que eu faço?', dist: { 'Operacional': 0.71, 'Reclamação': 0.19, 'Contato': 0.10 }, ago: 50, fallback: true },
+  { id: 'r07', client: 'c08', text: 'Qual a cotação que vocês usam no câmbio? Está muito diferente do Google.', dist: { 'Câmbio': 0.79, 'Reclamação': 0.15, 'Operacional': 0.06 }, ago: 120 },
 ];
 
 export const CASE_STATES = ['Aberto', 'Em atendimento', 'Aguardando cliente', 'Resolvido'];
