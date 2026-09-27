@@ -117,6 +117,19 @@ export interface ManagerAtRisk {
   remaining: number;
 }
 
+export interface FacetCount {
+  label: string;
+  count: number;
+}
+
+export interface ListFacets {
+  andamento: FacetCount[];
+  sla: FacetCount[];
+  sinal: FacetCount[];
+  motivo: FacetCount[];
+  segmento: FacetCount[];
+}
+
 export interface ManagerSnapshot {
   backlog: ManagerBacklog[];
   avgFirstContactMin: number;

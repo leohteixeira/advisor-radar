@@ -2,9 +2,11 @@
 package timeline
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -76,6 +78,13 @@ func (idx *Index) Search(ctx context.Context, customerID, query, kind string) ([
 		}
 		out = append(out, e)
 	}
+	// Smaller ago is more recent; tie-break on event_id for a stable order.
+	slices.SortFunc(out, func(a, b Entry) int {
+		if c := cmp.Compare(a.Ago, b.Ago); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.EventID, b.EventID)
+	})
 	return out, nil
 }
 

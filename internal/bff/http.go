@@ -1,11 +1,13 @@
 package bff
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -115,6 +117,9 @@ func (h *Handler) customerTimeline(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []TimelineEntry{}
 	}
+	if parseTimelineOrder(r.URL.Query().Get("order")) == "desc" {
+		reverseTimeline(items)
+	}
 	body := struct {
 		Items []TimelineEntry `json:"items"`
 	}{Items: items}
@@ -127,6 +132,7 @@ func (h *Handler) queueHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 		return
 	}
+	filters := filtersFromRequest(r)
 	items, err := h.queue.ListQueue(r.Context())
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
@@ -163,9 +169,23 @@ func (h *Handler) queueHandler(w http.ResponseWriter, r *http.Request) {
 		out = append(out, item)
 	}
 	h.enrichSignals(r.Context(), out)
+
+	cases, _, err := h.cases.ListCases(r.Context())
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	if cases == nil {
+		cases = []Case{}
+	}
+	h.enrichCases(r.Context(), cases)
+
+	facets := buildSignalFacets(out, cases, filters)
+	filtered := filterAndSortSignals(out, filters)
 	body := struct {
-		Items []Signal `json:"items"`
-	}{Items: out}
+		Items  []Signal   `json:"items"`
+		Facets ListFacets `json:"facets"`
+	}{Items: filtered, Facets: facets}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(body)
 }
@@ -207,6 +227,7 @@ func (h *Handler) listCases(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 		return
 	}
+	filters := filtersFromRequest(r)
 	items, states, err := h.cases.ListCases(r.Context())
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
@@ -219,10 +240,31 @@ func (h *Handler) listCases(w http.ResponseWriter, r *http.Request) {
 		states = CaseStates
 	}
 	h.enrichCases(r.Context(), items)
+
+	signals, err := h.queue.ListQueue(r.Context())
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	seen := make(map[string]struct{}, len(signals))
+	for _, it := range signals {
+		seen[it.ID] = struct{}{}
+	}
+	for _, live := range h.board.Items() {
+		if _, ok := seen[live.ID]; ok {
+			continue
+		}
+		signals = append(signals, live)
+	}
+	h.enrichSignals(r.Context(), signals)
+
+	facets := buildSignalFacets(signals, items, filters)
+	filtered := filterAndSortCases(items, signals, filters)
 	body := struct {
-		Items  []Case   `json:"items"`
-		States []string `json:"states"`
-	}{Items: items, States: states}
+		Items  []Case     `json:"items"`
+		States []string   `json:"states"`
+		Facets ListFacets `json:"facets"`
+	}{Items: filtered, States: states, Facets: facets}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(body)
 }
@@ -437,6 +479,9 @@ func (h *Handler) buildManager(r *http.Request) (ManagerSnapshot, error) {
 			ID: a.ID, Client: name, Advisor: advisor, Segment: seg, Remaining: a.Remaining,
 		})
 	}
+	slices.SortFunc(atRisk, func(a, b ManagerAtRisk) int {
+		return cmp.Compare(a.Remaining, b.Remaining)
+	})
 	if intents == nil {
 		intents = map[string]int{}
 	}

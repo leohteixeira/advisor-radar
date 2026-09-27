@@ -12,19 +12,14 @@ import { FilterBar, type FilterGroup } from '../components/FilterBar';
 import { NewItemsPill } from '../components/NewItemsPill';
 import { QueueBoard } from '../components/QueueBoard';
 import { Toast } from '../components/Toast';
-import type { CaseItem, Signal } from '../domain/types';
+import type { CaseItem, ListFacets, Signal } from '../domain/types';
 import {
   ANDAMENTO_OPTIONS,
-  caseMatches,
   columnVisible,
   dateLabel,
   decorateCase,
   decorateSignal,
   EMPTY_FILTERS,
-  motivoOptions,
-  signalMatches,
-  SINAL_OPTIONS,
-  SLA_OPTIONS,
   type FilterKey,
   type QueueFilters,
 } from '../domain/queueVisual';
@@ -43,10 +38,34 @@ export interface QueueScreenProps {
   disableStream?: boolean;
 }
 
+function listParams(query: string, filters: QueueFilters) {
+  return {
+    q: query,
+    andamento: filters.andamento,
+    sla: filters.sla,
+    sinal: filters.sinal,
+    motivo: filters.motivo,
+    segmento: filters.segmento,
+  };
+}
+
+function facetOptions(
+  facets: ListFacets | null,
+  key: FilterKey,
+  fallbackLabels: readonly string[],
+): { label: string; count: number }[] {
+  const rows = facets?.[key] ?? [];
+  if (rows.length > 0) {
+    return rows.map((r) => ({ label: r.label, count: r.count }));
+  }
+  return fallbackLabels.map((label) => ({ label, count: 0 }));
+}
+
 export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
   const [items, setItems] = useState<Signal[]>([]);
   const [incoming, setIncoming] = useState<Signal[]>([]);
   const [cases, setCases] = useState<CaseItem[]>([]);
+  const [facets, setFacets] = useState<ListFacets | null>(null);
   const [selection, setSelection] = useState<DetailSelection | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [desktop, setDesktop] = useState(() => {
@@ -80,12 +99,14 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
     setLoading(true);
     setError(false);
     try {
-      const [queue, caseItems] = await Promise.all([fetchQueue(), fetchCases()]);
+      const params = listParams(query, filters);
+      const [queue, caseRes] = await Promise.all([fetchQueue(params), fetchCases(params)]);
       const pill = incomingRef.current;
       const pillIds = new Set(pill.map((s) => s.id));
-      setItems(queue.filter((s) => !pillIds.has(s.id)));
-      setCases(caseItems);
-      const seen = new Set(queue.map((s) => s.id));
+      setItems(queue.items.filter((s) => !pillIds.has(s.id)));
+      setCases(caseRes.items);
+      setFacets(queue.facets);
+      const seen = new Set(queue.items.map((s) => s.id));
       for (const id of pillIds) {
         seen.add(id);
       }
@@ -95,7 +116,7 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [query, filters]);
 
   useEffect(() => {
     void load();
@@ -144,8 +165,9 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
   }, [disableStream]);
 
   const mergeIncoming = () => {
-    setItems((prev) => [...incoming, ...prev]);
+    incomingRef.current = [];
     setIncoming([]);
+    void load();
   };
 
   const onViewCase = (id: string) => {
@@ -249,13 +271,11 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
     }
   };
 
-  const decorated = items.map(decorateSignal).sort((a, b) => b.score - a.score);
+  // Server already filtered and sorted; decorate only for card presentation.
+  const openSignals = items.map(decorateSignal);
   const decoratedCases = cases.map((c) => decorateCase(c, items));
-  const openSignals = decorated.filter((row) => signalMatches(row, query, filters));
   const visibleCases = (state: number) =>
-    decoratedCases
-      .filter((row) => row.caseItem.state === state && caseMatches(row, decorated, query, filters))
-      .sort((a, b) => a.rem - b.rem);
+    decoratedCases.filter((row) => row.caseItem.state === state);
   const showSignals = columnVisible('Novo sinal', filters, null);
   const caseColumns = ([0, 1, 2, 3] as const)
     .filter((state) => columnVisible(ANDAMENTO_OPTIONS[state + 1] ?? '', filters, state))
@@ -266,70 +286,44 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
       cases: visibleCases(state),
     }));
   const resolved = cases.filter((c) => c.state === 3).length;
-  const emptyBecauseFilter = items.length > 0;
+  const emptyBecauseFilter =
+    query.trim() !== '' ||
+    Object.values(filters).some((list) => list.length > 0);
   const groups: FilterGroup[] = [
     {
       key: 'andamento',
       label: 'Andamento',
       align: 'left',
-      options: ANDAMENTO_OPTIONS.map((label, i) => ({
-        label,
-        count:
-          i === 0
-            ? decorated.filter((row) => signalMatches(row, query, filters, 'andamento')).length
-            : decoratedCases.filter(
-                (row) =>
-                  row.caseItem.state === i - 1 && caseMatches(row, decorated, query, filters, 'andamento'),
-              ).length,
-      })),
+      options: facetOptions(facets, 'andamento', ANDAMENTO_OPTIONS),
     },
     {
       key: 'sla',
       label: 'SLA',
       align: 'left',
-      options: SLA_OPTIONS.map((label) => ({
-        label,
-        count: decorated.filter((row) => row.slaState === label && signalMatches(row, query, filters, 'sla')).length,
-      })),
+      options: facetOptions(facets, 'sla', ['No prazo', 'Vencendo', 'Vencido']),
     },
     {
       key: 'sinal',
       label: 'Sinal',
       align: 'left',
-      options: SINAL_OPTIONS.map((label) => ({
-        label,
-        count: decorated.filter((row) => signalMatches({ ...row, needsReview: label === 'Precisa de revisão' ? true : row.needsReview }, query, filters, 'sinal') && (
-          label === 'Risco de saída'
-            ? Boolean(row.signal.churn)
-            : label === 'Pedido humano'
-              ? Boolean(row.signal.human)
-              : label === 'Precisa de revisão'
-                ? row.needsReview
-                : Boolean(row.signal.fallback)
-        )).length,
-      })),
+      options: facetOptions(facets, 'sinal', [
+        'Risco de saída',
+        'Pedido humano',
+        'Precisa de revisão',
+        'Classificação simplificada',
+      ]),
     },
     {
       key: 'motivo',
       label: 'Motivo',
       align: 'right',
-      options: motivoOptions().map((label) => ({
-        label,
-        count: decorated.filter(
-          (row) =>
-            (row.typeLabel === label || row.signal.intent === label) &&
-            signalMatches(row, query, filters, 'motivo'),
-        ).length,
-      })),
+      options: facetOptions(facets, 'motivo', []),
     },
     {
       key: 'segmento',
       label: 'Segmento',
       align: 'right',
-      options: ['Essencial', 'Advance', 'Singular'].map((label) => ({
-        label,
-        count: decorated.filter((row) => row.segment === label && signalMatches(row, query, filters, 'segmento')).length,
-      })),
+      options: facetOptions(facets, 'segmento', ['Essencial', 'Advance', 'Singular']),
     },
   ];
 

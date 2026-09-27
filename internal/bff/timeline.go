@@ -3,6 +3,7 @@ package bff
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/grpc"
@@ -85,4 +86,17 @@ func (g *GRPCTimeline) Search(ctx context.Context, customerID, query, kind strin
 		})
 	}
 	return out, nil
+}
+
+// parseTimelineOrder returns "asc" or "desc". Missing or invalid values mean asc.
+func parseTimelineOrder(raw string) string {
+	if raw == "desc" {
+		return "desc"
+	}
+	return "asc"
+}
+
+// reverseTimeline reverses items in place (used for order=desc after ascending search).
+func reverseTimeline(items []TimelineEntry) {
+	slices.Reverse(items)
 }

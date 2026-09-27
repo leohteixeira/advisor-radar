@@ -47,7 +47,6 @@ export function ManagerScreen() {
 
   const maxOpen = Math.max(...snap.backlog.map((b) => b.open), 1);
   const overdueCount = snap.atRisk.filter((k) => k.remaining < 0).length;
-  const atRiskSorted = [...snap.atRisk].sort((a, b) => a.remaining - b.remaining);
   const maxIntent = Math.max(...Object.values(snap.intents), 1);
   const intents = Object.entries(snap.intents).sort((a, b) => b[1] - a[1]);
   const delta = snap.avgFirstContactYesterday - snap.avgFirstContactMin;
@@ -108,7 +107,7 @@ export function ManagerScreen() {
 
         <section className="manager-panel">
           <h2>Casos com SLA em risco</h2>
-          {atRiskSorted.map((k) => (
+          {snap.atRisk.map((k) => (
             <div key={k.id} className="manager-risk" data-testid={`risk-${k.id}`}>
               <div>
                 <strong>

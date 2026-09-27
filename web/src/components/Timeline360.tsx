@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchTimeline } from '../api/bff';
+import { formatTimelineAgo } from '../domain/elapsed';
 import type { TimelineEntry } from '../domain/types';
 
 const CHIPS = [
@@ -36,6 +37,7 @@ export function Timeline360({
 }: Timeline360Props) {
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('');
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [items, setItems] = useState<TimelineEntry[]>([]);
   const [error, setError] = useState(false);
 
@@ -43,7 +45,7 @@ export function Timeline360({
     let cancelled = false;
     const run = async () => {
       try {
-        const rows = await fetchTimeline(clientId, query, kind);
+        const rows = await fetchTimeline(clientId, query, kind, order);
         if (!cancelled) {
           setItems(rows);
           setError(false);
@@ -59,7 +61,7 @@ export function Timeline360({
     return () => {
       cancelled = true;
     };
-  }, [clientId, query, kind]);
+  }, [clientId, query, kind, order]);
 
   return (
     <div className="detail detail--360" data-testid="client-360">
@@ -95,6 +97,15 @@ export function Timeline360({
             {c.label}
           </button>
         ))}
+        <button
+          type="button"
+          className="chip"
+          aria-pressed
+          data-testid="timeline-order"
+          onClick={() => setOrder((cur) => (cur === 'asc' ? 'desc' : 'asc'))}
+        >
+          {order === 'asc' ? 'Mais recentes' : 'Mais antigos'}
+        </button>
       </div>
 
       {error ? <p className="timeline-empty">Não foi possível carregar a timeline.</p> : null}
@@ -104,7 +115,7 @@ export function Timeline360({
           <li key={it.event_id} className="timeline-item" data-kind={it.kind}>
             <div className="timeline-item__head">
               <strong>{it.title}</strong>
-              <span className="timeline-item__ago">há {it.ago} min</span>
+              <span className="timeline-item__ago">{formatTimelineAgo(it.ago)}</span>
             </div>
             <p className="timeline-item__text">{it.text}</p>
             {it.meta ? <p className="timeline-item__meta">{it.meta}</p> : null}
