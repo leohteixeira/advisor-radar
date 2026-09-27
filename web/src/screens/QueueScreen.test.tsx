@@ -1,14 +1,19 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type { CaseItem, ClientInfo, Signal } from '../domain/types';
+import { CustomerScreen } from '../screens/CustomerScreen';
 import { QueueScreen } from '../screens/QueueScreen';
-import type { CaseItem, Signal } from '../domain/types';
+import { CID, KID, ROUTER_BASENAME, SID } from '../test/fixtures';
 
 const seedSignals: Signal[] = [
   {
-    id: 's01',
+    id: SID.marianaMsg,
     kind: 'message',
-    client: 'c01',
+    client: CID.mariana,
+    name: 'Mariana Costa',
+    segment: 'Singular',
     text: 'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.',
     intent: 'Reclamação',
     dist: { Reclamação: 0.82, Encerramento: 0.11, Operacional: 0.04, Resgate: 0.03 },
@@ -17,17 +22,21 @@ const seedSignals: Signal[] = [
     churnConf: 'alta',
   },
   {
-    id: 's02',
+    id: SID.pauloMsg,
     kind: 'message',
-    client: 'c02',
+    client: CID.paulo,
+    name: 'Paulo Henrique Souza',
+    segment: 'Advance',
     text: 'Já é a terceira vez que eu explico o mesmo problema e ninguém resolve. Um absurdo.',
     intent: 'Reclamação',
     frustration: 3,
   },
   {
-    id: 's06',
+    id: SID.robertoMsg,
     kind: 'message',
-    client: 'c06',
+    client: CID.roberto,
+    name: 'Roberto Nascimento',
+    segment: 'Essencial',
     text: 'Meu cartão foi recusado na viagem, o que eu faço?',
     intent: 'Operacional',
     dist: { Operacional: 0.71, Reclamação: 0.19, Contato: 0.1 },
@@ -35,19 +44,30 @@ const seedSignals: Signal[] = [
     fallback: true,
   },
   {
-    id: 's11',
+    id: SID.sergioAlert,
     kind: 'alert',
-    client: 'c11',
+    client: CID.sergio,
+    name: 'Sérgio Cardoso',
+    segment: 'Singular',
     alert: 'saque',
     reason: 'Saque de US$ 190.000,00, 30% do patrimônio',
     rule: 'Saque acima de 20% do patrimônio em 24 horas',
   },
 ];
 
-const timelineC01 = [
+const marianaCustomer: ClientInfo = {
+  id: CID.mariana,
+  name: 'Mariana Costa',
+  segment: 'Singular',
+  aum: 248300,
+  advisor: 'Ana Paula Ribeiro',
+  since: '2021',
+};
+
+const timelineMariana = [
   {
-    event_id: 'tl-c01-msg-1',
-    customer_id: 'c01',
+    event_id: '018f2c1a-7b3e-7000-8000-000000000401',
+    customer_id: CID.mariana,
     kind: 'mensagem',
     title: 'Mensagem · chat',
     text: 'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.',
@@ -55,8 +75,8 @@ const timelineC01 = [
     ago: 12,
   },
   {
-    event_id: 'tl-c01-nota-1',
-    customer_id: 'c01',
+    event_id: '018f2c1a-7b3e-7000-8000-000000000402',
+    customer_id: CID.mariana,
     kind: 'nota',
     title: 'Nota do assessor',
     text: 'Cliente pretende comprar imóvel em Orlando no 1º semestre. Precisa de liquidez em março.',
@@ -64,8 +84,8 @@ const timelineC01 = [
     ago: 2900,
   },
   {
-    event_id: 'tl-c01-saque-1',
-    customer_id: 'c01',
+    event_id: '018f2c1a-7b3e-7000-8000-000000000403',
+    customer_id: CID.mariana,
     kind: 'saque',
     title: 'Saque',
     text: 'US$ 20.000,00 para conta nos EUA',
@@ -76,9 +96,11 @@ const timelineC01 = [
 
 const seedCases: CaseItem[] = [
   {
-    id: 'k1042',
-    client: 'c02',
-    signal: 's02',
+    id: KID.paulo,
+    client: CID.paulo,
+    name: 'Paulo Henrique Souza',
+    segment: 'Advance',
+    signal: SID.pauloMsg,
     state: 1,
     openedAgo: 25,
     slaTotal: 120,
@@ -86,9 +108,11 @@ const seedCases: CaseItem[] = [
     history: [],
   },
   {
-    id: 'k1038',
-    client: 'c07',
-    signal: 's07',
+    id: KID.ana,
+    client: CID.anaBeatriz,
+    name: 'Ana Beatriz Oliveira',
+    segment: 'Advance',
+    signal: SID.anaMsg,
     state: 2,
     openedAgo: 65,
     slaTotal: 120,
@@ -96,9 +120,11 @@ const seedCases: CaseItem[] = [
     history: [],
   },
   {
-    id: 'k1031',
-    client: 'c09',
-    signal: 's09',
+    id: KID.patricia,
+    client: CID.patricia,
+    name: 'Patrícia Gomes',
+    segment: 'Singular',
+    signal: SID.patriciaMsg,
     state: 3,
     openedAgo: 400,
     slaTotal: 60,
@@ -112,14 +138,20 @@ function mockFetch(queue: Signal[] = seedSignals) {
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith('/v1/queue') && (!init || !init.method || init.method === 'GET')) {
+      if (url.includes('/v1/queue') && !url.includes('/stream') && (!init || !init.method || init.method === 'GET')) {
         return new Response(JSON.stringify({ items: queue }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      if (url.endsWith('/v1/cases')) {
+      if (url.includes('/v1/cases') && !url.includes('/advance')) {
         return new Response(JSON.stringify({ items: seedCases, states: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes(`/v1/customers/${CID.mariana}`) && !url.includes('/timeline')) {
+        return new Response(JSON.stringify(marianaCustomer), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
@@ -128,7 +160,7 @@ function mockFetch(queue: Signal[] = seedSignals) {
         const u = new URL(url, 'http://localhost');
         const q = (u.searchParams.get('q') ?? '').toLowerCase();
         const kind = u.searchParams.get('kind') ?? '';
-        let items = [...timelineC01];
+        let items = [...timelineMariana];
         if (kind === 'notas') {
           items = items.filter((i) => i.kind === 'nota');
         }
@@ -156,6 +188,21 @@ function mockFetch(queue: Signal[] = seedSignals) {
   );
 }
 
+function renderQueue(opts: { isDesktop?: boolean; disableStream?: boolean } = {}) {
+  const { isDesktop = true, disableStream = true } = opts;
+  return render(
+    <MemoryRouter basename={ROUTER_BASENAME} initialEntries={[`${ROUTER_BASENAME}/fila`]}>
+      <Routes>
+        <Route
+          path="/fila"
+          element={<QueueScreen isDesktop={isDesktop} disableStream={disableStream} />}
+        />
+        <Route path="/clientes/:id" element={<CustomerScreen />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe('QueueScreen', () => {
   beforeEach(() => {
     mockFetch();
@@ -166,37 +213,40 @@ describe('QueueScreen', () => {
     vi.restoreAllMocks();
   });
 
-  it('on phone, opening s01 replaces the board', async () => {
+  it('on phone, opening a signal navigates to the customer page', async () => {
     const user = userEvent.setup();
-    render(<QueueScreen isDesktop={false} disableStream />);
+    renderQueue({ isDesktop: false });
 
     await waitFor(() => {
       expect(screen.getByTestId('queue-board')).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: 'Abrir Mariana Costa' }));
+    await user.click(screen.getByRole('link', { name: 'Abrir Mariana Costa' }));
 
+    await waitFor(() => {
+      expect(screen.getByTestId('customer-page')).toBeInTheDocument();
+    });
     expect(screen.queryByTestId('queue-board')).not.toBeInTheDocument();
-    expect(screen.getByTestId('signal-detail')).toBeInTheDocument();
     expect(screen.getByText('Mariana Costa')).toBeInTheDocument();
   });
 
-  it('on desktop, opening s01 keeps the board and shows a dialog', async () => {
+  it('on desktop, opening a signal navigates to the customer page', async () => {
     const user = userEvent.setup();
-    render(<QueueScreen isDesktop disableStream />);
+    renderQueue({ isDesktop: true });
 
     await waitFor(() => {
       expect(screen.getByTestId('queue-board')).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: 'Abrir Mariana Costa' }));
+    await user.click(screen.getByRole('link', { name: 'Abrir Mariana Costa' }));
 
-    expect(screen.getByTestId('queue-board')).toBeInTheDocument();
-    expect(screen.getByTestId('detail-modal')).toBeInTheDocument();
-    expect(within(screen.getByTestId('detail-modal')).getByText('Mariana Costa')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('customer-page')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('client-360')).toBeInTheDocument();
   });
 
-  it('shows Contatado on s02 after contact and reload', async () => {
+  it('shows Contatado after contact and reload', async () => {
     const user = userEvent.setup();
     let contacted = false;
 
@@ -204,9 +254,9 @@ describe('QueueScreen', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.endsWith('/v1/queue') && (!init || !init.method || init.method === 'GET')) {
+        if (url.includes('/v1/queue') && !url.includes('/stream') && (!init || !init.method || init.method === 'GET')) {
           const items = seedSignals.map((s) =>
-            s.id === 's02' && contacted
+            s.id === SID.pauloMsg && contacted
               ? { ...s, contacted_at: '2026-09-27T15:00:00Z' }
               : s,
           );
@@ -215,13 +265,13 @@ describe('QueueScreen', () => {
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (url.endsWith('/v1/cases')) {
+        if (url.includes('/v1/cases')) {
           return new Response(JSON.stringify({ items: seedCases }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (url.includes('/v1/actions/s02') && init?.method === 'PUT') {
+        if (url.includes(`/v1/actions/${SID.pauloMsg}`) && init?.method === 'PUT') {
           contacted = true;
           return new Response(null, { status: 204 });
         }
@@ -229,22 +279,22 @@ describe('QueueScreen', () => {
       }),
     );
 
-    const first = render(<QueueScreen isDesktop disableStream />);
-    await waitFor(() => expect(first.getByTestId('signal-s02')).toBeInTheDocument());
+    const first = renderQueue({ isDesktop: true });
+    await waitFor(() => expect(first.getByTestId(`signal-${SID.pauloMsg}`)).toBeInTheDocument());
 
-    const card = first.getByTestId('signal-s02');
+    const card = first.getByTestId(`signal-${SID.pauloMsg}`);
     await user.click(within(card).getByRole('button', { name: 'Contatado' }));
     await waitFor(() => {
-      expect(within(first.getByTestId('signal-s02')).getByText((_, el) => {
+      expect(within(first.getByTestId(`signal-${SID.pauloMsg}`)).getByText((_, el) => {
         return el?.classList.contains('signal-card__contacted') === true;
       })).toBeInTheDocument();
     });
 
     first.unmount();
-    const second = render(<QueueScreen isDesktop disableStream />);
-    await waitFor(() => expect(second.getByTestId('signal-s02')).toBeInTheDocument());
+    const second = renderQueue({ isDesktop: true });
+    await waitFor(() => expect(second.getByTestId(`signal-${SID.pauloMsg}`)).toBeInTheDocument());
     expect(
-      within(second.getByTestId('signal-s02')).getByText((_, el) => {
+      within(second.getByTestId(`signal-${SID.pauloMsg}`)).getByText((_, el) => {
         return el?.classList.contains('signal-card__contacted') === true;
       }),
     ).toBeInTheDocument();
@@ -272,7 +322,7 @@ describe('QueueScreen', () => {
     }
 
     vi.stubGlobal('EventSource', FakeEventSource);
-    render(<QueueScreen isDesktop />);
+    renderQueue({ isDesktop: true, disableStream: false });
 
     await waitFor(() => {
       expect(screen.getByTestId('queue-board')).toBeInTheDocument();
@@ -281,13 +331,15 @@ describe('QueueScreen', () => {
 
     FakeEventSource.current?.listeners.get('signal')?.({
       data: JSON.stringify({
-        id: 'n01',
+        id: SID.live,
         kind: 'message',
-        client: 'c18',
+        client: CID.vanessa,
+        name: 'Vanessa Moreira',
+        segment: 'Advance',
         text: 'ao vivo',
         intent: 'Reclamação',
       }),
-      lastEventId: 'n01',
+      lastEventId: SID.live,
     });
 
     const pill = await screen.findByRole('button', { name: '1 novo' });
@@ -299,7 +351,7 @@ describe('QueueScreen', () => {
     expect(screen.queryByRole('button', { name: '1 novo' })).not.toBeInTheDocument();
   });
 
-  it('Adiar 1 h removes s01 and Desfazer restores it', async () => {
+  it('Adiar 1 h removes a signal and Desfazer restores it', async () => {
     const user = userEvent.setup();
     let snoozed = false;
     let deleted = false;
@@ -308,25 +360,27 @@ describe('QueueScreen', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.endsWith('/v1/queue') && (!init || !init.method || init.method === 'GET')) {
-          const items = snoozed && !deleted ? seedSignals.filter((s) => s.id !== 's01') : seedSignals;
+        if (url.includes('/v1/queue') && !url.includes('/stream') && (!init || !init.method || init.method === 'GET')) {
+          const items = snoozed && !deleted
+            ? seedSignals.filter((s) => s.id !== SID.marianaMsg)
+            : seedSignals;
           return new Response(JSON.stringify({ items }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (url.endsWith('/v1/cases')) {
+        if (url.includes('/v1/cases')) {
           return new Response(JSON.stringify({ items: seedCases }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (url.includes('/v1/actions/s01') && init?.method === 'PUT') {
+        if (url.includes(`/v1/actions/${SID.marianaMsg}`) && init?.method === 'PUT') {
           snoozed = true;
           deleted = false;
           return new Response(null, { status: 204 });
         }
-        if (url.includes('/v1/actions/s01') && init?.method === 'DELETE') {
+        if (url.includes(`/v1/actions/${SID.marianaMsg}`) && init?.method === 'DELETE') {
           deleted = true;
           snoozed = false;
           return new Response(null, { status: 204 });
@@ -335,19 +389,19 @@ describe('QueueScreen', () => {
       }),
     );
 
-    render(<QueueScreen isDesktop disableStream />);
-    await waitFor(() => expect(screen.getByTestId('signal-s01')).toBeInTheDocument());
+    renderQueue({ isDesktop: true });
+    await waitFor(() => expect(screen.getByTestId(`signal-${SID.marianaMsg}`)).toBeInTheDocument());
 
     await user.click(
-      within(screen.getByTestId('signal-s01')).getByRole('button', { name: 'Adiar 1 h' }),
+      within(screen.getByTestId(`signal-${SID.marianaMsg}`)).getByRole('button', { name: 'Adiar 1 h' }),
     );
     await waitFor(() => {
-      expect(screen.queryByTestId('signal-s01')).not.toBeInTheDocument();
+      expect(screen.queryByTestId(`signal-${SID.marianaMsg}`)).not.toBeInTheDocument();
     });
 
     await user.click(screen.getByRole('button', { name: 'Desfazer' }));
     await waitFor(() => {
-      expect(screen.getByTestId('signal-s01')).toBeInTheDocument();
+      expect(screen.getByTestId(`signal-${SID.marianaMsg}`)).toBeInTheDocument();
     });
   });
 
@@ -375,9 +429,11 @@ describe('QueueScreen', () => {
     }
 
     const live: Signal = {
-      id: 'n01',
+      id: SID.live,
       kind: 'message',
-      client: 'c18',
+      client: CID.vanessa,
+      name: 'Vanessa Moreira',
+      segment: 'Advance',
       text: 'ao vivo',
       intent: 'Reclamação',
     };
@@ -387,8 +443,8 @@ describe('QueueScreen', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.endsWith('/v1/queue') && (!init || !init.method || init.method === 'GET')) {
-          let items = snoozed ? seedSignals.filter((s) => s.id !== 's01') : [...seedSignals];
+        if (url.includes('/v1/queue') && !url.includes('/stream') && (!init || !init.method || init.method === 'GET')) {
+          let items = snoozed ? seedSignals.filter((s) => s.id !== SID.marianaMsg) : [...seedSignals];
           if (afterUndo) {
             items = [...items, live];
           }
@@ -397,17 +453,17 @@ describe('QueueScreen', () => {
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (url.endsWith('/v1/cases')) {
+        if (url.includes('/v1/cases')) {
           return new Response(JSON.stringify({ items: seedCases }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (url.includes('/v1/actions/s01') && init?.method === 'PUT') {
+        if (url.includes(`/v1/actions/${SID.marianaMsg}`) && init?.method === 'PUT') {
           snoozed = true;
           return new Response(null, { status: 204 });
         }
-        if (url.includes('/v1/actions/s01') && init?.method === 'DELETE') {
+        if (url.includes(`/v1/actions/${SID.marianaMsg}`) && init?.method === 'DELETE') {
           snoozed = false;
           afterUndo = true;
           return new Response(null, { status: 204 });
@@ -416,7 +472,7 @@ describe('QueueScreen', () => {
       }),
     );
 
-    render(<QueueScreen isDesktop />);
+    renderQueue({ isDesktop: true, disableStream: false });
 
     await waitFor(() => {
       expect(screen.getByTestId('queue-board')).toBeInTheDocument();
@@ -425,22 +481,22 @@ describe('QueueScreen', () => {
 
     FakeEventSource.current?.listeners.get('signal')?.({
       data: JSON.stringify(live),
-      lastEventId: 'n01',
+      lastEventId: SID.live,
     });
 
     await screen.findByRole('button', { name: '1 novo' });
     expect(screen.queryByText('ao vivo')).not.toBeInTheDocument();
 
     await user.click(
-      within(screen.getByTestId('signal-s01')).getByRole('button', { name: 'Adiar 1 h' }),
+      within(screen.getByTestId(`signal-${SID.marianaMsg}`)).getByRole('button', { name: 'Adiar 1 h' }),
     );
     await waitFor(() => {
-      expect(screen.queryByTestId('signal-s01')).not.toBeInTheDocument();
+      expect(screen.queryByTestId(`signal-${SID.marianaMsg}`)).not.toBeInTheDocument();
     });
 
     await user.click(screen.getByRole('button', { name: 'Desfazer' }));
     await waitFor(() => {
-      expect(screen.getByTestId('signal-s01')).toBeInTheDocument();
+      expect(screen.getByTestId(`signal-${SID.marianaMsg}`)).toBeInTheDocument();
     });
 
     expect(screen.getByRole('button', { name: '1 novo' })).toBeInTheDocument();
@@ -451,56 +507,50 @@ describe('QueueScreen', () => {
     expect(screen.queryByRole('button', { name: '1 novo' })).not.toBeInTheDocument();
   });
 
-  it('shows review and risk labels on s01 detail', async () => {
-    const user = userEvent.setup();
-    render(<QueueScreen isDesktop disableStream />);
-    await waitFor(() => expect(screen.getByTestId('signal-s01')).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: 'Abrir Mariana Costa' }));
-    const detail = screen.getByTestId('signal-detail');
-    expect(detail).toHaveTextContent('Se isso não for resolvido hoje');
-    expect(detail).toHaveTextContent('Reclamação');
-    expect(detail).toHaveTextContent('Frustrado');
-    expect(detail).toHaveTextContent('Mensagem com risco');
-    expect(detail).toHaveTextContent('Precisa de revisão');
+  it('shows review and risk labels on the Mariana card', async () => {
+    renderQueue({ isDesktop: true });
+    await waitFor(() => expect(screen.getByTestId(`signal-${SID.marianaMsg}`)).toBeInTheDocument());
+    const card = screen.getByTestId(`signal-${SID.marianaMsg}`);
+    expect(card).toHaveTextContent('Se isso não for resolvido hoje');
+    expect(card).toHaveTextContent('Reclamação');
+    expect(card).toHaveTextContent('Frustrado');
+    expect(card).toHaveTextContent('Mensagem com risco');
+    expect(card).toHaveTextContent('Risco de saída');
   });
 
-  it('shows Classificação simplificada on s06', async () => {
-    const user = userEvent.setup();
-    render(<QueueScreen isDesktop disableStream />);
-    await waitFor(() => expect(screen.getByTestId('signal-s06')).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: 'Abrir Roberto Nascimento' }));
-    expect(screen.getByTestId('fallback-badge')).toHaveTextContent('Classificação simplificada');
-  });
-
-  it('shows Saque relevante and reason on s11', async () => {
-    const user = userEvent.setup();
-    render(<QueueScreen isDesktop disableStream />);
-    await waitFor(() => expect(screen.getByTestId('signal-s11')).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: 'Abrir Sérgio Cardoso' }));
-    expect(screen.getByTestId('alert-label')).toHaveTextContent('Saque relevante');
-    expect(screen.getByTestId('alert-reason')).toHaveTextContent(
-      'Saque de US$ 190.000,00, 30% do patrimônio',
+  it('shows Classificação simplificada on the Roberto card', async () => {
+    renderQueue({ isDesktop: true });
+    await waitFor(() => expect(screen.getByTestId(`signal-${SID.robertoMsg}`)).toBeInTheDocument());
+    expect(screen.getByTestId(`signal-${SID.robertoMsg}`)).toHaveTextContent(
+      'Classificação simplificada',
     );
   });
 
-  it('shows Em atendimento on the k1042 case rail and keeps k1031 off the board', async () => {
+  it('shows Saque relevante reason on the Sérgio card', async () => {
+    renderQueue({ isDesktop: true });
+    await waitFor(() => expect(screen.getByTestId(`signal-${SID.sergioAlert}`)).toBeInTheDocument());
+    const card = screen.getByTestId(`signal-${SID.sergioAlert}`);
+    expect(card).toHaveTextContent('Saque relevante');
+    expect(card).toHaveTextContent('Saque de US$ 190.000,00, 30% do patrimônio');
+  });
+
+  it('shows Em atendimento on the Paulo case rail and keeps resolved cases off the board', async () => {
     const user = userEvent.setup();
-    render(<QueueScreen isDesktop disableStream />);
-    await waitFor(() => expect(screen.getByTestId('case-k1042')).toBeInTheDocument());
-    expect(screen.queryByTestId('case-k1031')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Abrir caso k1042' }));
+    renderQueue({ isDesktop: true });
+    await waitFor(() => expect(screen.getByTestId(`case-${KID.paulo}`)).toBeInTheDocument());
+    expect(screen.queryByTestId(`case-${KID.patricia}`)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: `Abrir caso ${KID.paulo}` }));
     const rail = screen.getByTestId('case-rail');
     expect(within(rail).getByText('Em atendimento')).toBeInTheDocument();
     const current = within(rail).getByText('Em atendimento').closest('li');
     expect(current).toHaveAttribute('aria-current', 'step');
   });
 
-  it('c01 Orlando search shows the note and hides the saque', async () => {
+  it('customer page Orlando search shows the note and hides the saque', async () => {
     const user = userEvent.setup();
-    render(<QueueScreen isDesktop disableStream />);
-    await waitFor(() => expect(screen.getByTestId('signal-s01')).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: 'Abrir Mariana Costa' }));
-    await user.click(screen.getByRole('button', { name: /Ver visão 360 de Mariana/ }));
+    renderQueue({ isDesktop: true });
+    await waitFor(() => expect(screen.getByTestId(`signal-${SID.marianaMsg}`)).toBeInTheDocument());
+    await user.click(screen.getByRole('link', { name: 'Abrir Mariana Costa' }));
     await waitFor(() => expect(screen.getByTestId('client-360')).toBeInTheDocument());
     const search = screen.getByTestId('timeline-search');
     await user.clear(search);
@@ -512,12 +562,11 @@ describe('QueueScreen', () => {
     });
   });
 
-  it('c01 Notas chip shows the note and hides the saque', async () => {
+  it('customer page Notas chip shows the note and hides the saque', async () => {
     const user = userEvent.setup();
-    render(<QueueScreen isDesktop disableStream />);
-    await waitFor(() => expect(screen.getByTestId('signal-s01')).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: 'Abrir Mariana Costa' }));
-    await user.click(screen.getByRole('button', { name: /Ver visão 360 de Mariana/ }));
+    renderQueue({ isDesktop: true });
+    await waitFor(() => expect(screen.getByTestId(`signal-${SID.marianaMsg}`)).toBeInTheDocument());
+    await user.click(screen.getByRole('link', { name: 'Abrir Mariana Costa' }));
     await waitFor(() => expect(screen.getByTestId('client-360')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: 'Notas' }));
     await waitFor(() => {
@@ -525,5 +574,57 @@ describe('QueueScreen', () => {
       expect(list).toHaveTextContent('Orlando');
       expect(list).not.toHaveTextContent('US$ 20.000,00');
     });
+  });
+
+  it('shows 404 when the customer is missing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/customers/')) {
+          return new Response('', { status: 404 });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+
+    render(
+      <MemoryRouter
+        basename={ROUTER_BASENAME}
+        initialEntries={[`${ROUTER_BASENAME}/clientes/${CID.mariana}`]}
+      >
+        <Routes>
+          <Route path="/clientes/:id" element={<CustomerScreen />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('customer-not-found')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Cliente não encontrado.')).toBeInTheDocument();
+  });
+
+  it('shows 400 when the customer id is invalid', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 400 })),
+    );
+
+    render(
+      <MemoryRouter
+        basename={ROUTER_BASENAME}
+        initialEntries={[`${ROUTER_BASENAME}/clientes/not-a-uuid`]}
+      >
+        <Routes>
+          <Route path="/clientes/:id" element={<CustomerScreen />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('customer-bad-id')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Identificador de cliente inválido.')).toBeInTheDocument();
   });
 });

@@ -1,31 +1,39 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { App } from '../App';
 import type { ManagerSnapshot, ReviewRow, Signal } from '../domain/types';
 import { ManagerScreen } from './ManagerScreen';
 import { ReviewScreen } from './ReviewScreen';
+import { CID, KID, RID, ROUTER_BASENAME, SID } from '../test/fixtures';
 
 const reviewSeed: ReviewRow[] = [
   {
-    id: 'r01',
-    client: 'c05',
+    id: RID.juliana,
+    client: CID.juliana,
+    name: 'Juliana Martins',
+    segment: 'Singular',
     text: 'Preciso sacar 5 mil dólares e trazer de volta para o Brasil.',
     dist: { Resgate: 0.54, Câmbio: 0.31, Operacional: 0.1, Encerramento: 0.05 },
     ago: 33,
     intent: 'Resgate',
   },
   {
-    id: 'r05',
-    client: 'c01',
+    id: RID.mariana,
+    client: CID.mariana,
+    name: 'Mariana Costa',
+    segment: 'Singular',
     text: 'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.',
     dist: { Reclamação: 0.82, Encerramento: 0.11, Operacional: 0.04, Resgate: 0.03 },
     ago: 12,
     intent: 'Reclamação',
   },
   {
-    id: 'r06',
-    client: 'c06',
+    id: RID.roberto,
+    client: CID.roberto,
+    name: 'Roberto Nascimento',
+    segment: 'Essencial',
     text: 'Meu cartão foi recusado na viagem, o que eu faço?',
     dist: { Operacional: 0.71, Reclamação: 0.19, Contato: 0.1 },
     ago: 50,
@@ -36,9 +44,11 @@ const reviewSeed: ReviewRow[] = [
 
 const queueSeed: Signal[] = [
   {
-    id: 's01',
+    id: SID.marianaMsg,
     kind: 'message',
-    client: 'c01',
+    client: CID.mariana,
+    name: 'Mariana Costa',
+    segment: 'Singular',
     text: 'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.',
     intent: 'Reclamação',
   },
@@ -56,14 +66,14 @@ const managerSeed: ManagerSnapshot = {
   intents: { Operacional: 31, Tributação: 22 },
   atRisk: [
     {
-      id: 'k1042',
+      id: KID.paulo,
       client: 'Paulo Henrique Souza',
       advisor: 'Ana Paula Ribeiro',
       segment: 'Advance',
       remaining: 46,
     },
     {
-      id: 'k1044',
+      id: KID.sergioRisk,
       client: 'Sérgio Cardoso',
       advisor: 'Ana Paula Ribeiro',
       segment: 'Singular',
@@ -90,7 +100,7 @@ function mockFetch(
       const url = String(input);
       const method = init?.method ?? 'GET';
 
-      if (url.endsWith('/v1/review') && method === 'GET') {
+      if (url.includes('/v1/review') && method === 'GET' && !url.match(/\/v1\/review\/[^/?]+$/)) {
         return new Response(JSON.stringify({ items: store.rows }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -111,6 +121,8 @@ function mockFetch(
         const updated: ReviewRow = {
           id: current.id,
           client: current.client,
+          name: current.name,
+          segment: current.segment,
           text: current.text,
           dist: current.dist,
           ago: current.ago,
@@ -125,21 +137,21 @@ function mockFetch(
         });
       }
 
-      if (url.endsWith('/v1/queue') && method === 'GET') {
+      if (url.includes('/v1/queue') && method === 'GET') {
         return new Response(JSON.stringify({ items: queueSeed }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      if (url.endsWith('/v1/cases') && method === 'GET') {
+      if (url.includes('/v1/cases') && method === 'GET') {
         return new Response(JSON.stringify({ items: [], states: [] }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      if (url.endsWith('/v1/manager') && method === 'GET') {
+      if (url.includes('/v1/manager') && method === 'GET') {
         return new Response(JSON.stringify(managerSeed), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -152,6 +164,14 @@ function mockFetch(
   return store;
 }
 
+function renderApp(entry = `${ROUTER_BASENAME}/fila`) {
+  return render(
+    <MemoryRouter basename={ROUTER_BASENAME} initialEntries={[entry]}>
+      <App />
+    </MemoryRouter>,
+  );
+}
+
 describe('ReviewScreen', () => {
   beforeEach(() => {
     mockFetch();
@@ -162,11 +182,11 @@ describe('ReviewScreen', () => {
     vi.restoreAllMocks();
   });
 
-  it('corrects r05 to Operacional and confirms feedback', async () => {
+  it('corrects Mariana review to Operacional and confirms feedback', async () => {
     const user = userEvent.setup();
     render(<ReviewScreen />);
 
-    const card = await screen.findByTestId('review-r05');
+    const card = await screen.findByTestId(`review-${RID.mariana}`);
     expect(within(card).getAllByText('Reclamação').length).toBeGreaterThan(0);
     expect(within(card).getByText('82%')).toBeTruthy();
 
@@ -178,11 +198,11 @@ describe('ReviewScreen', () => {
     expect(screen.getByText(/Obrigado pelo feedback/)).toBeTruthy();
   });
 
-  it('confirms the suggested intent on r05', async () => {
+  it('confirms the suggested intent on Mariana review', async () => {
     const user = userEvent.setup();
     render(<ReviewScreen />);
 
-    const card = await screen.findByTestId('review-r05');
+    const card = await screen.findByTestId(`review-${RID.mariana}`);
     await user.click(within(card).getByRole('button', { name: 'Confirmar Reclamação' }));
 
     await waitFor(() => {
@@ -196,18 +216,18 @@ describe('ReviewScreen', () => {
     const user = userEvent.setup();
     render(<ReviewScreen />);
 
-    const card = await screen.findByTestId('review-r05');
+    const card = await screen.findByTestId(`review-${RID.mariana}`);
     await user.click(within(card).getByRole('button', { name: /Operacional/i }));
 
     await waitFor(() => {
       expect(screen.getByText('Não foi possível corrigir. Tente de novo.')).toBeTruthy();
     });
-    expect(screen.getByTestId('review-r05')).toBeTruthy();
-    expect(screen.getByTestId('review-r01')).toBeTruthy();
+    expect(screen.getByTestId(`review-${RID.mariana}`)).toBeTruthy();
+    expect(screen.getByTestId(`review-${RID.juliana}`)).toBeTruthy();
     expect(within(card).queryByRole('status')).toBeNull();
   });
 
-  it('returns to the advisor queue when persona switches back to Fila', async () => {
+  it('returns to the advisor queue when persona navigates back to Fila', async () => {
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -223,25 +243,25 @@ describe('ReviewScreen', () => {
     });
 
     const user = userEvent.setup();
-    render(<App />);
+    renderApp();
 
     expect(await screen.findByText('Novos sinais')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Revisão de triagem' }));
-    expect(await screen.findByTestId('review-r05')).toBeTruthy();
+    await user.click(screen.getByRole('link', { name: 'Revisão de triagem' }));
+    expect(await screen.findByTestId(`review-${RID.mariana}`)).toBeTruthy();
     expect(screen.queryByText('Novos sinais')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Painel da assessoria' }));
+    await user.click(screen.getByRole('link', { name: 'Painel da assessoria' }));
     expect(await screen.findByTestId('backlog-Ana Paula Ribeiro')).toBeTruthy();
     expect(screen.getByText('6%')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Fila' }));
+    await user.click(screen.getByRole('link', { name: 'Fila' }));
     expect(await screen.findByText('Novos sinais')).toBeTruthy();
-    expect(screen.queryByTestId('review-r05')).toBeNull();
+    expect(screen.queryByTestId(`review-${RID.mariana}`)).toBeNull();
     expect(screen.queryByTestId('backlog-Ana Paula Ribeiro')).toBeNull();
   });
 
-  it('shows backlog, first contact, review rate, and k1042', async () => {
+  it('shows backlog, first contact, review rate, and at-risk cases', async () => {
     render(<ManagerScreen />);
 
     const backlog = await screen.findByTestId('backlog-Ana Paula Ribeiro');
@@ -249,7 +269,7 @@ describe('ReviewScreen', () => {
     expect(screen.getByText(/14/)).toBeTruthy();
     expect(screen.getByText('18%')).toBeTruthy();
     expect(screen.getByText('6%')).toBeTruthy();
-    expect(screen.getByTestId('risk-k1042')).toHaveTextContent('46 min');
-    expect(screen.getByTestId('risk-k1044')).toHaveTextContent('vencido há 8 min');
+    expect(screen.getByTestId(`risk-${KID.paulo}`)).toHaveTextContent('46 min');
+    expect(screen.getByTestId(`risk-${KID.sergioRisk}`)).toHaveTextContent('vencido há 8 min');
   });
 });
