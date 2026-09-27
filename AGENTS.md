@@ -8,9 +8,10 @@ fictional data and no link to any real institution.
 
 ## State
 
-Greenfield. The repository currently contains a license and the repository baseline (CI,
-lefthook, gitleaks, ignore files, and these instructions). There is no Go module, no
-application code, and no frontend yet.
+The repository has a Go module (`github.com/leohteixeira/advisor-radar`), six service
+commands under `cmd/`, a shared event envelope, transactional outbox support in
+`account-sim`, Compose for local Postgres/RabbitMQ/Elasticsearch, and the six ADRs
+under `specs/adr/`. The React frontend is not present yet.
 
 ## Architecture rules
 
