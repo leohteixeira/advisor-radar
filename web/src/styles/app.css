@@ -1286,6 +1286,11 @@ a.detail__360 {
   color: var(--ar-ink-3);
 }
 
+.timeline-item__ago {
+  flex: none;
+  white-space: nowrap;
+}
+
 .timeline-item__head strong {
   color: var(--ar-ink-2);
 }
