@@ -1,0 +1,59 @@
+- id: "1"
+  title: Stand up contracts, the event envelope, and Compose
+  description: >-
+    Create the six service commands, the shared event envelope, and the local
+    Compose project from the constraints in SPEC.md. No business behavior yet.
+
+- id: "2"
+  title: Publish a fictional market day from account-sim
+  description: >-
+    Cover CAP-1. account-sim emits fictional account events and customer
+    messages for one market-day burst through a transactional outbox.
+
+- id: "3"
+  title: Raise deterministic alerts from the book
+  description: >-
+    Cover CAP-2. advisory keeps the book and segments, applies the five alert
+    rules, and publishes alert.raised through an idempotent inbox and an outbox.
+
+- id: "4"
+  title: Classify messages with Jev and the resilience stack
+  description: >-
+    Cover CAP-3 and CAP-4. triage copies the radar-triage classifier, wraps Jev
+    on the Vercel gateway with the resilience stack, and publishes message.triaged.
+
+- id: "5"
+  title: Run cases and SLA escalation without a cron
+  description: >-
+    Cover CAP-5. cases moves a case through its four states and escalates an
+    expired SLA with queue TTL and a dead-letter exchange.
+
+- id: "6"
+  title: Serve the live queue from the BFF
+  description: >-
+    Cover the backend half of CAP-7. The BFF exposes versioned HTTP and pushes
+    queue signals over SSE, and it stores nothing.
+
+- id: "7"
+  title: Build the advisor queue for phone and desktop
+  description: >-
+    Cover CAP-7 and the queue in ux.md. The advisor sees the live board on a
+    phone and as four columns on desktop, and Contatado and Adiar 1 h persist.
+
+- id: "8"
+  title: Show signal detail and the customer timeline
+  description: >-
+    Cover CAP-6. Opening a message, an alert, or a case shows its detail, and
+    the customer 360 timeline supports text search.
+
+- id: "9"
+  title: Add analyst review and the manager panel
+  description: >-
+    Cover CAP-8 and CAP-9. The analyst reviews messages whose intent probability
+    is below 0.85, and the manager sees backlog, SLA risk, first contact, and review rate.
+
+- id: "10"
+  title: Prove the demo with trace, load, and leohts.tech
+  description: >-
+    Cover CAP-10 and CAP-11. One trace spans the event through the SSE push,
+    and the written k6 result, runbook, and phone demo are served at leohts.tech.
