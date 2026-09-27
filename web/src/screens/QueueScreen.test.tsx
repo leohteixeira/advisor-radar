@@ -11,7 +11,10 @@ const seedSignals: Signal[] = [
     client: 'c01',
     text: 'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.',
     intent: 'Reclamação',
+    dist: { Reclamação: 0.82, Encerramento: 0.11, Operacional: 0.04, Resgate: 0.03 },
+    frustration: 2,
     churn: true,
+    churnConf: 'alta',
   },
   {
     id: 's02',
@@ -20,6 +23,54 @@ const seedSignals: Signal[] = [
     text: 'Já é a terceira vez que eu explico o mesmo problema e ninguém resolve. Um absurdo.',
     intent: 'Reclamação',
     frustration: 3,
+  },
+  {
+    id: 's06',
+    kind: 'message',
+    client: 'c06',
+    text: 'Meu cartão foi recusado na viagem, o que eu faço?',
+    intent: 'Operacional',
+    dist: { Operacional: 0.71, Reclamação: 0.19, Contato: 0.1 },
+    frustration: 1,
+    fallback: true,
+  },
+  {
+    id: 's11',
+    kind: 'alert',
+    client: 'c11',
+    alert: 'saque',
+    reason: 'Saque de US$ 190.000,00, 30% do patrimônio',
+    rule: 'Saque acima de 20% do patrimônio em 24 horas',
+  },
+];
+
+const timelineC01 = [
+  {
+    event_id: 'tl-c01-msg-1',
+    customer_id: 'c01',
+    kind: 'mensagem',
+    title: 'Mensagem · chat',
+    text: 'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.',
+    meta: 'Reclamação · Frustrado · risco de saída',
+    ago: 12,
+  },
+  {
+    event_id: 'tl-c01-nota-1',
+    customer_id: 'c01',
+    kind: 'nota',
+    title: 'Nota do assessor',
+    text: 'Cliente pretende comprar imóvel em Orlando no 1º semestre. Precisa de liquidez em março.',
+    meta: 'Ana Paula Ribeiro',
+    ago: 2900,
+  },
+  {
+    event_id: 'tl-c01-saque-1',
+    customer_id: 'c01',
+    kind: 'saque',
+    title: 'Saque',
+    text: 'US$ 20.000,00 para conta nos EUA',
+    meta: 'Sem alerta · 7% do patrimônio',
+    ago: 4400,
   },
 ];
 
@@ -69,6 +120,27 @@ function mockFetch(queue: Signal[] = seedSignals) {
       }
       if (url.endsWith('/v1/cases')) {
         return new Response(JSON.stringify({ items: seedCases, states: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes('/v1/customers/') && url.includes('/timeline')) {
+        const u = new URL(url, 'http://localhost');
+        const q = (u.searchParams.get('q') ?? '').toLowerCase();
+        const kind = u.searchParams.get('kind') ?? '';
+        let items = [...timelineC01];
+        if (kind === 'notas') {
+          items = items.filter((i) => i.kind === 'nota');
+        }
+        if (q) {
+          items = items.filter(
+            (i) =>
+              i.title.toLowerCase().includes(q) ||
+              i.text.toLowerCase().includes(q) ||
+              i.meta.toLowerCase().includes(q),
+          );
+        }
+        return new Response(JSON.stringify({ items }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
@@ -377,5 +449,81 @@ describe('QueueScreen', () => {
     await user.click(screen.getByRole('button', { name: '1 novo' }));
     expect(screen.getAllByText('ao vivo')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: '1 novo' })).not.toBeInTheDocument();
+  });
+
+  it('shows review and risk labels on s01 detail', async () => {
+    const user = userEvent.setup();
+    render(<QueueScreen isDesktop disableStream />);
+    await waitFor(() => expect(screen.getByTestId('signal-s01')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Abrir Mariana Costa' }));
+    const detail = screen.getByTestId('signal-detail');
+    expect(detail).toHaveTextContent('Se isso não for resolvido hoje');
+    expect(detail).toHaveTextContent('Reclamação');
+    expect(detail).toHaveTextContent('Frustrado');
+    expect(detail).toHaveTextContent('Mensagem com risco');
+    expect(detail).toHaveTextContent('Precisa de revisão');
+  });
+
+  it('shows Classificação simplificada on s06', async () => {
+    const user = userEvent.setup();
+    render(<QueueScreen isDesktop disableStream />);
+    await waitFor(() => expect(screen.getByTestId('signal-s06')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Abrir Roberto Nascimento' }));
+    expect(screen.getByTestId('fallback-badge')).toHaveTextContent('Classificação simplificada');
+  });
+
+  it('shows Saque relevante and reason on s11', async () => {
+    const user = userEvent.setup();
+    render(<QueueScreen isDesktop disableStream />);
+    await waitFor(() => expect(screen.getByTestId('signal-s11')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Abrir Sérgio Cardoso' }));
+    expect(screen.getByTestId('alert-label')).toHaveTextContent('Saque relevante');
+    expect(screen.getByTestId('alert-reason')).toHaveTextContent(
+      'Saque de US$ 190.000,00, 30% do patrimônio',
+    );
+  });
+
+  it('shows Em atendimento on the k1042 case rail and keeps k1031 off the board', async () => {
+    const user = userEvent.setup();
+    render(<QueueScreen isDesktop disableStream />);
+    await waitFor(() => expect(screen.getByTestId('case-k1042')).toBeInTheDocument());
+    expect(screen.queryByTestId('case-k1031')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Abrir caso k1042' }));
+    const rail = screen.getByTestId('case-rail');
+    expect(within(rail).getByText('Em atendimento')).toBeInTheDocument();
+    const current = within(rail).getByText('Em atendimento').closest('li');
+    expect(current).toHaveAttribute('aria-current', 'step');
+  });
+
+  it('c01 Orlando search shows the note and hides the saque', async () => {
+    const user = userEvent.setup();
+    render(<QueueScreen isDesktop disableStream />);
+    await waitFor(() => expect(screen.getByTestId('signal-s01')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Abrir Mariana Costa' }));
+    await user.click(screen.getByRole('button', { name: /Ver visão 360 de Mariana/ }));
+    await waitFor(() => expect(screen.getByTestId('client-360')).toBeInTheDocument());
+    const search = screen.getByTestId('timeline-search');
+    await user.clear(search);
+    await user.type(search, 'Orlando');
+    await waitFor(() => {
+      const list = screen.getByTestId('timeline-list');
+      expect(list).toHaveTextContent('Orlando');
+      expect(list).not.toHaveTextContent('US$ 20.000,00');
+    });
+  });
+
+  it('c01 Notas chip shows the note and hides the saque', async () => {
+    const user = userEvent.setup();
+    render(<QueueScreen isDesktop disableStream />);
+    await waitFor(() => expect(screen.getByTestId('signal-s01')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Abrir Mariana Costa' }));
+    await user.click(screen.getByRole('button', { name: /Ver visão 360 de Mariana/ }));
+    await waitFor(() => expect(screen.getByTestId('client-360')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Notas' }));
+    await waitFor(() => {
+      const list = screen.getByTestId('timeline-list');
+      expect(list).toHaveTextContent('Orlando');
+      expect(list).not.toHaveTextContent('US$ 20.000,00');
+    });
   });
 });

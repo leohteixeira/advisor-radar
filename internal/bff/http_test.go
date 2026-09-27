@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,7 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
+
+	timelinev1 "github.com/leohteixeira/advisor-radar/gen/timeline/v1"
 	"github.com/leohteixeira/advisor-radar/internal/bff"
+	"github.com/leohteixeira/advisor-radar/internal/timeline"
 )
 
 // flushRecorder is an httptest recorder safe for concurrent SSE writes/reads.
@@ -59,7 +67,7 @@ func (r *flushRecorder) contentType() string {
 
 func TestHTTP_QueueJSON(t *testing.T) {
 	t.Parallel()
-	h := bff.NewHandler(bff.NewBoard(), nil)
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/queue", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
@@ -87,7 +95,7 @@ func TestHTTP_SSEEventNameAndCatchUp(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	board := bff.NewBoard()
-	h := bff.NewHandler(board, nil)
+	h := bff.NewHandler(board, nil, nil)
 
 	first := envelopeJSON(t, "ev-first", "c19", map[string]any{"kind": "saque", "rule": "r"})
 	second := envelopeJSON(t, "ev-second", "c19", map[string]any{"kind": "queda", "rule": "r"})
@@ -141,7 +149,7 @@ func TestHTTP_UnknownCursor(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	board := bff.NewBoard()
-	h := bff.NewHandler(board, nil)
+	h := bff.NewHandler(board, nil, nil)
 	body := envelopeJSON(t, "ev-live", "c19", map[string]any{"kind": "saque", "rule": "r"})
 	if err := board.ApplyDelivery(ctx, "alert.raised", body); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -216,7 +224,7 @@ func TestHTTP_SubscriberCancel(t *testing.T) {
 func TestHTTP_LiveSSEThenQueue(t *testing.T) {
 	t.Parallel()
 	board := bff.NewBoard()
-	h := bff.NewHandler(board, nil)
+	h := bff.NewHandler(board, nil, nil)
 
 	reqCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -314,7 +322,7 @@ func TestHTTP_SnoozeHidden(t *testing.T) {
 	client := &fakeActions{rows: map[string]bff.SignalAction{
 		"s01": {SignalID: "s01", SnoozedUntil: &until},
 	}}
-	handler := bff.NewHandler(bff.NewBoard(), client)
+	handler := bff.NewHandler(bff.NewBoard(), client, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/queue", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -339,7 +347,7 @@ func TestHTTP_SnoozeHidden(t *testing.T) {
 
 func TestHTTP_ActionsUnavailable503(t *testing.T) {
 	t.Parallel()
-	h := bff.NewHandler(bff.NewBoard(), nil)
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
 	req := httptest.NewRequest(http.MethodPut, "/v1/actions/s02", strings.NewReader(`{"action":"contact"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
@@ -367,7 +375,7 @@ func TestHTTP_ActionsUnavailable503(t *testing.T) {
 
 func TestHTTP_CasesInColumns(t *testing.T) {
 	t.Parallel()
-	h := bff.NewHandler(bff.NewBoard(), nil)
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/cases", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
@@ -420,7 +428,7 @@ func TestHTTP_ContactedAtOnQueue(t *testing.T) {
 	client := &fakeActions{rows: map[string]bff.SignalAction{
 		"s02": {SignalID: "s02", ContactedAt: &at},
 	}}
-	h := bff.NewHandler(bff.NewBoard(), client)
+	h := bff.NewHandler(bff.NewBoard(), client, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/queue", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
@@ -454,7 +462,7 @@ func TestHTTP_ExpiredSnoozeVisible(t *testing.T) {
 	client := &fakeActions{rows: map[string]bff.SignalAction{
 		"s01": {SignalID: "s01", SnoozedUntil: &past},
 	}}
-	h := bff.NewHandler(bff.NewBoard(), client)
+	h := bff.NewHandler(bff.NewBoard(), client, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/queue", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
@@ -485,7 +493,7 @@ func TestHTTP_ExpiredSnoozeVisible(t *testing.T) {
 func TestHTTP_ActionProxyRecordsCalls(t *testing.T) {
 	t.Parallel()
 	client := &fakeActions{rows: map[string]bff.SignalAction{}}
-	h := bff.NewHandler(bff.NewBoard(), client)
+	h := bff.NewHandler(bff.NewBoard(), client, nil)
 
 	put := func(id, action string) int {
 		req := httptest.NewRequest(http.MethodPut, "/v1/actions/"+id, strings.NewReader(`{"action":"`+action+`"}`))
@@ -517,5 +525,181 @@ func TestHTTP_ActionProxyRecordsCalls(t *testing.T) {
 	}
 	if len(client.undos) != 1 || client.undos[0] != "s02" {
 		t.Fatalf("undos = %v", client.undos)
+	}
+}
+
+func TestHTTP_TimelineSeedSeven(t *testing.T) {
+	t.Parallel()
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/customers/c01/timeline", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	var body struct {
+		Items []bff.TimelineEntry `json:"items"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Items) != 7 {
+		t.Fatalf("items = %d, want 7", len(body.Items))
+	}
+	var hasOrlando, hasDARF, hasSaque, hasMsg bool
+	for _, it := range body.Items {
+		if strings.Contains(it.Text, "Orlando") {
+			hasOrlando = true
+		}
+		if strings.Contains(it.Text, "DARF") {
+			hasDARF = true
+		}
+		if it.Kind == "saque" {
+			hasSaque = true
+		}
+		if it.Kind == "mensagem" {
+			hasMsg = true
+		}
+	}
+	if !hasOrlando || !hasDARF || !hasSaque || !hasMsg {
+		t.Fatalf("seed missing rows: orlando=%v darf=%v saque=%v msg=%v", hasOrlando, hasDARF, hasSaque, hasMsg)
+	}
+}
+
+func TestHTTP_TimelineOrlandoSearch(t *testing.T) {
+	t.Parallel()
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/customers/c01/timeline?q=Orlando", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	var body struct {
+		Items []bff.TimelineEntry `json:"items"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(body.Items))
+	}
+	if body.Items[0].Kind != "nota" {
+		t.Fatalf("kind = %q", body.Items[0].Kind)
+	}
+	for _, it := range body.Items {
+		if it.Kind == "saque" {
+			t.Fatal("saque must not match Orlando")
+		}
+	}
+}
+
+func TestHTTP_TimelineNotasChip(t *testing.T) {
+	t.Parallel()
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/customers/c01/timeline?kind=notas", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	var body struct {
+		Items []bff.TimelineEntry `json:"items"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Items) != 1 || body.Items[0].Kind != "nota" {
+		t.Fatalf("items = %+v", body.Items)
+	}
+}
+
+func TestHTTP_TimelineUnknownCustomer(t *testing.T) {
+	t.Parallel()
+	h := bff.NewHandler(bff.NewBoard(), nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/customers/c99/timeline", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	var body struct {
+		Items []bff.TimelineEntry `json:"items"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Items == nil {
+		t.Fatal("items must be [] not null")
+	}
+	if len(body.Items) != 0 {
+		t.Fatalf("items = %d, want 0", len(body.Items))
+	}
+}
+
+type errTimeline struct{}
+
+func (errTimeline) Search(context.Context, string, string, string) ([]bff.TimelineEntry, error) {
+	return nil, fmt.Errorf("timeline unavailable")
+}
+
+func TestHTTP_TimelineSearchError502(t *testing.T) {
+	t.Parallel()
+	h := bff.NewHandler(bff.NewBoard(), nil, errTimeline{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/customers/c01/timeline", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rr.Code)
+	}
+}
+
+func TestHTTP_TimelineViaGRPCBufconn(t *testing.T) {
+	t.Parallel()
+	lis := bufconn.Listen(1024 * 1024)
+	srv := grpc.NewServer()
+	timelinev1.RegisterTimelineServiceServer(srv, timeline.NewGRPCServer(timeline.NewIndex()))
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	tl := bff.NewGRPCTimeline(timelinev1.NewTimelineServiceClient(conn))
+	h := bff.NewHandler(bff.NewBoard(), nil, tl)
+
+	get := func(path string) []bff.TimelineEntry {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s status = %d", path, rr.Code)
+		}
+		var body struct {
+			Items []bff.TimelineEntry `json:"items"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return body.Items
+	}
+
+	orlando := get("/v1/customers/c01/timeline?q=Orlando")
+	if len(orlando) != 1 || orlando[0].Kind != "nota" {
+		t.Fatalf("Orlando = %+v", orlando)
+	}
+	notas := get("/v1/customers/c01/timeline?kind=notas")
+	if len(notas) != 1 || notas[0].Kind != "nota" {
+		t.Fatalf("notas = %+v", notas)
 	}
 }
