@@ -53,6 +53,22 @@ ON CONFLICT (event_id) DO NOTHING`
 	return tag.RowsAffected() == 1, nil
 }
 
+// UpdateBook sets aum and segment for one customer. aum is whole USD dollars.
+func (t *pgxTx) UpdateBook(ctx context.Context, customerID string, aum float64, segment string) error {
+	const q = `
+UPDATE book
+SET aum = $2, segment = $3
+WHERE customer_id = $1::uuid`
+	tag, err := t.tx.Exec(ctx, q, customerID, aum, segment)
+	if err != nil {
+		return fmt.Errorf("advisory pgx: update book: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("advisory pgx: book row missing for %s", customerID)
+	}
+	return nil
+}
+
 // InsertAlert stages one alert row. Conflicts on id are ignored.
 func (t *pgxTx) InsertAlert(ctx context.Context, row AlertRow) error {
 	const q = `

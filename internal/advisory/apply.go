@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/leohteixeira/advisor-radar/internal/book"
 	"github.com/leohteixeira/advisor-radar/internal/event"
 	"github.com/leohteixeira/advisor-radar/internal/identity"
 	"github.com/leohteixeira/advisor-radar/internal/sim"
@@ -47,6 +48,7 @@ type Tx interface {
 	ClaimInbox(ctx context.Context, eventID string) (bool, error)
 	InsertAlert(ctx context.Context, row AlertRow) error
 	InsertOutbox(ctx context.Context, row OutboxRow) error
+	UpdateBook(ctx context.Context, customerID string, aum float64, segment string) error
 }
 
 // Store persists inbox, alerts, and outbox. Declared here for Apply/Publish.
@@ -82,13 +84,19 @@ func Apply(ctx context.Context, store Store, env event.Envelope) error {
 	}
 
 	decisions := EvaluateAccount(dollars)
-	return raise(ctx, store, raiseInput{
+	in := raiseInput{
 		sourceEventID: env.EventID,
 		customerID:    env.CustomerID,
 		occurredAt:    env.OccurredAt,
 		decisions:     decisions,
 		alertIDs:      nil,
-	})
+	}
+	if env.SchemaVersion == event.SchemaVersionCents {
+		in.updateBook = true
+		in.bookAUM = dollars.After
+		in.bookSegment = book.SegmentFromAssets(dollars.After)
+	}
+	return raise(ctx, store, in)
 }
 
 // ApplySilence raises a contato alert when days > 90. alertID may be empty for
@@ -183,6 +191,9 @@ type raiseInput struct {
 	occurredAt    time.Time
 	decisions     []Decision
 	alertIDs      map[string]string
+	updateBook    bool
+	bookAUM       float64
+	bookSegment   string
 }
 
 func raise(ctx context.Context, store Store, in raiseInput) error {
@@ -193,8 +204,10 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 			if err != nil {
 				return fmt.Errorf("advisory: claim inbox: %w", err)
 			}
-			_ = claimed
-			return nil
+			if !claimed {
+				return nil
+			}
+			return writeBook(ctx, tx, in)
 		})
 	}
 
@@ -205,6 +218,9 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 		}
 		if !claimed {
 			return nil
+		}
+		if err := writeBook(ctx, tx, in); err != nil {
+			return err
 		}
 
 		for _, d := range in.decisions {
@@ -273,6 +289,16 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 	})
 	if err != nil {
 		return fmt.Errorf("advisory: raise: %w", err)
+	}
+	return nil
+}
+
+func writeBook(ctx context.Context, tx Tx, in raiseInput) error {
+	if !in.updateBook {
+		return nil
+	}
+	if err := tx.UpdateBook(ctx, in.customerID, in.bookAUM, in.bookSegment); err != nil {
+		return fmt.Errorf("advisory: update book: %w", err)
 	}
 	return nil
 }
