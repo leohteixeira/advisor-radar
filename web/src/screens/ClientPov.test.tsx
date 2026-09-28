@@ -21,6 +21,7 @@ function renderAt(path: string) {
 }
 
 afterEach(() => {
+  localStorage.removeItem('advisor-radar.pov-theme');
   vi.unstubAllGlobals();
 });
 
@@ -180,7 +181,7 @@ describe('phone client pov', () => {
         close() {}
       },
     );
-    renderAt(`/client-pov/${FERNANDA}`);
+    const view = renderAt(`/client-pov/${FERNANDA}`);
     expect(await screen.findByRole('button', { name: 'Tema claro' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Investir' }));
     expect(screen.getByRole('status')).toHaveTextContent('Investir não entra nesta simulação');
@@ -188,6 +189,12 @@ describe('phone client pov', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Tema claro' }));
     expect(screen.getByRole('button', { name: 'Tema escuro' })).toBeInTheDocument();
+    expect(document.querySelector('.pov-app--light')).not.toBeNull();
+    expect(localStorage.getItem('advisor-radar.pov-theme')).toBe('light');
+
+    view.unmount();
+    renderAt(`/client-pov/${FERNANDA}`);
+    expect(await screen.findByRole('button', { name: 'Tema escuro' })).toBeInTheDocument();
     expect(document.querySelector('.pov-app--light')).not.toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Mensagem' }));
