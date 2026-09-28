@@ -94,10 +94,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	var httpSrv *http.Server
 	var amqpCleanup func()
 
+	server := bff.NewHandler(board, actions, tl, queue, review, casesSrc)
 	if addr != "" {
 		httpSrv = &http.Server{
 			Addr:              addr,
-			Handler:           bff.NewHandler(board, actions, tl, queue, review, casesSrc),
+			Handler:           server,
 			ReadHeaderTimeout: 5 * time.Second,
 			BaseContext:       func(net.Listener) context.Context { return runCtx },
 		}
@@ -132,7 +133,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			return fmt.Errorf("bff: open consume channel: %w", err)
 		}
 		go func() {
-			errCh <- runConsumer(runCtx, board, consumeCh, session.exchange)
+			errCh <- runConsumer(runCtx, board, server, consumeCh, session.exchange)
 		}()
 	}
 
@@ -251,13 +252,18 @@ func dialAMQP(ctx context.Context, url string) (*amqpSession, func(), error) {
 	return &amqpSession{conn: conn, exchange: exchange}, cleanup, nil
 }
 
-func runConsumer(ctx context.Context, board *bff.Board, ch *amqp.Channel, exchange string) error {
+func runConsumer(ctx context.Context, board *bff.Board, server *bff.Server, ch *amqp.Channel, exchange string) error {
 	const queueName = "bff.queue.signals"
 
 	if _, err := ch.QueueDeclare(queueName, true, false, false, false, nil); err != nil {
 		return fmt.Errorf("bff: declare queue: %w", err)
 	}
-	for _, key := range []string{event.NameAlertRaised, event.NameMessageTriaged} {
+	for _, key := range []string{
+		event.NameAlertRaised,
+		event.NameMessageTriaged,
+		event.NameAccountEventRecorded,
+		event.NameMessageReceived,
+	} {
 		if err := ch.QueueBind(queueName, key, exchange, false, nil); err != nil {
 			return fmt.Errorf("bff: bind %s: %w", key, err)
 		}
@@ -279,10 +285,13 @@ func runConsumer(ctx context.Context, board *bff.Board, ch *amqp.Channel, exchan
 				}
 				return fmt.Errorf("bff: deliveries channel closed")
 			}
-			if err := board.ApplyDelivery(ctx, d.RoutingKey, d.Body); err != nil {
-				requeue := !bff.IsPermanent(err)
-				_ = d.Nack(false, requeue)
-				continue
+			server.ObservePOV(d.RoutingKey, d.Body)
+			if d.RoutingKey == event.NameAlertRaised || d.RoutingKey == event.NameMessageTriaged {
+				if err := board.ApplyDelivery(ctx, d.RoutingKey, d.Body); err != nil {
+					requeue := !bff.IsPermanent(err)
+					_ = d.Nack(false, requeue)
+					continue
+				}
 			}
 			_ = d.Ack(false)
 		}

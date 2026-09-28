@@ -19,30 +19,45 @@ import (
 // Handler serves the queue, SSE stream, actions proxy, cases, timeline,
 // review queue, manager panel, and customer detail.
 type Handler struct {
-	board    *Board
-	actions  ActionsClient
-	queue    QueueSource
-	cases    CaseSource
-	review   ReviewSource
-	timeline TimelineClient
-	pov      POVSource
-	now      func() time.Time
-	limits   *povLimiter
-	counts   *povCounts
+	board      *Board
+	actions    ActionsClient
+	queue      QueueSource
+	cases      CaseSource
+	review     ReviewSource
+	timeline   TimelineClient
+	pov        POVSource
+	now        func() time.Time
+	limits     *povLimiter
+	counts     *povCounts
+	bastidores *bastidoresHub
 }
 
 // NewHandler returns an HTTP handler. Nil sources are treated as empty.
-func NewHandler(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource) http.Handler {
+// Server is the BFF HTTP handler plus the in-memory Bastidores hub.
+type Server struct {
+	http.Handler
+	bastidores *bastidoresHub
+}
+
+// ObservePOV advances Bastidores from a broker body.
+func (s *Server) ObservePOV(routingKey string, body []byte) {
+	if s == nil || s.bastidores == nil {
+		return
+	}
+	s.bastidores.observe(routingKey, body)
+}
+
+func NewHandler(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource) *Server {
 	return newHandler(board, actions, tl, queue, review, cases, nil, nil)
 }
 
 // NewHandlerWithPOV is NewHandler plus the client POV command port.
 // now may be nil; the rate limit then uses time.Now.
-func NewHandlerWithPOV(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource, pov POVSource, now func() time.Time) http.Handler {
+func NewHandlerWithPOV(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource, pov POVSource, now func() time.Time) *Server {
 	return newHandler(board, actions, tl, queue, review, cases, pov, now)
 }
 
-func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource, pov POVSource, now func() time.Time) http.Handler {
+func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource, pov POVSource, now func() time.Time) *Server {
 	if actions == nil {
 		actions = UnavailableActions{}
 	}
@@ -59,16 +74,17 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 		cases = EmptyCases{}
 	}
 	h := &Handler{
-		board:    board,
-		actions:  actions,
-		queue:    queue,
-		cases:    cases,
-		review:   review,
-		timeline: tl,
-		pov:      pov,
-		now:      now,
-		limits:   newPOVLimiter(),
-		counts:   newPOVCounts(),
+		board:      board,
+		actions:    actions,
+		queue:      queue,
+		cases:      cases,
+		review:     review,
+		timeline:   tl,
+		pov:        pov,
+		now:        now,
+		limits:     newPOVLimiter(),
+		counts:     newPOVCounts(),
+		bastidores: newBastidoresHub(),
 	}
 	if h.now == nil {
 		h.now = time.Now
@@ -96,7 +112,8 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/messages", h.postPOVMessage)
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/complaints", h.postPOVComplaint)
 	mux.HandleFunc("GET /v1/client-pov/counters", h.povCounters)
-	return mux
+	mux.HandleFunc("GET /v1/client-pov/customers/{id}/stream", h.povStream)
+	return &Server{Handler: mux, bastidores: h.bastidores}
 }
 
 func (h *Handler) getCustomer(w http.ResponseWriter, r *http.Request) {

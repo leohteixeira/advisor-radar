@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -320,7 +321,43 @@ func (h *Handler) postPOV(w http.ResponseWriter, r *http.Request, kind string) {
 	} else {
 		h.counts.addAction(kind)
 	}
+	h.bastidores.markCommand(id, result.EventID, kind)
 	writeJSON(w, http.StatusAccepted, map[string]string{"event_id": result.EventID})
+}
+
+func (h *Handler) povStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+	id, err := identity.ParseV7(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	updates, cancel := h.bastidores.subscribe(id)
+	defer cancel()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case view := <-updates:
+			raw, err := json.Marshal(view)
+			if err != nil {
+				return
+			}
+			if _, err := fmt.Fprintf(w, "event: bastidores\ndata: %s\n\n", raw); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func (h *Handler) povCounters(w http.ResponseWriter, r *http.Request) {
