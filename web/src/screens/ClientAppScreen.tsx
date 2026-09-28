@@ -1,0 +1,164 @@
+import { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { ApiError } from '../api/bff';
+import { fetchPOVHome, formatCents, postPOV, protocolOf, type POVHome } from '../api/pov';
+
+const PRESET = 'Estou pensando em sair';
+const PRESET_TEXT =
+  'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.';
+
+type Panel = 'home' | 'deposit' | 'withdraw' | 'complaint' | 'done';
+
+export function ClientAppScreen() {
+  const { id = '' } = useParams();
+  const [home, setHome] = useState<POVHome | null>(null);
+  const [error, setError] = useState(false);
+  const [panel, setPanel] = useState<Panel>('home');
+  const [amount, setAmount] = useState('');
+  const [notice, setNotice] = useState('');
+  const [result, setResult] = useState<{ event_id: string; title: string } | null>(null);
+
+  useEffect(() => {
+    let gone = false;
+    fetchPOVHome(id)
+      .then((row) => {
+        if (!gone) {
+          setHome(row);
+        }
+      })
+      .catch(() => {
+        if (!gone) {
+          setError(true);
+        }
+      });
+    return () => {
+      gone = true;
+    };
+  }, [id]);
+
+  const cents = Math.round(Number(amount.replace(',', '.')) * 100);
+  const overCash = panel === 'withdraw' && home != null && cents > home.caixa;
+
+  async function send(kind: 'deposits' | 'withdrawals' | 'complaints', body: Record<string, unknown>, title: string) {
+    setNotice('');
+    try {
+      const accepted = await postPOV(id, kind, body, crypto.randomUUID());
+      setResult({ event_id: accepted.event_id, title });
+      setPanel('done');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422) {
+        setNotice('Valor acima do disponível para saque');
+        return;
+      }
+      if (err instanceof ApiError && err.status === 429) {
+        setNotice('Muitas ações em pouco tempo. Espere um minuto e tente de novo.');
+        return;
+      }
+      setNotice('Não foi possível registrar a ação.');
+    }
+  }
+
+  if (error) {
+    return (
+      <main className="pov-app">
+        <p role="alert">Não foi possível abrir este cliente.</p>
+        <Link to="/client-pov">Voltar à lista</Link>
+      </main>
+    );
+  }
+  if (!home) {
+    return (
+      <main className="pov-app">
+        <p>Carregando cliente…</p>
+      </main>
+    );
+  }
+
+  return (
+    <main className="pov-app">
+      <p className="pov-app__strip">Simulação · vendo como {home.name}</p>
+      {panel === 'home' ? (
+        <>
+          <p className="pov-app__brand">orla. invest</p>
+          <h1>Olá, {home.name.split(' ')[0]}</h1>
+          <p>{formatCents(home.assets)}</p>
+          <p>{home.segment}</p>
+          <p>Disponível para saque {formatCents(home.caixa)}</p>
+          <p>Ana Paula Ribeiro</p>
+          {home.activity.length === 0 ? <p>Nenhuma movimentação nos últimos 30 dias.</p> : null}
+          <button type="button" onClick={() => setPanel('deposit')}>
+            Depositar
+          </button>
+          <button type="button" onClick={() => setPanel('withdraw')}>
+            Sacar
+          </button>
+          <button type="button" onClick={() => setPanel('complaint')}>
+            Reclamar
+          </button>
+        </>
+      ) : null}
+      {panel === 'deposit' || panel === 'withdraw' ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (panel === 'deposit') {
+              void send('deposits', { amount: cents, origin: 'Câmbio a partir do Brasil' }, 'Depósito solicitado');
+              return;
+            }
+            void send('withdrawals', { amount: cents, destination: 'Conta nos EUA' }, 'Saque solicitado');
+          }}
+        >
+          <h1>{panel === 'deposit' ? 'Depositar' : 'Sacar'}</h1>
+          <button type="button" onClick={() => setPanel('home')}>
+            Voltar
+          </button>
+          <label>
+            Valor em USD
+            <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" />
+          </label>
+          {panel === 'deposit' ? (
+            <button type="button" onClick={() => setAmount('10000')}>
+              US$ 10.000
+            </button>
+          ) : (
+            <button type="button" onClick={() => setAmount(String(home.caixa / 100))}>
+              Tudo
+            </button>
+          )}
+          {overCash ? <p role="alert">Valor acima do disponível para saque</p> : null}
+          {notice ? <p role="alert">{notice}</p> : null}
+          <button type="submit" disabled={cents <= 0 || overCash}>
+            Confirmar
+          </button>
+        </form>
+      ) : null}
+      {panel === 'complaint' ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void send('complaints', { text: PRESET_TEXT }, 'Reclamação registrada');
+          }}
+        >
+          <h1>Reclamar</h1>
+          <button type="button" onClick={() => setPanel('home')}>
+            Voltar
+          </button>
+          <button type="submit">{PRESET}</button>
+          {notice ? <p role="alert">{notice}</p> : null}
+        </form>
+      ) : null}
+      {panel === 'done' && result ? (
+        <section>
+          <h1>{result.title}</h1>
+          <p>Protocolo {protocolOf(result.event_id)}</p>
+          <p>{result.event_id}</p>
+          <Link to="/fila">Ver na fila do time</Link>
+          <button type="button" onClick={() => setPanel('home')}>
+            Voltar ao início
+          </button>
+        </section>
+      ) : null}
+      <footer>Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</footer>
+    </main>
+  );
+}
