@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -94,7 +95,36 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	var httpSrv *http.Server
 	var amqpCleanup func()
 
-	server := bff.NewHandlerWithPOV(board, actions, tl, queue, review, casesSrc, newMemoryPOV(), nil)
+	pov := newMemoryPOV()
+	var session *amqpSession
+	if brokerURL != "" {
+		opened, cleanup, err := dialAMQP(ctx, brokerURL)
+		if err != nil {
+			return err
+		}
+		amqpCleanup = cleanup
+		session = opened
+		pubCh, err := session.conn.Channel()
+		if err != nil {
+			cleanup()
+			return fmt.Errorf("bff: open publish channel: %w", err)
+		}
+		pov.pub = &amqpPublisher{ch: pubCh, exchange: session.exchange}
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-runCtx.Done():
+					return
+				case <-ticker.C:
+					_ = pov.flush(runCtx)
+				}
+			}
+		}()
+	}
+
+	server := bff.NewHandlerWithPOV(board, actions, tl, queue, review, casesSrc, pov, nil)
 	if addr != "" {
 		httpSrv = &http.Server{
 			Addr:              addr,
@@ -113,19 +143,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		}()
 	}
 
-	if brokerURL != "" {
-		session, cleanup, err := dialAMQP(ctx, brokerURL)
-		if err != nil {
-			cancel()
-			if httpSrv != nil {
-				_ = httpSrv.Close()
-			}
-			return err
-		}
-		amqpCleanup = cleanup
+	if session != nil {
 		consumeCh, err := session.conn.Channel()
 		if err != nil {
-			cleanup()
+			amqpCleanup()
 			cancel()
 			if httpSrv != nil {
 				_ = httpSrv.Close()
@@ -183,6 +204,29 @@ func run(ctx context.Context, logger *slog.Logger) error {
 type amqpSession struct {
 	conn     *amqp.Connection
 	exchange string
+}
+
+type amqpPublisher struct {
+	mu       sync.Mutex
+	ch       *amqp.Channel
+	exchange string
+}
+
+func (p *amqpPublisher) Publish(ctx context.Context, routingKey string, body []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	err := p.ch.PublishWithContext(ctx, p.exchange, routingKey, false, false, amqp.Publishing{
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		Body:         body,
+	})
+	if err != nil {
+		return fmt.Errorf("bff: publish pov outbox: %w", err)
+	}
+	return nil
 }
 
 func dialAMQP(ctx context.Context, url string) (*amqpSession, func(), error) {

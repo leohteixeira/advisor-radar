@@ -9,17 +9,19 @@ import (
 
 // Memory is an in-process POV store seeded with the three demo accounts.
 type Memory struct {
-	mu       sync.Mutex
-	accounts map[string]Account
-	keys     map[string]string
-	outbox   []outbox.Row
+	mu        sync.Mutex
+	accounts  map[string]Account
+	keys      map[string]string
+	outbox    []outbox.Row
+	published map[string]struct{}
 }
 
 // NewMemory returns the seeded POV balances.
 func NewMemory() *Memory {
 	m := &Memory{
-		accounts: map[string]Account{},
-		keys:     map[string]string{},
+		accounts:  map[string]Account{},
+		keys:      map[string]string{},
+		published: map[string]struct{}{},
 	}
 	for _, account := range POVSeed() {
 		m.accounts[account.CustomerID] = account
@@ -53,6 +55,30 @@ func (m *Memory) WithTx(ctx context.Context, fn func(Tx) error) error {
 		return err
 	}
 	return nil
+}
+
+// PendingOutbox returns outbox rows that have not been published yet.
+func (m *Memory) PendingOutbox() []outbox.Row {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]outbox.Row, 0, len(m.outbox))
+	for _, row := range m.outbox {
+		if _, ok := m.published[row.EventID]; ok {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// MarkPublished records that the broker accepted this outbox row.
+func (m *Memory) MarkPublished(eventID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.published == nil {
+		m.published = map[string]struct{}{}
+	}
+	m.published[eventID] = struct{}{}
 }
 
 type memoryTx struct {

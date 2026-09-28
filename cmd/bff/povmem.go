@@ -8,8 +8,13 @@ import (
 )
 
 // memoryPOV serves the three seeded POV accounts inside the BFF process.
+// pub is the stand-in for the account-sim outbox publisher. The HTTP handler
+// still does not publish; this store drains its own outbox after Apply.
 type memoryPOV struct {
 	store *sim.Memory
+	pub   interface {
+		Publish(ctx context.Context, routingKey string, body []byte) error
+	}
 }
 
 func newMemoryPOV() memoryPOV {
@@ -65,7 +70,23 @@ func (m memoryPOV) Apply(ctx context.Context, cmd bff.POVCommand) (bff.POVResult
 	if err != nil {
 		return bff.POVResult{}, err
 	}
+	if !result.Replay {
+		_ = m.flush(ctx)
+	}
 	return bff.POVResult{EventID: result.EventID, Replay: result.Replay}, nil
+}
+
+func (m memoryPOV) flush(ctx context.Context) error {
+	if m.pub == nil {
+		return nil
+	}
+	for _, row := range m.store.PendingOutbox() {
+		if err := m.pub.Publish(ctx, row.RoutingKey, row.Payload); err != nil {
+			return err
+		}
+		m.store.MarkPublished(row.EventID)
+	}
+	return nil
 }
 
 func toPOV(account sim.Account) bff.POVAccount {

@@ -33,14 +33,15 @@ type AlertRow struct {
 
 // AlertPayload is the domain payload on alert.raised.
 type AlertPayload struct {
-	Kind   string  `json:"kind"`
-	Rule   string  `json:"rule"`
-	Amount float64 `json:"amount,omitempty"`
-	Before float64 `json:"before,omitempty"`
-	After  float64 `json:"after,omitempty"`
-	From   string  `json:"from,omitempty"`
-	To     string  `json:"to,omitempty"`
-	Days   int     `json:"days,omitempty"`
+	Kind          string  `json:"kind"`
+	Rule          string  `json:"rule"`
+	SourceEventID string  `json:"source_event_id,omitempty"`
+	Amount        float64 `json:"amount,omitempty"`
+	Before        float64 `json:"before,omitempty"`
+	After         float64 `json:"after,omitempty"`
+	From          string  `json:"from,omitempty"`
+	To            string  `json:"to,omitempty"`
+	Days          int     `json:"days,omitempty"`
 }
 
 // Tx is the write side of one Apply transaction.
@@ -239,14 +240,15 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 			}
 
 			payload := AlertPayload{
-				Kind:   d.Kind,
-				Rule:   d.Rule,
-				Amount: d.Amount,
-				Before: d.Before,
-				After:  d.After,
-				From:   d.From,
-				To:     d.To,
-				Days:   d.Days,
+				Kind:          d.Kind,
+				Rule:          d.Rule,
+				SourceEventID: in.sourceEventID,
+				Amount:        d.Amount,
+				Before:        d.Before,
+				After:         d.After,
+				From:          d.From,
+				To:            d.To,
+				Days:          d.Days,
 			}
 			payloadBytes, err := json.Marshal(payload)
 			if err != nil {
