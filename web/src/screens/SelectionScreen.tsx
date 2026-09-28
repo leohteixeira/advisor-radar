@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { GRAPH_NODES, WALK_INTERVAL_MS, WALK_STEPS, walkStep } from '../selection/steps';
+import { WALK_INTERVAL_MS, WALK_STEPS, walkStep } from '../selection/steps';
+
+const EDGES: Record<string, string> = {
+  webbff: 'M188 226 L250 226',
+  bffweb: 'M250 258 L188 258',
+  bffacct: 'M438 226 L470 226 L470 80 L500 80',
+  acctbus: 'M688 80 L730 80',
+  bustriage: 'M842 60 L880 60',
+  triagejev: 'M1068 60 L1084 60',
+  busadv: 'M842 180 L880 180',
+  buscases: 'M842 300 L880 300',
+  busidx: 'M842 420 L880 420',
+  idxes: 'M1068 420 L1084 420',
+  busbff: 'M730 400 L344 400 L344 284',
+};
 
 const WIDE_QUERY = '(min-width: 900px)';
 const REDUCE_QUERY = '(prefers-reduced-motion: reduce)';
@@ -50,7 +64,6 @@ export function SelectionScreen() {
   }
 
   const pauseLabel = paused ? 'Reproduzir' : 'Pausar';
-  const pauseAria = paused ? 'Reproduzir animação' : 'Pausar animação';
 
   return (
     <main className={wide ? 'selection selection--wide' : 'selection'}>
@@ -153,77 +166,134 @@ export function SelectionScreen() {
         <div className="selection__walk-head">
           <div>
             <p className="selection__eyebrow">Arquitetura</p>
-            <h2 id="selection-walk">
-              {wide
-                ? 'Como uma reclamação chega à fila do assessor'
-                : 'Como uma reclamação chega à fila'}
-            </h2>
+            <h2 id="selection-walk">Como uma reclamação chega à fila do assessor</h2>
           </div>
-          {wide ? (
-            <div className="selection__dots" role="group" aria-label="Passos">
-              {WALK_STEPS.map((item, index) => (
-                <button
-                  key={item.title}
-                  type="button"
-                  aria-label={`Passo ${index + 1}: ${item.title}`}
-                  aria-current={index === step ? 'step' : undefined}
-                  onClick={() => {
-                    setStep(index);
-                    setPaused(true);
-                  }}
-                />
-              ))}
-            </div>
-          ) : null}
+          <div className="selection__dots" role="group" aria-label="Passos">
+            {WALK_STEPS.map((item, index) => (
+              <button
+                key={item.title}
+                type="button"
+                aria-label={`Passo ${index + 1}: ${item.title}`}
+                aria-current={index === step ? 'step' : undefined}
+                onClick={() => {
+                  setStep(index);
+                  setPaused(true);
+                }}
+              />
+            ))}
+          </div>
           <button
             type="button"
             className="selection__pause"
-            aria-label={pauseAria}
+            aria-label={pauseLabel}
             aria-pressed={paused}
             onClick={togglePlayback}
           >
+            {paused ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M7 4l13 8-13 8z" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
+              </svg>
+            )}
             {pauseLabel}
           </button>
         </div>
 
-        {wide ? (
-          <div className="selection__graph" aria-hidden="true">
-            {GRAPH_NODES.map((node) => (
-              <span key={node} className={current.nodes.includes(node) ? 'is-on' : undefined}>
-                {node}
+        <div className="selection__board">
+            <div className="selection__fit">
+            <div className="selection__sheet">
+            <div className="selection__stage">
+              <svg viewBox="0 0 1180 500" aria-hidden="true">
+                {Object.entries(EDGES).map(([id, d]) => (
+                  <path key={id} className={current.edges.includes(id) ? 'edge on' : 'edge'} d={d} />
+                ))}
+              </svg>
+              <span className="selection__elabel" style={{ left: 196, top: 206 }}>
+                HTTP
               </span>
-            ))}
+              <span className="selection__elabel" style={{ left: 200, top: 264 }}>
+                SSE
+              </span>
+              <span className="selection__elabel" style={{ left: 420, top: 140 }}>
+                gRPC
+              </span>
+              <span className="selection__elabel" style={{ left: 470, top: 380 }}>
+                alert.raised · case.*
+              </span>
+              <article className={current.graph.includes('web') ? 'selection__node on' : 'selection__node'} style={{ left: 0, top: 200 }}>
+                <span>web</span>
+                <strong>App e fila</strong>
+                <small>React · TypeScript · Vite</small>
+              </article>
+              <article className={current.graph.includes('bff') ? 'selection__node on' : 'selection__node'} style={{ left: 250, top: 200 }}>
+                <span>bff</span>
+                <strong>Go · HTTP · SSE</strong>
+                <small>Agrega via gRPC · sem banco</small>
+              </article>
+              <article className={current.graph.includes('acct') ? 'selection__node on' : 'selection__node'} style={{ left: 500, top: 40 }}>
+                <span>account-sim</span>
+                <strong>Go · conta e mensagens</strong>
+                <small>PostgreSQL · outbox</small>
+              </article>
+              <article className={current.graph.includes('bus') ? 'selection__bus on' : 'selection__bus'}>
+                <strong>RabbitMQ</strong>
+                <small>Eventos com trace nos headers</small>
+                <span>message.received</span>
+                <span>message.triaged</span>
+                <span>account.event.recorded</span>
+                <span>alert.raised</span>
+                <span>case.opened</span>
+                <span>case.sla.breached</span>
+                <em>Inbox por event_id · DLQ por fila · TTL + DLX</em>
+              </article>
+              <article className={current.graph.includes('triage') ? 'selection__node on' : 'selection__node'} style={{ left: 880, top: 20 }}>
+                <span>triage</span>
+                <strong>Go · classificação</strong>
+                <small>PostgreSQL · fallback</small>
+              </article>
+              <article className={current.graph.includes('jev') ? 'selection__node selection__node--ext on' : 'selection__node selection__node--ext'} style={{ left: 1084, top: 20, width: 96 }}>
+                <span>externo</span>
+                <strong>Jev</strong>
+                <small>AI Gateway</small>
+              </article>
+              <article className={current.graph.includes('advisory') ? 'selection__node on' : 'selection__node'} style={{ left: 880, top: 140 }}>
+                <span>advisory</span>
+                <strong>Go · regras de alerta</strong>
+                <small>PostgreSQL · gRPC</small>
+              </article>
+              <article className={current.graph.includes('cases') ? 'selection__node on' : 'selection__node'} style={{ left: 880, top: 260 }}>
+                <span>cases</span>
+                <strong>Go · casos e SLA</strong>
+                <small>PostgreSQL · gRPC</small>
+              </article>
+              <article className={current.graph.includes('indexer') ? 'selection__node on' : 'selection__node'} style={{ left: 880, top: 380 }}>
+                <span>timeline-indexer</span>
+                <strong>Go · visão 360</strong>
+                <small>Indexa a timeline</small>
+              </article>
+              <article className={current.graph.includes('es') ? 'selection__node selection__node--ext on' : 'selection__node selection__node--ext'} style={{ left: 1084, top: 380, width: 96 }}>
+                <span>busca</span>
+                <strong>Elastic{"\u00AD"}search</strong>
+              </article>
+            </div>
+            <div className="selection__readout">
+              <span>{String(step + 1).padStart(2, '0')}</span>
+              <div>
+                <strong>{current.title}</strong>
+                <p>{current.detail}</p>
+              </div>
+              <div>
+                <small>Neste passo</small>
+                <code>{current.tag}</code>
+                <em>trace 4bf92f35…0e4736 · mesmo trace do clique à fila</em>
+              </div>
+            </div>
+            </div>
           </div>
-        ) : null}
-
-        <ol className="selection__steps" aria-label="Passos da reclamação">
-          {WALK_STEPS.map((item, index) => {
-            const active = index === step;
-            return (
-              <li key={item.title} aria-current={active ? 'step' : undefined}>
-                <span className="selection__num">{index + 1}</span>
-                <div>
-                  <span className="selection__where">{item.where}</span>
-                  <strong>{item.title}</strong>
-                  {active ? (
-                    <>
-                      <p>{item.detail}</p>
-                      <code>{item.tag}</code>
-                    </>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-
-        {wide ? (
-          <p className="selection__step-readout">
-            <span>{String(step + 1).padStart(2, '0')}</span>
-            <span>{current.title}</span>
-            <code>{current.tag}</code>
-          </p>
-        ) : null}
+        </div>
       </section>
 
       <footer className="selection__foot">
