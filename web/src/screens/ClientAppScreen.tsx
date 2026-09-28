@@ -129,10 +129,28 @@ function waiting(labels: string[]): LiveStep[] {
   return labels.map((label) => ({ id: label, label, state: 'aguardando' }));
 }
 
+const THEME_KEY = 'advisor-radar.pov-theme';
+
+function readLightTheme(): boolean {
+  try {
+    return localStorage.getItem(THEME_KEY) === 'light';
+  } catch {
+    return false;
+  }
+}
+
+function storeLightTheme(light: boolean) {
+  try {
+    localStorage.setItem(THEME_KEY, light ? 'light' : 'dark');
+  } catch {
+    // Keep the in-memory theme when storage is unavailable.
+  }
+}
+
 export function ClientAppScreen() {
   const { id = '' } = useParams();
   const wide = useWide();
-  const [light, setLight] = useState(false);
+  const [light, setLight] = useState(readLightTheme);
   const [hide, setHide] = useState(false);
   const [channel, setChannel] = useState<'chat' | 'e-mail'>('chat');
   const [text, setText] = useState('');
@@ -197,6 +215,14 @@ export function ClientAppScreen() {
     setText('');
     setPreset(-1);
     setPanel(next);
+  }
+
+  function toggleTheme() {
+    setLight((value) => {
+      const next = !value;
+      storeLightTheme(next);
+      return next;
+    });
   }
 
   function pickNav(name: string) {
@@ -316,7 +342,7 @@ export function ClientAppScreen() {
               </button>
             </nav>
             <span className="pov-app__grow" />
-            <button type="button" className="pov-app__theme" aria-label={themeLabel} onClick={() => setLight((value) => !value)}>
+            <button type="button" className="pov-app__theme" aria-label={themeLabel} onClick={toggleTheme}>
               <Icon name={light ? 'moon' : 'sun'} size={18} />
               {themeLabel}
             </button>
@@ -357,7 +383,7 @@ export function ClientAppScreen() {
                 cash={formatCents(home.caixa)}
                 hide={hide}
                 themeLabel={themeLabel}
-                onTheme={() => setLight((value) => !value)}
+                onTheme={toggleTheme}
                 onHide={() => setHide((value) => !value)}
                 alloc={alloc}
                 advisor={home.advisor}
