@@ -31,6 +31,35 @@ func TestBastidoresDepositThenAlert(t *testing.T) {
 	}
 }
 
+func TestBastidoresAlertFollowsSourceEvent(t *testing.T) {
+	t.Parallel()
+	hub := newBastidoresHub()
+	hub.markCommand("c-fernanda", "evt-1", sim.CmdWithdrawal)
+	hub.observe(event.NameAccountEventRecorded, []byte(`{"event_id":"evt-1","customer_id":"c-fernanda"}`))
+	alert := []byte(`{"event_id":"alert-9","customer_id":"c-fernanda","payload":{"source_event_id":"evt-1"}}`)
+	hub.observe(event.NameAlertRaised, alert)
+	got, ok := hub.snapshot("c-fernanda", "evt-1")
+	if !ok || got.Steps[2].State != "feito" || got.Steps[3].State != "feito" {
+		t.Fatalf("steps = %+v", got.Steps)
+	}
+}
+
+func TestBastidoresReplaysCurrentView(t *testing.T) {
+	t.Parallel()
+	hub := newBastidoresHub()
+	hub.markCommand("c-fernanda", "evt-1", sim.CmdWithdrawal)
+	updates, cancel := hub.subscribe("c-fernanda")
+	defer cancel()
+	select {
+	case view := <-updates:
+		if view.EventID != "evt-1" || view.Steps[0].State != "feito" {
+			t.Fatalf("replay = %+v", view)
+		}
+	default:
+		t.Fatal("subscribe did not replay the command")
+	}
+}
+
 func TestBastidoresComplaintUsesTriageLabels(t *testing.T) {
 	t.Parallel()
 	hub := newBastidoresHub()
