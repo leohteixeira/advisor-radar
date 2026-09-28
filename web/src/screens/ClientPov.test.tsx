@@ -40,6 +40,8 @@ describe('phone client pov', () => {
                 assets: 820000,
                 sla: '24 h',
                 advisor: 'Ana Paula Ribeiro',
+                since: '2024',
+                hint: 'Perto do teto da faixa. Um depósito pode subir o segmento; uma reclamação mostra o SLA mais longo.',
               },
             ],
           });
@@ -114,7 +116,7 @@ describe('phone client pov', () => {
 
     await user.click(screen.getByRole('button', { name: 'Depositar' }));
     await user.click(screen.getByRole('button', { name: 'US$ 10.000' }));
-    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar depósito' }));
     expect(await screen.findByText('Protocolo 01A0E3A5-2F4C')).toBeInTheDocument();
     expect(await screen.findByText(/Gravado na outbox do account-sim feito/)).toBeInTheDocument();
     expect(screen.getByText(EVENT)).toBeInTheDocument();
@@ -122,13 +124,14 @@ describe('phone client pov', () => {
 
     await user.click(screen.getByRole('button', { name: 'Voltar ao início' }));
     await user.click(screen.getByRole('button', { name: 'Sacar' }));
-    await user.type(screen.getByLabelText('Valor em USD'), '999999');
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+    await user.type(screen.getByLabelText(/Quanto você quer sacar/), '999999');
+    expect(screen.getByRole('button', { name: 'Confirmar saque' })).toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent('Valor acima do disponível para saque');
 
     await user.click(screen.getByRole('button', { name: 'Voltar' }));
     await user.click(screen.getByRole('button', { name: 'Reclamar' }));
-    await user.click(screen.getByRole('button', { name: 'Estou pensando em sair' }));
+    await user.click(screen.getByRole('button', { name: /Estou pensando em sair/ }));
+    await user.click(screen.getByRole('button', { name: 'Enviar reclamação' }));
     expect(await screen.findByRole('heading', { name: 'Reclamação registrada' })).toBeInTheDocument();
     expect(posts.some((url) => url.includes('/complaints'))).toBe(true);
     await waitFor(() => expect(posts.some((url) => url.includes('/deposits'))).toBe(true));
@@ -179,6 +182,10 @@ describe('phone client pov', () => {
     );
     renderAt(`/client-pov/${FERNANDA}`);
     expect(await screen.findByRole('button', { name: 'Tema claro' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Investir' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Investir não entra nesta simulação');
+    await user.click(screen.getByRole('button', { name: 'Início' }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Tema claro' }));
     expect(screen.getByRole('button', { name: 'Tema escuro' })).toBeInTheDocument();
     expect(document.querySelector('.pov-app--light')).not.toBeNull();
@@ -187,10 +194,10 @@ describe('phone client pov', () => {
     expect(screen.getByRole('button', { name: 'Fechar' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Ação' })).toHaveClass('pov-app__panel');
     expect(screen.getByText('Ainda não há mensagens. Escreva a primeira.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Enviar mensagem' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'E-mail' }));
-    await user.type(screen.getByLabelText('Texto'), 'Olá, assessoria');
-    await user.click(screen.getByRole('button', { name: 'Enviar' }));
+    await user.type(screen.getByLabelText('Mensagem'), 'Olá, assessoria');
+    await user.click(screen.getByRole('button', { name: 'Enviar mensagem' }));
     expect(await screen.findByRole('heading', { name: 'Mensagem enviada' })).toBeInTheDocument();
     expect(posts.some((post) => post.url.includes('/messages') && post.body.includes('e-mail'))).toBe(true);
   });
