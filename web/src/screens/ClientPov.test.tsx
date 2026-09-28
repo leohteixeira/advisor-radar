@@ -75,6 +75,16 @@ describe('phone client pov', () => {
   it('deposits, withdraws, and files the preset complaint', async () => {
     const user = userEvent.setup();
     const posts: string[] = [];
+    class FakeEventSource {
+      addEventListener(type: string, fn: (ev: Event) => void) {
+        if (type === 'bastidores') {
+          fn({ data: JSON.stringify({ event_id: EVENT, steps: [{ id: 'outbox', label: 'Gravado na outbox do account-sim', state: 'feito' }] }) } as MessageEvent);
+        }
+      }
+      removeEventListener() {}
+      close() {}
+    }
+    vi.stubGlobal('EventSource', FakeEventSource);
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
@@ -106,6 +116,7 @@ describe('phone client pov', () => {
     await user.click(screen.getByRole('button', { name: 'US$ 10.000' }));
     await user.click(screen.getByRole('button', { name: 'Confirmar' }));
     expect(await screen.findByText('Protocolo 01A0E3A5-2F4C')).toBeInTheDocument();
+    expect(await screen.findByText(/Gravado na outbox do account-sim feito/)).toBeInTheDocument();
     expect(screen.getByText(EVENT)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Ver na fila do time' })).toHaveAttribute('href', '/advisor-radar/fila');
 
