@@ -2214,3 +2214,40 @@ a.detail__360 {
 .pov-list a {
   min-height: 44px;
 }
+
+.pov-app--light {
+  background: #f7f4ee;
+  color: #1c1915;
+}
+
+.pov-app[data-layout='desktop'] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+}
+
+.pov-app__panel {
+  width: min(100%, 440px);
+}
+
+.pov-app[data-layout='desktop'] .pov-app__panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 440px;
+  background: #121826;
+  padding: 16px;
+  z-index: 2;
+}
+
+.pov-app--light[data-layout='desktop'] .pov-app__panel {
+  background: #fff;
+  color: #1c1915;
+}
+
+.pov-app__scrim {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 40%);
+  z-index: 1;
+}

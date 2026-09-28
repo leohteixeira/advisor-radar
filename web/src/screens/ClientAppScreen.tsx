@@ -14,10 +14,30 @@ const PRESET = 'Estou pensando em sair';
 const PRESET_TEXT =
   'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.';
 
-type Panel = 'home' | 'deposit' | 'withdraw' | 'complaint' | 'done';
+type Panel = 'home' | 'deposit' | 'withdraw' | 'complaint' | 'message' | 'done';
+
+function useWide(): boolean {
+  const query = '(min-width: 900px)';
+  const [wide, setWide] = useState(() => window.matchMedia?.(query).matches ?? false);
+  useEffect(() => {
+    if (!window.matchMedia) {
+      return;
+    }
+    const media = window.matchMedia(query);
+    const onChange = () => setWide(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return wide;
+}
 
 export function ClientAppScreen() {
   const { id = '' } = useParams();
+  const wide = useWide();
+  const [light, setLight] = useState(false);
+  const [channel, setChannel] = useState<'chat' | 'e-mail'>('chat');
+  const [text, setText] = useState('');
   const [home, setHome] = useState<POVHome | null>(null);
   const [error, setError] = useState(false);
   const [panel, setPanel] = useState<Panel>('home');
@@ -65,7 +85,11 @@ export function ClientAppScreen() {
   const cents = Math.round(Number(amount.replace(',', '.')) * 100);
   const overCash = panel === 'withdraw' && home != null && cents > home.caixa;
 
-  async function send(kind: 'deposits' | 'withdrawals' | 'complaints', body: Record<string, unknown>, title: string) {
+  async function send(
+    kind: 'deposits' | 'withdrawals' | 'complaints' | 'messages',
+    body: Record<string, unknown>,
+    title: string,
+  ) {
     setNotice('');
     try {
       const accepted = await postPOV(id, kind, body, crypto.randomUUID());
@@ -100,10 +124,18 @@ export function ClientAppScreen() {
     );
   }
 
+  const closeLabel = wide ? 'Fechar' : 'Voltar';
+  const showHome = wide || panel === 'home' || panel === 'done';
+
   return (
-    <main className="pov-app">
-      <p className="pov-app__strip">Simulação · vendo como {home.name}</p>
-      {panel === 'home' ? (
+    <main className={light ? 'pov-app pov-app--light' : 'pov-app'} data-layout={wide ? 'desktop' : 'phone'}>
+      <p className="pov-app__strip">
+        Simulação · vendo como {home.name}
+        <button type="button" onClick={() => setLight((value) => !value)}>
+          {light ? 'Tema escuro' : 'Tema claro'}
+        </button>
+      </p>
+      {showHome ? (
         <>
           <p className="pov-app__brand">orla. invest</p>
           <h1>Olá, {home.name.split(' ')[0]}</h1>
@@ -121,8 +153,16 @@ export function ClientAppScreen() {
           <button type="button" onClick={() => setPanel('complaint')}>
             Reclamar
           </button>
+          <button type="button" onClick={() => setPanel('message')}>
+            Mensagem
+          </button>
         </>
       ) : null}
+      {panel !== 'home' && wide ? (
+        <button type="button" className="pov-app__scrim" aria-label="Fechar painel" onClick={() => setPanel('home')} />
+      ) : null}
+      {panel !== 'home' ? (
+        <aside className="pov-app__panel" aria-label="Ação">
       {panel === 'deposit' || panel === 'withdraw' ? (
         <form
           onSubmit={(event) => {
@@ -136,7 +176,7 @@ export function ClientAppScreen() {
         >
           <h1>{panel === 'deposit' ? 'Depositar' : 'Sacar'}</h1>
           <button type="button" onClick={() => setPanel('home')}>
-            Voltar
+            {closeLabel}
           </button>
           <label>
             Valor em USD
@@ -167,10 +207,38 @@ export function ClientAppScreen() {
         >
           <h1>Reclamar</h1>
           <button type="button" onClick={() => setPanel('home')}>
-            Voltar
+            {closeLabel}
           </button>
           <button type="submit">{PRESET}</button>
           {notice ? <p role="alert">{notice}</p> : null}
+        </form>
+      ) : null}
+      {panel === 'message' ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void send('messages', { channel, text }, 'Mensagem enviada');
+          }}
+        >
+          <h1>Mensagem</h1>
+          <button type="button" onClick={() => setPanel('home')}>
+            {closeLabel}
+          </button>
+          <p>Ainda não há mensagens. Escreva a primeira.</p>
+          <button type="button" onClick={() => setChannel('chat')}>
+            Chat
+          </button>
+          <button type="button" onClick={() => setChannel('e-mail')}>
+            E-mail
+          </button>
+          <label>
+            Texto
+            <textarea value={text} onChange={(event) => setText(event.target.value)} />
+          </label>
+          {notice ? <p role="alert">{notice}</p> : null}
+          <button type="submit" disabled={text.trim() === ''}>
+            Enviar
+          </button>
         </form>
       ) : null}
       {panel === 'done' && result ? (
@@ -190,6 +258,8 @@ export function ClientAppScreen() {
             Voltar ao início
           </button>
         </section>
+      ) : null}
+        </aside>
       ) : null}
       <footer>Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</footer>
     </main>

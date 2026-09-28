@@ -57,7 +57,7 @@ export async function fetchPOVHome(id: string): Promise<POVHome> {
 
 export async function postPOV(
   id: string,
-  kind: 'deposits' | 'withdrawals' | 'complaints',
+  kind: 'deposits' | 'withdrawals' | 'complaints' | 'messages',
   body: Record<string, unknown>,
   key: string,
 ): Promise<POVAccepted> {
