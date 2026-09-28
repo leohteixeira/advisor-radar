@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/identity"
 	"github.com/leohteixeira/advisor-radar/internal/sim"
 	"github.com/leohteixeira/advisor-radar/internal/triage"
 )
@@ -112,7 +113,10 @@ func Apply(ctx context.Context, store Store, classifier triage.Classifier, env e
 		return fmt.Errorf("triagepipe: classify %s: %w", env.EventID, err)
 	}
 
-	triagedID := "tr-" + env.EventID
+	triagedID, err := triagedEventID(env.EventID)
+	if err != nil {
+		return fmt.Errorf("triagepipe: triaged id %s: %w", env.EventID, err)
+	}
 	needsReview := result.NeedsReview(triage.ReviewIntentProb)
 	domain := TriagedPayload{
 		SourceEventID: env.EventID,
@@ -237,6 +241,15 @@ func RunPublisher(ctx context.Context, store Store, broker Broker, every time.Du
 		case <-ticker.C:
 		}
 	}
+}
+
+// triagedEventID keeps the historical "tr-" prefix for non-UUIDv7 fixtures.
+// A UUIDv7 source needs a fresh UUIDv7 because results.id and outbox.event_id are UUID columns.
+func triagedEventID(source string) (string, error) {
+	if _, err := identity.ParseV7(source); err == nil {
+		return identity.NewV7()
+	}
+	return "tr-" + source, nil
 }
 
 func decodeMessagePayload(raw any) (sim.MessagePayload, error) {
