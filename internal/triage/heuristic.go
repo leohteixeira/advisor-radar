@@ -17,7 +17,7 @@ var intentKeywords = []struct {
 }{
 	// order matters: stronger signals first
 	{IntentEncerramento, []string{"encerrar", "fechar minha conta", "cancelar a conta", "encerramento"}},
-	{IntentReclamacao, []string{"absurdo", "pessimo", "reclamacao", "reclame aqui", "descaso", "cobrado duas", "cobranca indevida", "ninguem resolve", "outra corretora", "transferir tudo", "nao entende"}},
+	{IntentReclamacao, []string{"absurdo", "pessimo", "reclamacao", "reclame aqui", "descaso", "cobrado duas", "cobranca indevida", "ninguem resolve", "outra corretora", "trocar de corretora", "transferir tudo", "nao entende"}},
 	{IntentTributacao, []string{"imposto", "darf", "informe de rendimentos", "declaracao", "receita federal", " ir "}},
 	{IntentCambio, []string{"remessa", "cambio", "wire", "enviar dinheiro", "mandar dinheiro", "transferencia internacional", "spread", "nao caiu"}},
 	{IntentResgate, []string{"sacar", "saque", "resgatar", "resgate", "retirar"}},
@@ -27,7 +27,7 @@ var intentKeywords = []struct {
 }
 
 var (
-	churnWords       = []string{"outra corretora", "outro banco", "vou sair", "levar meu dinheiro", "tirar tudo", "encerrar", "concorrente"}
+	churnWords       = []string{"outra corretora", "trocar de corretora", "outro banco", "vou sair", "levar meu dinheiro", "tirar tudo", "encerrar", "concorrente"}
 	humanWords       = []string{"falar com alguem", "falar com uma pessoa", "atendente", "humano", "meu assessor", "me liga", "ligacao"}
 	frustrationWords = []string{"absurdo", "pessimo", "vergonha", "de novo", "ninguem", "cansado", "!!", "descaso", "ate agora"}
 )
