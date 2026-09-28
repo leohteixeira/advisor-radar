@@ -15,11 +15,17 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/sim"
 )
 
+type bookRow struct {
+	aum     float64
+	segment string
+}
+
 type memStore struct {
 	mu      sync.Mutex
 	inbox   map[string]struct{}
 	alerts  map[string]advisory.AlertRow
 	outbox  map[string]memOutbox
+	book    map[string]bookRow
 	order   []string
 	failIns string
 }
@@ -34,6 +40,7 @@ type memTx struct {
 	inbox  map[string]struct{}
 	alerts map[string]advisory.AlertRow
 	outbox map[string]advisory.OutboxRow
+	book   map[string]bookRow
 	order  []string
 }
 
@@ -42,6 +49,7 @@ func newMemStore() *memStore {
 		inbox:  make(map[string]struct{}),
 		alerts: make(map[string]advisory.AlertRow),
 		outbox: make(map[string]memOutbox),
+		book:   make(map[string]bookRow),
 	}
 }
 
@@ -54,6 +62,7 @@ func (s *memStore) WithTx(ctx context.Context, fn func(advisory.Tx) error) error
 		inbox:  make(map[string]struct{}),
 		alerts: make(map[string]advisory.AlertRow),
 		outbox: make(map[string]advisory.OutboxRow),
+		book:   make(map[string]bookRow),
 	}
 	if err := fn(tx); err != nil {
 		return err
@@ -65,6 +74,9 @@ func (s *memStore) WithTx(ctx context.Context, fn func(advisory.Tx) error) error
 	}
 	for id, row := range tx.alerts {
 		s.alerts[id] = row
+	}
+	for id, row := range tx.book {
+		s.book[id] = row
 	}
 	for _, id := range tx.order {
 		row := tx.outbox[id]
@@ -89,6 +101,14 @@ func (t *memTx) ClaimInbox(ctx context.Context, eventID string) (bool, error) {
 	}
 	t.inbox[eventID] = struct{}{}
 	return true, nil
+}
+
+func (t *memTx) UpdateBook(ctx context.Context, customerID string, aum float64, segment string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t.book[customerID] = bookRow{aum: aum, segment: segment}
+	return nil
 }
 
 func (t *memTx) InsertAlert(ctx context.Context, row advisory.AlertRow) error {
@@ -364,6 +384,106 @@ func TestApply_SchemaVersionCentsDeposit(t *testing.T) {
 				)
 			}
 		}
+	}
+	row := store.book["c-fernanda"]
+	if row.aum != 18_200 || row.segment != "Advance" {
+		t.Fatalf("book = %+v, want aum 18200 segment Advance", row)
+	}
+}
+
+func TestApply_SchemaVersionCentsMarianaWithdrawal(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newMemStore()
+	env := event.Envelope{
+		Name:          event.NameAccountEventRecorded,
+		EventID:       "ev-cents-saque-mariana",
+		OccurredAt:    time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC),
+		CustomerID:    "c-mariana",
+		SchemaVersion: event.SchemaVersionCents,
+		Payload: sim.AccountPayload{
+			Kind:        "saque",
+			Amount:      6_000_000,
+			Before:      24_830_000,
+			After:       18_830_000,
+			Destination: "conta-eua",
+		},
+	}
+	if err := advisory.Apply(ctx, store, env); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	foundSaque := false
+	for _, kind := range store.alertKinds() {
+		if kind == advisory.KindSaque {
+			foundSaque = true
+		}
+	}
+	if !foundSaque {
+		t.Fatalf("kinds = %v, want saque", store.alertKinds())
+	}
+	row := store.book["c-mariana"]
+	if row.aum != 188_300 || row.segment != "Advance" {
+		t.Fatalf("book = %+v, want aum 188300 segment Advance", row)
+	}
+}
+
+func TestApply_SchemaVersionCentsReplayKeepsBook(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newMemStore()
+	env := event.Envelope{
+		Name:          event.NameAccountEventRecorded,
+		EventID:       "ev-cents-replay",
+		OccurredAt:    time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC),
+		CustomerID:    "c-fernanda",
+		SchemaVersion: event.SchemaVersionCents,
+		Payload: sim.AccountPayload{
+			Kind:   "aporte",
+			Amount: 1_000_000,
+			Before: 820_000,
+			After:  1_820_000,
+			Origin: "pix",
+		},
+	}
+	if err := advisory.Apply(ctx, store, env); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if err := advisory.Apply(ctx, store, env); err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if store.alertCount() != 2 {
+		t.Fatalf("alerts = %d, want 2", store.alertCount())
+	}
+	row := store.book["c-fernanda"]
+	if row.aum != 18_200 || row.segment != "Advance" {
+		t.Fatalf("book = %+v", row)
+	}
+}
+
+func TestApply_SchemaVersionOneDoesNotWriteBook(t *testing.T) {
+	t.Parallel()
+
+	store := newMemStore()
+	env := event.Envelope{
+		Name:          event.NameAccountEventRecorded,
+		EventID:       "ev-dollars-book",
+		OccurredAt:    time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC),
+		CustomerID:    "c13",
+		SchemaVersion: event.SchemaVersionMVP,
+		Payload: sim.AccountPayload{
+			Kind:   "deposit",
+			Amount: 60000,
+			Before: 8000,
+			After:  68000,
+		},
+	}
+	if err := advisory.Apply(context.Background(), store, env); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if len(store.book) != 0 {
+		t.Fatalf("book = %+v, want empty", store.book)
 	}
 }
 
