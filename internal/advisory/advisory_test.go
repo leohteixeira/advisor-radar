@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -265,14 +266,17 @@ func TestApply_CrossingDeposit(t *testing.T) {
 	}
 	store.mu.Lock()
 	var seg advisory.AlertRow
+	var aporte advisory.AlertRow
 	for _, row := range store.alerts {
 		var payload advisory.AlertPayload
 		if err := json.Unmarshal(row.Payload, &payload); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
-		if payload.Kind == advisory.KindSegmento {
+		switch payload.Kind {
+		case advisory.KindSegmento:
 			seg = row
-			break
+		case advisory.KindAporte:
+			aporte = row
 		}
 	}
 	store.mu.Unlock()
@@ -282,6 +286,168 @@ func TestApply_CrossingDeposit(t *testing.T) {
 	}
 	if payload.From != "Essencial" || payload.To != "Advance" {
 		t.Fatalf("segment from/to = %s/%s, want Essencial/Advance", payload.From, payload.To)
+	}
+	var aportePayload advisory.AlertPayload
+	if err := json.Unmarshal(aporte.Payload, &aportePayload); err != nil {
+		t.Fatalf("unmarshal aporte payload: %v", err)
+	}
+	if aportePayload.Amount != 60000 || aportePayload.Before != 8000 || aportePayload.After != 68000 {
+		t.Fatalf(
+			"aporte amounts = %v/%v/%v, want whole dollars 60000/8000/68000",
+			aportePayload.Amount,
+			aportePayload.Before,
+			aportePayload.After,
+		)
+	}
+}
+
+func TestApply_SchemaVersionCentsDeposit(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newMemStore()
+	env := event.Envelope{
+		Name:          event.NameAccountEventRecorded,
+		EventID:       "ev-cents-aporte",
+		OccurredAt:    time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC),
+		CustomerID:    "c-fernanda",
+		SchemaVersion: event.SchemaVersionCents,
+		Payload: sim.AccountPayload{
+			Kind:   "aporte",
+			Amount: 1_000_000,
+			Before: 820_000,
+			After:  1_820_000,
+			Origin: "pix",
+		},
+	}
+	if err := advisory.Apply(ctx, store, env); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	kinds := store.alertKinds()
+	if len(kinds) != 2 {
+		t.Fatalf("alerts = %d, want 2: %v", len(kinds), kinds)
+	}
+	found := map[string]bool{}
+	for _, kind := range kinds {
+		found[kind] = true
+	}
+	if !found[advisory.KindAporte] || !found[advisory.KindSegmento] {
+		t.Fatalf("kinds = %v, want aporte and segmento", kinds)
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for _, row := range store.alerts {
+		var payload advisory.AlertPayload
+		if err := json.Unmarshal(row.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		switch payload.Kind {
+		case advisory.KindAporte:
+			if payload.Amount != 10_000 || payload.Before != 8_200 || payload.After != 18_200 {
+				t.Fatalf(
+					"aporte amounts = %v/%v/%v, want dollars 10000/8200/18200",
+					payload.Amount,
+					payload.Before,
+					payload.After,
+				)
+			}
+		case advisory.KindSegmento:
+			if payload.From != "Essencial" || payload.To != "Advance" {
+				t.Fatalf("segment from/to = %s/%s, want Essencial/Advance", payload.From, payload.To)
+			}
+			if payload.Before != 8_200 || payload.After != 18_200 {
+				t.Fatalf(
+					"segment before/after = %v/%v, want dollars 8200/18200",
+					payload.Before,
+					payload.After,
+				)
+			}
+		}
+	}
+}
+
+func TestApply_SchemaVersionCentsFractional(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newMemStore()
+	env := event.Envelope{
+		Name:          event.NameAccountEventRecorded,
+		EventID:       "ev-cents-fractional",
+		OccurredAt:    time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC),
+		CustomerID:    "c-fernanda",
+		SchemaVersion: event.SchemaVersionCents,
+		Payload: sim.AccountPayload{
+			Kind:   "deposit",
+			Amount: 10000.5,
+			Before: 820_000,
+			After:  830_000,
+			Origin: "pix",
+		},
+	}
+	err := advisory.Apply(ctx, store, env)
+	if err == nil {
+		t.Fatal("Apply error = nil, want fractional cents error")
+	}
+	if !strings.Contains(err.Error(), "cents") {
+		t.Fatalf("Apply error = %q, want substring %q", err.Error(), "cents")
+	}
+	if store.alertCount() != 0 {
+		t.Fatalf("alerts = %d, want 0", store.alertCount())
+	}
+	if store.inboxCount() != 0 {
+		t.Fatalf("inbox = %d, want 0", store.inboxCount())
+	}
+	if store.outboxCount() != 0 {
+		t.Fatalf("outbox = %d, want 0", store.outboxCount())
+	}
+}
+
+func TestApply_SchemaVersionCentsSaque(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newMemStore()
+	env := event.Envelope{
+		Name:          event.NameAccountEventRecorded,
+		EventID:       "ev-cents-saque",
+		OccurredAt:    time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC),
+		CustomerID:    "c-mariana",
+		SchemaVersion: event.SchemaVersionCents,
+		Payload: sim.AccountPayload{
+			Kind:        "saque",
+			Amount:      5_500_000,
+			Before:      19_600_000,
+			After:       14_100_000,
+			Destination: "pix",
+		},
+	}
+	if err := advisory.Apply(ctx, store, env); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if store.alertCount() != 1 {
+		t.Fatalf("alerts = %d, want 1", store.alertCount())
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for _, row := range store.alerts {
+		var payload advisory.AlertPayload
+		if err := json.Unmarshal(row.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if payload.Kind != advisory.KindSaque {
+			t.Fatalf("kind = %q, want %q", payload.Kind, advisory.KindSaque)
+		}
+		if payload.Amount != 55_000 || payload.Before != 196_000 || payload.After != 141_000 {
+			t.Fatalf(
+				"saque amounts = %v/%v/%v, want dollars 55000/196000/141000",
+				payload.Amount,
+				payload.Before,
+				payload.After,
+			)
+		}
 	}
 }
 

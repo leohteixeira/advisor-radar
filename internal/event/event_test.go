@@ -67,6 +67,17 @@ func TestEnvelope_ValidateAndMarshalBody(t *testing.T) {
 			wantErr: "schema_version",
 		},
 		{
+			name: "unsupported schema version 3",
+			env: event.Envelope{
+				Name:          event.NameAccountEventRecorded,
+				EventID:       "evt-1",
+				OccurredAt:    validTime,
+				CustomerID:    "cust-1",
+				SchemaVersion: 3,
+			},
+			wantErr: "schema_version",
+		},
+		{
 			name: "unknown name",
 			env: event.Envelope{
 				Name:          "message.reclassify.requested",
@@ -76,6 +87,17 @@ func TestEnvelope_ValidateAndMarshalBody(t *testing.T) {
 				SchemaVersion: event.SchemaVersionMVP,
 			},
 			wantErr: "unknown name",
+		},
+		{
+			name: "valid schema version 2",
+			env: event.Envelope{
+				Name:          event.NameAccountEventRecorded,
+				EventID:       "evt-1",
+				OccurredAt:    validTime,
+				CustomerID:    "cust-1",
+				SchemaVersion: event.SchemaVersionCents,
+			},
+			wantOK: true,
 		},
 	}
 
@@ -125,6 +147,13 @@ func TestEnvelope_ValidateAndMarshalBody(t *testing.T) {
 					if _, ok := fields[key]; !ok {
 						t.Fatalf("body missing %q", key)
 					}
+				}
+				gotVersion, ok := fields["schema_version"].(float64)
+				if !ok {
+					t.Fatalf("schema_version type = %T, want number", fields["schema_version"])
+				}
+				if int(gotVersion) != tt.env.SchemaVersion {
+					t.Fatalf("schema_version = %d, want %d", int(gotVersion), tt.env.SchemaVersion)
 				}
 				if _, ok := fields["name"]; ok {
 					t.Fatal("body must omit name")
