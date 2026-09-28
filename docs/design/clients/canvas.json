@@ -1,0 +1,50 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "ClientApp-Aporte.dc.html": { "h": 1000, "is_interactive": true, "title": "Depósito (aporte)", "w": 390, "x": 1410, "y": 2520 },
+    "ClientApp-Chat.dc.html": { "h": 1000, "is_interactive": true, "title": "Mensagem livre", "w": 390, "x": 1880, "y": 2520 },
+    "ClientApp-Enviado.dc.html": { "h": 1000, "is_interactive": true, "title": "Enviado + bastidores", "w": 390, "x": 2820, "y": 2520 },
+    "ClientApp-Reclamacao.dc.html": { "h": 1000, "is_interactive": true, "title": "Reclamação", "w": 390, "x": 2350, "y": 2520 },
+    "ClientApp-Saque.dc.html": { "h": 1000, "is_interactive": true, "title": "Saque / wire-out", "w": 390, "x": 940, "y": 2520 },
+    "ClientApp.dc.html": { "h": 1000, "is_interactive": true, "title": "/client-pov/{id} · início (protótipo)", "w": 390, "x": 470, "y": 2520 },
+    "ClientApp-Light.dc.html": { "h": 1000, "is_interactive": true, "title": "Início · tema claro", "w": 390, "x": 3290, "y": 2520 },
+    "ClientPov.dc.html": { "h": 844, "is_interactive": true, "title": "/advisor-radar/client-pov", "w": 390, "x": 0, "y": 2520 },
+    "ClientPov-Desktop.dc.html": { "h": 900, "is_interactive": true, "title": "/advisor-radar/client-pov · desktop", "w": 1440, "x": 0, "y": 3940 },
+    "ClientApp-Desktop.dc.html": { "h": 1000, "is_interactive": true, "title": "/client-pov/{id} · desktop · escuro (protótipo)", "w": 1440, "x": 1520, "y": 3940 },
+    "ClientApp-Desktop-Light.dc.html": { "h": 1000, "is_interactive": true, "title": "/client-pov/{id} · desktop · claro (protótipo)", "w": 1440, "x": 3040, "y": 3940 },
+    "ClientApp-Desktop-Saque.dc.html": { "h": 1000, "is_interactive": true, "title": "Desktop · saque no painel lateral", "w": 1440, "x": 0, "y": 5060 },
+    "ClientApp-Desktop-Reclamacao.dc.html": { "h": 1000, "is_interactive": true, "title": "Desktop · reclamação · claro", "w": 1440, "x": 1520, "y": 5060 },
+    "ClientApp-Desktop-Enviado.dc.html": { "h": 1000, "is_interactive": true, "title": "Desktop · enviado + bastidores", "w": 1440, "x": 3040, "y": 5060 },
+    "Main.dc.html": { "h": 2100, "is_interactive": true, "title": "/advisor-radar · desktop", "w": 1440, "x": 0, "y": 0 },
+    "Selecao-mobile.dc.html": { "h": 2000, "is_interactive": true, "title": "/advisor-radar · celular", "w": 390, "x": 1520, "y": 0 }
+  },
+  "createdOnFiles": { "at": "2026-09-27T12:00:00Z", "v": 1 },
+  "designSystems": [],
+  "launch": { "view": "canvas" },
+  "notes": {
+    "t1": { "kind": "title1", "maxW": 1910, "text": "Tela de seleção · /advisor-radar", "w": 240, "x": 0, "y": -300 },
+    "t2": { "kind": "title1", "maxW": 3680, "text": "Ponto de vista do cliente · celular", "w": 240, "x": 0, "y": 2220 },
+    "t3": { "kind": "title1", "maxW": 4480, "text": "Ponto de vista do cliente · desktop", "w": 240, "x": 0, "y": 3640 }
+  },
+  "order": [
+    "Main.dc.html",
+    "Selecao-mobile.dc.html",
+    "ClientPov.dc.html",
+    "ClientApp.dc.html",
+    "ClientApp-Saque.dc.html",
+    "ClientApp-Aporte.dc.html",
+    "ClientApp-Chat.dc.html",
+    "ClientApp-Reclamacao.dc.html",
+    "ClientApp-Enviado.dc.html",
+    "ClientApp-Light.dc.html",
+    "ClientPov-Desktop.dc.html",
+    "ClientApp-Desktop.dc.html",
+    "ClientApp-Desktop-Light.dc.html",
+    "ClientApp-Desktop-Saque.dc.html",
+    "ClientApp-Desktop-Reclamacao.dc.html",
+    "ClientApp-Desktop-Enviado.dc.html"
+  ],
+  "pages": [],
+  "title": "Advisor Radar — Seleção e visão do cliente"
+}

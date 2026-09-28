@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Advisor Radar — escolha uma visão</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&amp;family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f5f3ec;color:#14191a;font-family:'Albert Sans',system-ui,sans-serif}
+a{color:#1d4d3a}a:hover{color:#14191a}
+.choice{transition:border-color .2s ease, box-shadow .2s ease, transform .2s ease}
+.choice:hover{border-color:#14191a;box-shadow:0 10px 30px -18px rgba(20,25,26,.45);transform:translateY(-2px)}
+.choice:focus-visible{outline:3px solid #6fbf8a;outline-offset:3px}
+.node{position:absolute;box-sizing:border-box;width:188px;padding:12px 14px;border:1px solid #d9d6cc;background:#fbfaf6;border-radius:6px;transition:border-color .35s ease, background-color .35s ease, box-shadow .35s ease}
+.node.on{border-color:#1d4d3a;background:#dfe8df;box-shadow:0 0 0 4px rgba(111,191,138,.28)}
+.node.ext{border-style:dashed}
+.bus{transition:border-color .35s ease, background-color .35s ease, box-shadow .35s ease}
+.bus.on{border-color:#b9821c;background:#f3e9cf;box-shadow:0 0 0 4px rgba(185,130,28,.2)}
+.edge{fill:none;stroke:#cfcabd;stroke-width:1.5;transition:stroke .35s ease}
+.edge.on{stroke:#1d4d3a;stroke-width:2.5;stroke-dasharray:7 7;animation:flow .7s linear infinite}
+.elabel{position:absolute;font:500 10.5px/1.2 'JetBrains Mono',monospace;color:#6b706c;background:#f5f3ec;padding:2px 5px;border-radius:3px;white-space:nowrap}
+@keyframes flow{to{stroke-dashoffset:-14}}
+@media (prefers-reduced-motion: reduce){.edge.on{animation:none;stroke-dasharray:none}.choice:hover{transform:none}}
+</style>
+</helmet>
+<div style="width: 1440px; height: 2100px; box-sizing: border-box; background: #f5f3ec; color: #14191a; font-family: 'Albert Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+  <header style="height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 80px; border-bottom: 1px solid #d9d6cc; background: #fbfaf6">
+    <span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 4px; background: #14191a; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 6px; box-sizing: border-box">
+      <span style="display: block; height: 3px; width: 16px; background: #6fbf8a"></span>
+      <span style="display: block; height: 3px; width: 10px; background: #f5f3ec"></span>
+      <span style="display: block; height: 3px; width: 5px; background: #f5f3ec"></span>
+    </span>
+    <span style="font-family: 'Literata', Georgia, serif; font-size: 18px; font-weight: 500; letter-spacing: -0.01em">Advisor Radar</span>
+    <span style="flex-grow: 1"></span>
+    <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .06em; text-transform: uppercase; color: #3a4240; border: 1px solid #d9d6cc; border-radius: 999px; padding: 6px 12px">Demo técnica · dados fictícios</span>
+  </header>
+
+  <section style="padding: 64px 80px 0; display: flex; flex-direction: column; gap: 32px">
+    <div style="display: flex; flex-direction: column; gap: 12px; max-width: 860px">
+      <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Escolha uma visão</span>
+      <h1 style="margin: 0; font: 500 44px/1.08 'Literata', Georgia, serif; letter-spacing: -0.02em">O mesmo sinal, visto dos dois lados da conversa.</h1>
+      <p style="margin: 0; font-size: 17px; line-height: 1.5; color: #3a4240">Entre como assessoria para trabalhar a fila, ou como cliente para provocar os eventos que chegam nela.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+      <a class="choice" href="https://leohts.tech/advisor-radar/fila" style="display: flex; flex-direction: column; text-decoration: none; color: #14191a; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 6px; overflow: hidden">
+        <div aria-hidden="true" style="height: 176px; background: #efede5; border-bottom: 1px solid #d9d6cc; padding: 24px 28px; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <span style="height: 6px; width: 60%; background: #6b706c; border-radius: 2px"></span>
+            <div style="height: 40px; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 4px; display: flex; align-items: center; gap: 6px; padding: 0 8px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #a8322c"></span><span style="height: 5px; flex-grow: 1; background: #d9d6cc; border-radius: 2px"></span></div>
+            <div style="height: 40px; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 4px; display: flex; align-items: center; gap: 6px; padding: 0 8px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #b9821c"></span><span style="height: 5px; flex-grow: 1; background: #d9d6cc; border-radius: 2px"></span></div>
+            <div style="height: 40px; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 4px; display: flex; align-items: center; gap: 6px; padding: 0 8px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #6b706c"></span><span style="height: 5px; flex-grow: 1; background: #d9d6cc; border-radius: 2px"></span></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <span style="height: 6px; width: 45%; background: #6b706c; border-radius: 2px"></span>
+            <div style="height: 40px; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 4px; display: flex; align-items: center; gap: 6px; padding: 0 8px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #b9821c"></span><span style="height: 5px; flex-grow: 1; background: #d9d6cc; border-radius: 2px"></span></div>
+            <div style="height: 40px; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 4px; display: flex; align-items: center; gap: 6px; padding: 0 8px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #6b706c"></span><span style="height: 5px; flex-grow: 1; background: #d9d6cc; border-radius: 2px"></span></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <span style="height: 6px; width: 70%; background: #6b706c; border-radius: 2px"></span>
+            <div style="height: 40px; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 4px; display: flex; align-items: center; gap: 6px; padding: 0 8px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #6b706c"></span><span style="height: 5px; flex-grow: 1; background: #d9d6cc; border-radius: 2px"></span></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <span style="height: 6px; width: 55%; background: #6b706c; border-radius: 2px"></span>
+            <div style="height: 40px; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 4px; display: flex; align-items: center; gap: 6px; padding: 0 8px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #2c7d55"></span><span style="height: 5px; flex-grow: 1; background: #d9d6cc; border-radius: 2px"></span></div>
+            <div style="height: 40px; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 4px; display: flex; align-items: center; gap: 6px; padding: 0 8px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #6b706c"></span><span style="height: 5px; flex-grow: 1; background: #d9d6cc; border-radius: 2px"></span></div>
+          </div>
+        </div>
+        <div style="padding: 24px 28px 28px; display: flex; flex-direction: column; gap: 14px; flex-grow: 1">
+          <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Assessor · Analista · Gestor</span>
+          <h2 style="margin: 0; font: 500 30px/1.1 'Literata', Georgia, serif; letter-spacing: -0.01em">Visão do time</h2>
+          <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #3a4240">A fila do assessor em tempo real, com alertas de conta e mensagens triadas em ordem de prioridade. Inclui a revisão das classificações incertas e o painel da gestão com os SLAs em risco.</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px">
+            <span style="font-size: 12.5px; font-weight: 500; background: #efede5; border-radius: 999px; padding: 5px 11px; color: #3a4240">Fila do assessor</span>
+            <span style="font-size: 12.5px; font-weight: 500; background: #efede5; border-radius: 999px; padding: 5px 11px; color: #3a4240">Revisão de triagem</span>
+            <span style="font-size: 12.5px; font-weight: 500; background: #efede5; border-radius: 999px; padding: 5px 11px; color: #3a4240">Painel da assessoria</span>
+            <span style="font-size: 12.5px; font-weight: 500; background: #efede5; border-radius: 999px; padding: 5px 11px; color: #3a4240">Visão 360 do cliente</span>
+          </div>
+          <span style="flex-grow: 1"></span>
+          <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 8px; min-height: 44px; padding: 0 20px; border-radius: 6px; background: #14191a; color: #f5f3ec; font-weight: 600; font-size: 15px">Entrar como time
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+          </span>
+        </div>
+      </a>
+
+      <a class="choice" href="ClientPov.dc.html" style="display: flex; flex-direction: column; text-decoration: none; color: #14191a; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 6px; overflow: hidden">
+        <div aria-hidden="true" style="height: 176px; background: #1d4d3a; border-bottom: 1px solid #d9d6cc; box-sizing: border-box; display: flex; justify-content: center; align-items: flex-end; gap: 28px; padding-top: 22px">
+          <div style="width: 150px; height: 154px; box-sizing: border-box; background: #0b1220; border: 5px solid #26324d; border-bottom: none; border-radius: 20px 20px 0 0; padding: 14px 12px 0; display: flex; flex-direction: column; gap: 9px">
+            <span style="height: 5px; width: 40%; background: #8e98ad; border-radius: 2px"></span>
+            <span style="height: 11px; width: 82%; background: #eef2f8; border-radius: 2px"></span>
+            <div style="display: flex; height: 5px; border-radius: 2px; overflow: hidden"><span style="width: 42%; background: #f2b544"></span><span style="width: 28%; background: #8ab4ff"></span><span style="width: 17%; background: #57d3a2"></span><span style="width: 13%; background: #5b6780"></span></div>
+            <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 4px">
+              <span style="height: 22px; border-radius: 50%; background: #1b2640"></span>
+              <span style="height: 22px; border-radius: 50%; background: #1b2640"></span>
+              <span style="height: 22px; border-radius: 50%; background: #1b2640"></span>
+              <span style="height: 22px; border-radius: 50%; background: #f2b544"></span>
+            </div>
+            <span style="height: 26px; border-radius: 6px; background: #131c2e"></span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; padding-bottom: 28px">
+            <span style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #dfe8df; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2); border-radius: 3px; padding: 5px 8px">account.event.recorded</span>
+            <span style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #dfe8df; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2); border-radius: 3px; padding: 5px 8px">message.received</span>
+          </div>
+        </div>
+        <div style="padding: 24px 28px 28px; display: flex; flex-direction: column; gap: 14px; flex-grow: 1">
+          <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Cliente fictício · um por segmento</span>
+          <h2 style="margin: 0; font: 500 30px/1.1 'Literata', Georgia, serif; letter-spacing: -0.01em">Visão do cliente</h2>
+          <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #3a4240">Entre no app de uma corretora fictícia como um cliente Essencial, Advance ou Singular. Saques, depósitos, mensagens e reclamações viram eventos reais no RabbitMQ e aparecem na fila do time.</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px">
+            <span style="font-size: 12.5px; font-weight: 500; background: #efede5; border-radius: 999px; padding: 5px 11px; color: #3a4240">Saque e wire-out</span>
+            <span style="font-size: 12.5px; font-weight: 500; background: #efede5; border-radius: 999px; padding: 5px 11px; color: #3a4240">Depósito</span>
+            <span style="font-size: 12.5px; font-weight: 500; background: #efede5; border-radius: 999px; padding: 5px 11px; color: #3a4240">Mensagem livre</span>
+            <span style="font-size: 12.5px; font-weight: 500; background: #efede5; border-radius: 999px; padding: 5px 11px; color: #3a4240">Reclamações prontas</span>
+          </div>
+          <span style="flex-grow: 1"></span>
+          <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 8px; min-height: 44px; padding: 0 20px; border-radius: 6px; background: #1d4d3a; color: #ffffff; font-weight: 600; font-size: 15px">Escolher cliente
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+          </span>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <section style="margin: 72px 80px 0; padding-top: 40px; border-top: 1px solid #d9d6cc; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px">
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">O produto</span>
+      <p style="margin: 0; font: 400 19px/1.4 'Literata', Georgia, serif; color: #14191a">Quem precisa de atenção agora, e por quê.</p>
+      <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #3a4240">O Advisor Radar junta o que acontece na conta do cliente e o que ele escreve, e transforma isso em ações priorizadas para a assessoria.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px; padding-left: 20px; border-left: 1px solid #d9d6cc">
+      <span style="font: 600 15px/1.3 'Albert Sans', sans-serif">Alertas proativos</span>
+      <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #3a4240">Regras determinísticas sobre eventos de conta: saque relevante, queda de patrimônio, aporte grande, mudança de segmento e cliente sem contato.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px; padding-left: 20px; border-left: 1px solid #d9d6cc">
+      <span style="font: 600 15px/1.3 'Albert Sans', sans-serif">Triagem de mensagens</span>
+      <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #3a4240">Intenção, frustração, risco de saída e pedido de atendimento humano. Abaixo de 0,85 de certeza, uma pessoa revisa. Se o modelo cair, a heurística assume e o resultado sai marcado.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px; padding-left: 20px; border-left: 1px solid #d9d6cc">
+      <span style="font: 600 15px/1.3 'Albert Sans', sans-serif">Casos com SLA</span>
+      <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #3a4240">Aberto, em atendimento, aguardando cliente, resolvido. O SLA depende do segmento e escala sozinho no vencimento, por fila com TTL, sem cron.</p>
+    </div>
+  </section>
+
+  <section style="margin: 64px 80px 0; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; align-items: flex-end; gap: 24px">
+      <div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1">
+        <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Arquitetura</span>
+        <h2 style="margin: 0; font: 500 28px/1.15 'Literata', Georgia, serif; letter-spacing: -0.01em">Como uma reclamação chega à fila do assessor</h2>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px">
+        <sc-for list="{{dots}}" as="d" hint-placeholder-count="8">
+          <button type="button" aria-label="{{d.label}}" onClick="{{d.pick}}" style="{{d.style}}"></button>
+        </sc-for>
+      </div>
+      <button type="button" onClick="{{toggle}}" style="min-height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 0 16px; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 6px; font: 600 13.5px/1 'Albert Sans', sans-serif; color: #14191a">
+        <sc-if value="{{paused}}" hint-placeholder-val="{{false}}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4l13 8-13 8z"></path></svg>
+        </sc-if>
+        <sc-if value="{{playing}}" hint-placeholder-val="{{true}}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"></path></svg>
+        </sc-if>
+        {{toggleLabel}}
+      </button>
+    </div>
+
+    <div style="background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 6px; padding: 32px 0 0; display: flex; flex-direction: column; align-items: center">
+      <div style="position: relative; width: 1180px; height: 500px">
+        <svg width="1180" height="500" style="position: absolute; left: 0; top: 0" aria-hidden="true">
+          <path class="edge {{e.webbff}}" d="M188 226 L250 226"></path>
+          <path class="edge {{e.bffweb}}" d="M250 258 L188 258"></path>
+          <path class="edge {{e.bffacct}}" d="M438 226 L470 226 L470 80 L500 80"></path>
+          <path class="edge {{e.acctbus}}" d="M688 80 L730 80"></path>
+          <path class="edge {{e.bustriage}}" d="M842 60 L880 60"></path>
+          <path class="edge {{e.triagejev}}" d="M1068 60 L1084 60"></path>
+          <path class="edge {{e.busadv}}" d="M842 180 L880 180"></path>
+          <path class="edge {{e.buscases}}" d="M842 300 L880 300"></path>
+          <path class="edge {{e.busidx}}" d="M842 420 L880 420"></path>
+          <path class="edge {{e.idxes}}" d="M1068 420 L1084 420"></path>
+          <path class="edge {{e.busbff}}" d="M730 400 L344 400 L344 284"></path>
+        </svg>
+
+        <span class="elabel" style="left: 196px; top: 206px">HTTP</span>
+        <span class="elabel" style="left: 200px; top: 264px">SSE</span>
+        <span class="elabel" style="left: 420px; top: 140px">gRPC</span>
+        <span class="elabel" style="left: 470px; top: 380px">alert.raised · case.*</span>
+
+        <div class="node {{c.web}}" style="left: 0px; top: 200px">
+          <div style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #6b706c">web</div>
+          <div style="font: 600 15px/1.3 'Albert Sans', sans-serif; margin-top: 4px">App e fila</div>
+          <div style="font-size: 12px; color: #3a4240; margin-top: 2px">React · TypeScript · Vite</div>
+        </div>
+        <div class="node {{c.bff}}" style="left: 250px; top: 200px">
+          <div style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #6b706c">bff</div>
+          <div style="font: 600 15px/1.3 'Albert Sans', sans-serif; margin-top: 4px">Go · HTTP · SSE</div>
+          <div style="font-size: 12px; color: #3a4240; margin-top: 2px">Agrega via gRPC · sem banco</div>
+        </div>
+        <div class="node {{c.acct}}" style="left: 500px; top: 40px">
+          <div style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #6b706c">account-sim</div>
+          <div style="font: 600 15px/1.3 'Albert Sans', sans-serif; margin-top: 4px">Go · conta e mensagens</div>
+          <div style="font-size: 12px; color: #3a4240; margin-top: 2px">PostgreSQL · outbox</div>
+        </div>
+        <div class="bus {{c.bus}}" style="position: absolute; left: 730px; top: 20px; width: 112px; height: 460px; box-sizing: border-box; border: 1px solid #d9d6cc; background: #efede5; border-radius: 6px; padding: 14px 10px; display: flex; flex-direction: column; gap: 10px">
+          <div style="font: 600 14px/1.2 'Albert Sans', sans-serif">RabbitMQ</div>
+          <div style="font-size: 11.5px; color: #3a4240; line-height: 1.35">Eventos com trace nos headers</div>
+          <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px; font: 500 10px/1.25 'JetBrains Mono', monospace; color: #3a4240; word-break: break-all">
+            <span>message.received</span>
+            <span>message.triaged</span>
+            <span>account.event.recorded</span>
+            <span>alert.raised</span>
+            <span>case.opened</span>
+            <span>case.sla.breached</span>
+          </div>
+          <span style="flex-grow: 1"></span>
+          <div style="font-size: 11px; color: #6b706c; line-height: 1.35">Inbox por event_id · DLQ por fila · TTL + DLX</div>
+        </div>
+        <div class="node {{c.triage}}" style="left: 880px; top: 20px">
+          <div style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #6b706c">triage</div>
+          <div style="font: 600 15px/1.3 'Albert Sans', sans-serif; margin-top: 4px">Go · classificação</div>
+          <div style="font-size: 12px; color: #3a4240; margin-top: 2px">PostgreSQL · fallback</div>
+        </div>
+        <div class="node ext {{c.jev}}" style="left: 1084px; top: 20px; width: 96px; padding: 12px 10px">
+          <div style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #6b706c">externo</div>
+          <div style="font: 600 15px/1.3 'Albert Sans', sans-serif; margin-top: 4px">Jev</div>
+          <div style="font-size: 11px; color: #3a4240; margin-top: 2px">AI Gateway</div>
+        </div>
+        <div class="node {{c.advisory}}" style="left: 880px; top: 140px">
+          <div style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #6b706c">advisory</div>
+          <div style="font: 600 15px/1.3 'Albert Sans', sans-serif; margin-top: 4px">Go · regras de alerta</div>
+          <div style="font-size: 12px; color: #3a4240; margin-top: 2px">PostgreSQL · gRPC</div>
+        </div>
+        <div class="node {{c.cases}}" style="left: 880px; top: 260px">
+          <div style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #6b706c">cases</div>
+          <div style="font: 600 15px/1.3 'Albert Sans', sans-serif; margin-top: 4px">Go · casos e SLA</div>
+          <div style="font-size: 12px; color: #3a4240; margin-top: 2px">PostgreSQL · gRPC</div>
+        </div>
+        <div class="node {{c.indexer}}" style="left: 880px; top: 380px">
+          <div style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #6b706c">timeline-indexer</div>
+          <div style="font: 600 15px/1.3 'Albert Sans', sans-serif; margin-top: 4px">Go · visão 360</div>
+          <div style="font-size: 12px; color: #3a4240; margin-top: 2px">Indexa a timeline</div>
+        </div>
+        <div class="node {{c.es}}" style="left: 1084px; top: 380px; width: 96px; padding: 12px 10px">
+          <div style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #6b706c">busca</div>
+          <div style="font: 600 14px/1.3 'Albert Sans', sans-serif; margin-top: 4px">Elastic­search</div>
+        </div>
+      </div>
+
+      <div style="align-self: stretch; margin-top: 28px; border-top: 1px solid #d9d6cc; padding: 22px 40px 26px; display: grid; grid-template-columns: 72px minmax(0, 1fr) 320px; gap: 24px; align-items: start">
+        <div style="font: 500 34px/1 'Literata', Georgia, serif; color: #1d4d3a">{{stepNum}}</div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <div style="font: 600 17px/1.3 'Albert Sans', sans-serif">{{step.title}}</div>
+          <div style="font-size: 14px; line-height: 1.55; color: #3a4240">{{step.detail}}</div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start">
+          <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Neste passo</span>
+          <span style="font: 500 12.5px/1.3 'JetBrains Mono', monospace; background: #f3e9cf; color: #6f4a06; border-radius: 3px; padding: 5px 8px">{{step.tag}}</span>
+          <span style="font: 500 11.5px/1.3 'JetBrains Mono', monospace; color: #6b706c">trace 4bf92f35…0e4736 · mesmo trace do clique à fila</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer style="margin: 48px 80px 56px; display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+      <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c; margin-right: 8px">Feito com</span>
+      <span style="font: 500 12.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 7px 12px">Go 1.26</span>
+      <span style="font: 500 12.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 7px 12px">React + TypeScript + Vite</span>
+      <span style="font: 500 12.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 7px 12px">PostgreSQL · um por serviço</span>
+      <span style="font: 500 12.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 7px 12px">RabbitMQ</span>
+      <span style="font: 500 12.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 7px 12px">Elasticsearch</span>
+      <span style="font: 500 12.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 7px 12px">gRPC</span>
+      <span style="font: 500 12.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 7px 12px">Jev · decisão tipada</span>
+      <span style="font: 500 12.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 7px 12px">OpenTelemetry</span>
+      <span style="font: 500 12.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 7px 12px">Docker Compose</span>
+    </div>
+    <p style="margin: 0; font-size: 12.5px; color: #6b706c">Demo técnica com dados, nomes e marcas fictícios, sem vínculo com nenhuma instituição real. Nenhuma mensagem é enviada a clientes de verdade.</p>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2100}}'>
+class Component extends DCLogic {
+  state = { step: 0, paused: false };
+
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      if (!this.state.paused) {
+        this.setState((s) => ({ step: (s.step + 1) % 8 }));
+      }
+    }, 2600);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+  }
+
+  steps() {
+    return [
+      { n: ['web', 'bff'], e: ['webbff'], tag: 'POST /api/v1/client-pov/{id}/complaints', title: 'O cliente abre uma reclamação no app', detail: 'O app React envia o pedido ao BFF por HTTP/JSON versionado. O BFF não guarda nada: só valida e repassa.' },
+      { n: ['bff', 'acct'], e: ['bffacct'], tag: 'gRPC · deadline propagado', title: 'O BFF entrega o comando ao account-sim', detail: 'Chamada gRPC com deadline e interceptors de tracing e retry. O trace nasce no clique e acompanha o evento até a fila.' },
+      { n: ['acct'], e: [], tag: 'PostgreSQL · transactional outbox', title: 'Mensagem e evento gravados na mesma transação', detail: 'O account-sim salva a mensagem e o evento na outbox de uma vez. Se o broker estiver fora, o evento espera; nada se perde.' },
+      { n: ['acct', 'bus'], e: ['acctbus'], tag: 'message.received', title: 'O relay publica no RabbitMQ', detail: 'event_id, occurred_at, customer_id e schema_version no corpo; o contexto de trace vai nos headers.' },
+      { n: ['bus', 'triage', 'jev'], e: ['bustriage', 'triagejev'], tag: 'Jev · fallback heurístico', title: 'A triagem classifica a mensagem', detail: 'Inbox idempotente por event_id. O Jev decide intenção, frustração, risco de saída e pedido humano. Se o modelo cair, a heurística responde e o resultado sai marcado como degradado.' },
+      { n: ['bus', 'advisory', 'cases'], e: ['busadv', 'buscases'], tag: 'message.triaged → alert.raised', title: 'Uma regra gera o alerta e o caso ganha SLA', detail: 'Cada regra do advisory é uma interface pequena. O cases abre o caso com SLA do segmento; o vencimento escala por fila com TTL e dead-letter exchange.' },
+      { n: ['bus', 'indexer', 'es'], e: ['busidx', 'idxes'], tag: 'Elasticsearch', title: 'A visão 360 é atualizada', detail: 'O timeline-indexer grava eventos, mensagens triadas e casos para a busca textual da visão 360 do cliente.' },
+      { n: ['bus', 'bff', 'web'], e: ['busbff', 'bffweb'], tag: 'SSE · alert.raised', title: 'O alerta aparece na fila do assessor', detail: 'O BFF consome alert.raised e empurra por SSE, sem recarregar a página. Meta: p95 abaixo de 2 s do evento à tela.' },
+    ];
+  }
+
+  renderVals() {
+    const steps = this.steps();
+    const i = this.state.step;
+    const step = steps[i];
+    const nodeKeys = ['web', 'bff', 'acct', 'bus', 'triage', 'jev', 'advisory', 'cases', 'indexer', 'es'];
+    const edgeKeys = ['webbff', 'bffweb', 'bffacct', 'acctbus', 'bustriage', 'triagejev', 'busadv', 'buscases', 'busidx', 'idxes', 'busbff'];
+    const c = {};
+    nodeKeys.forEach((k) => { c[k] = step.n.includes(k) ? 'on' : ''; });
+    const e = {};
+    edgeKeys.forEach((k) => { e[k] = step.e.includes(k) ? 'on' : ''; });
+    const dots = steps.map((s, j) => ({
+      label: 'Passo ' + (j + 1) + ': ' + s.title,
+      pick: () => this.setState({ step: j, paused: true }),
+      style: 'width: 24px; height: 24px; min-height: 24px; padding: 0; border-radius: 50%; border: 1px solid ' + (j === i ? '#1d4d3a' : '#d9d6cc') + '; background: ' + (j === i ? '#1d4d3a' : (j < i ? '#dfe8df' : '#fbfaf6')) + ';',
+    }));
+    return {
+      c,
+      e,
+      step,
+      dots,
+      stepNum: String(i + 1).padStart(2, '0'),
+      paused: this.state.paused,
+      playing: !this.state.paused,
+      toggleLabel: this.state.paused ? 'Reproduzir' : 'Pausar',
+      toggle: () => this.setState((s) => ({ paused: !s.paused })),
+    };
+  }
+}
+</script>
+</body>
+</html>
