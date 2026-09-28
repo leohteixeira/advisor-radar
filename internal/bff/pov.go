@@ -61,12 +61,13 @@ type povMeta struct {
 	segment string
 	advisor string
 	sla     string
+	hint    string
 }
 
 var povCatalog = []povMeta{
-	{sim.CustomerMariana, "Mariana Costa", "Singular", "Ana Paula Ribeiro", "1 h"},
-	{sim.CustomerFernanda, "Fernanda Lima", "Essencial", "Ana Paula Ribeiro", "24 h"},
-	{sim.CustomerThiago, "Thiago Azevedo", "Advance", "Ana Paula Ribeiro", "4 h"},
+	{sim.CustomerMariana, "Mariana Costa", "Singular", "Ana Paula Ribeiro", "1 h", "Já reclamou de uma transferência atrasada. Um saque grande ou uma ameaça de saída sobem a prioridade na hora."},
+	{sim.CustomerFernanda, "Fernanda Lima", "Essencial", "Ana Paula Ribeiro", "24 h", "Perto do teto da faixa. Um depósito pode subir o segmento; uma reclamação mostra o SLA mais longo."},
+	{sim.CustomerThiago, "Thiago Azevedo", "Advance", "Ana Paula Ribeiro", "4 h", "Acabou de subir de Essencial para Advance com um depósito grande."},
 }
 
 type emptyPOV struct{}
@@ -203,6 +204,8 @@ func (h *Handler) listPOV(w http.ResponseWriter, r *http.Request) {
 			"assets":      account.Acoes + account.ETFs + account.RendaFixa + account.Caixa,
 			"sla":         meta.sla,
 			"advisor":     meta.advisor,
+			"since":       h.customerSince(r.Context(), meta.id),
+			"hint":        meta.hint,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -230,6 +233,7 @@ func (h *Handler) getPOV(w http.ResponseWriter, r *http.Request) {
 		"segment":     meta.segment,
 		"advisor":     meta.advisor,
 		"sla":         meta.sla,
+		"since":       h.customerSince(r.Context(), id),
 		"assets":      account.Acoes + account.ETFs + account.RendaFixa + account.Caixa,
 		"caixa":       account.Caixa,
 		"allocation": map[string]int64{
@@ -367,6 +371,14 @@ func (h *Handler) povCounters(w http.ResponseWriter, r *http.Request) {
 		"refusals":   refusals,
 		"duplicates": duplicates,
 	})
+}
+
+func (h *Handler) customerSince(ctx context.Context, id string) string {
+	customer, err := h.queue.GetCustomer(ctx, id)
+	if err != nil {
+		return ""
+	}
+	return customer.Since
 }
 
 func catalog(id string) povMeta {

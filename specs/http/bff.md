@@ -27,8 +27,8 @@ Money fields are integer USD cents. Every POST requires `Idempotency-Key`. A mis
 
 | Method | Path | Result |
 |---|---|---|
-| GET | `/v1/client-pov/customers` | The three clients: name, segment, assets, SLA, advisor |
-| GET | `/v1/client-pov/customers/{id}` | Home: assets, caixa, allocation, advisor, activity, messages |
+| GET | `/v1/client-pov/customers` | The three clients: name, segment, assets, SLA, advisor, since from the book, hint |
+| GET | `/v1/client-pov/customers/{id}` | Home: assets, caixa, allocation, advisor, since from the book, activity, messages |
 | POST | `/v1/client-pov/customers/{id}/deposits` | `202` `{"event_id"}`. Body: `amount`, `origin` |
 | POST | `/v1/client-pov/customers/{id}/withdrawals` | `202`, or `422` when amount exceeds caixa. Body: `amount`, `destination` |
 | POST | `/v1/client-pov/customers/{id}/messages` | `202`. Body: `channel` `chat` or `e-mail`, `text` |
