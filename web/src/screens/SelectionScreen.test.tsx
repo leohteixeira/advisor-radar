@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -77,7 +77,7 @@ describe('selection screen', () => {
     expect(screen.getByRole('heading', { name: 'Casos com SLA' })).toBeInTheDocument();
     expect(screen.getByText('Saque relevante, queda de patrimônio, aporte grande, mudança de segmento e cliente sem contato.')).toBeInTheDocument();
     for (const step of WALK_STEPS) {
-      expect(screen.getByText(step.title)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: new RegExp(step.title) })).toBeInTheDocument();
     }
     expect(screen.getByText('POST /v1/client-pov/customers/{id}/complaints')).toBeInTheDocument();
     expect(screen.getByText(/dados, nomes e marcas fictícios/)).toBeInTheDocument();
@@ -87,22 +87,21 @@ describe('selection screen', () => {
     vi.useFakeTimers();
     renderAt(ROUTER_BASENAME);
 
-    const list = screen.getByRole('list', { name: 'Passos da reclamação' });
-    expect(within(list).getAllByRole('listitem')[0]).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('button', { name: /Passo 1:/ })).toHaveAttribute('aria-current', 'step');
 
     act(() => {
       vi.advanceTimersByTime(WALK_INTERVAL_MS);
     });
-    expect(within(list).getAllByRole('listitem')[1]).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('button', { name: /Passo 2:/ })).toHaveAttribute('aria-current', 'step');
 
     act(() => {
-      screen.getByRole('button', { name: 'Pausar animação' }).click();
+      screen.getByRole('button', { name: 'Pausar' }).click();
     });
     act(() => {
       vi.advanceTimersByTime(WALK_INTERVAL_MS * 3);
     });
-    expect(within(list).getAllByRole('listitem')[1]).toHaveAttribute('aria-current', 'step');
-    expect(screen.getByRole('button', { name: 'Reproduzir animação' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /Passo 2:/ })).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('button', { name: 'Reproduzir' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('does not move when reduced motion is requested', () => {
@@ -112,12 +111,11 @@ describe('selection screen', () => {
       '(prefers-reduced-motion: reduce)': true,
     });
     renderAt(ROUTER_BASENAME);
-    const list = screen.getByRole('list', { name: 'Passos da reclamação' });
-    expect(screen.getByRole('button', { name: 'Reproduzir animação' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Reproduzir' })).toHaveAttribute('aria-pressed', 'true');
     act(() => {
       vi.advanceTimersByTime(WALK_INTERVAL_MS * 4);
     });
-    expect(within(list).getAllByRole('listitem')[0]).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('button', { name: /Passo 1:/ })).toHaveAttribute('aria-current', 'step');
   });
 
   it('shows the desktop cards, graph, and step jumpers', async () => {
@@ -137,12 +135,13 @@ describe('selection screen', () => {
     expect(screen.getByText('Como uma reclamação chega à fila do assessor')).toBeInTheDocument();
     expect(screen.getByText('Docker Compose')).toBeInTheDocument();
     expect(screen.getByText(/Nenhuma mensagem é enviada a clientes de verdade/)).toBeInTheDocument();
-    expect(document.querySelector('.selection__graph .is-on')).toHaveTextContent('web');
+    expect(screen.getByText('App e fila').closest('article')).toHaveClass('on');
+    expect(screen.queryByRole('list', { name: 'Passos da reclamação' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Passo 4:/ }));
-    const steps = screen.getByRole('list', { name: 'Passos da reclamação' });
-    expect(within(steps).getAllByRole('listitem')[3]).toHaveAttribute('aria-current', 'step');
-    expect(within(steps).getByText('message.received')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reproduzir animação' })).toHaveAttribute('aria-pressed', 'true');
+    expect(document.querySelector('.selection__readout code')).toHaveTextContent('message.received');
+    expect(screen.getByText('O relay publica no RabbitMQ')).toBeInTheDocument();
+    expect(document.querySelector('.selection__bus')).toHaveClass('on');
+    expect(screen.getByRole('button', { name: 'Reproduzir' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
