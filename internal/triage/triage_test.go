@@ -182,6 +182,20 @@ func TestHeuristicHandlesAccents(t *testing.T) {
 	}
 }
 
+func TestHeuristicTreatsBrokerSwitchAsComplaint(t *testing.T) {
+	t.Parallel()
+
+	r, err := HeuristicClassifier{}.Classify(context.Background(), Message{
+		Text: "ta complicado retirar meus investimentos. Estou cogitando trocar de corretora",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Intent != IntentReclamacao || r.ChurnRisk < 0.5 {
+		t.Fatalf("intent=%s churn=%v", r.Intent, r.ChurnRisk)
+	}
+}
+
 func TestHeuristicMatchesLabeledSet(t *testing.T) {
 	t.Parallel()
 
