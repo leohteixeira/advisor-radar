@@ -8,27 +8,33 @@ export interface POVClient {
   assets: number;
   sla: string;
   advisor: string;
-  hint?: string;
+  since: string;
+  hint: string;
+}
+
+export interface POVActivity {
+  title: string;
+  meta: string;
+  value: string;
+  tone: '' | 'pos' | 'neg';
+  icon: string;
+}
+
+export interface POVMessage {
+  text: string;
+  meta: string;
 }
 
 export interface POVHome extends POVClient {
   caixa: number;
   allocation: { acoes: number; etfs: number; renda_fixa: number; caixa: number };
-  activity: unknown[];
-  messages: unknown[];
+  activity: POVActivity[];
+  messages: POVMessage[];
 }
 
 export interface POVAccepted {
   event_id: string;
 }
-
-const HINTS: Record<string, string> = {
-  'Fernanda Lima':
-    'Perto do teto da faixa. Um depósito pode subir o segmento; uma reclamação mostra o SLA mais longo.',
-  'Thiago Azevedo': 'Acabou de subir de Essencial para Advance com um depósito grande.',
-  'Mariana Costa':
-    'Já reclamou de uma transferência atrasada. Um saque grande ou uma ameaça de saída sobem a prioridade na hora.',
-};
 
 export function protocolOf(eventID: string): string {
   const [a, b] = eventID.split('-');
@@ -48,11 +54,64 @@ async function read<T>(res: Response): Promise<T> {
 
 export async function fetchPOVClients(): Promise<POVClient[]> {
   const body = await read<{ items: POVClient[] }>(await fetch(apiPath('v1/client-pov/customers')));
-  return body.items.map((item) => ({ ...item, hint: HINTS[item.name] ?? '' }));
+  return body.items.map((item) => ({
+    ...item,
+    since: item.since ?? '',
+    hint: item.hint ?? '',
+  }));
 }
 
 export async function fetchPOVHome(id: string): Promise<POVHome> {
-  return read<POVHome>(await fetch(apiPath(`v1/client-pov/customers/${id}`)));
+  const home = await read<POVHome>(await fetch(apiPath(`v1/client-pov/customers/${id}`)));
+  return {
+    ...home,
+    since: home.since ?? '',
+    hint: home.hint ?? '',
+    activity: asActivity(home.activity),
+    messages: asMessages(home.messages),
+  };
+}
+
+function asActivity(value: unknown): POVActivity[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const rows: POVActivity[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== 'object') {
+      continue;
+    }
+    const item = row as Record<string, unknown>;
+    if (typeof item.title !== 'string') {
+      continue;
+    }
+    rows.push({
+      title: item.title,
+      meta: typeof item.meta === 'string' ? item.meta : '',
+      value: typeof item.value === 'string' ? item.value : '',
+      tone: item.tone === 'pos' || item.tone === 'neg' ? item.tone : '',
+      icon: typeof item.icon === 'string' ? item.icon : 'in',
+    });
+  }
+  return rows;
+}
+
+function asMessages(value: unknown): POVMessage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const rows: POVMessage[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== 'object') {
+      continue;
+    }
+    const item = row as Record<string, unknown>;
+    if (typeof item.text !== 'string') {
+      continue;
+    }
+    rows.push({ text: item.text, meta: typeof item.meta === 'string' ? item.meta : '' });
+  }
+  return rows;
 }
 
 export async function postPOV(
