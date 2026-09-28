@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { apiPath } from '../api/base';
 import { ApiError } from '../api/bff';
 import { fetchPOVHome, formatCents, postPOV, protocolOf, type POVHome } from '../api/pov';
+
+interface LiveStep {
+  id: string;
+  label: string;
+  state: string;
+}
 
 const PRESET = 'Estou pensando em sair';
 const PRESET_TEXT =
@@ -17,6 +24,25 @@ export function ClientAppScreen() {
   const [amount, setAmount] = useState('');
   const [notice, setNotice] = useState('');
   const [result, setResult] = useState<{ event_id: string; title: string } | null>(null);
+  const [steps, setSteps] = useState<LiveStep[]>([]);
+
+  useEffect(() => {
+    if (panel !== 'done' || !result) {
+      return;
+    }
+    const source = new EventSource(apiPath(`v1/client-pov/customers/${id}/stream`));
+    const onStep = (ev: Event) => {
+      const data = JSON.parse((ev as MessageEvent<string>).data) as { event_id: string; steps: LiveStep[] };
+      if (data.event_id === result.event_id) {
+        setSteps(data.steps);
+      }
+    };
+    source.addEventListener('bastidores', onStep);
+    return () => {
+      source.removeEventListener('bastidores', onStep);
+      source.close();
+    };
+  }, [panel, result, id]);
 
   useEffect(() => {
     let gone = false;
@@ -152,6 +178,13 @@ export function ClientAppScreen() {
           <h1>{result.title}</h1>
           <p>Protocolo {protocolOf(result.event_id)}</p>
           <p>{result.event_id}</p>
+          <ol aria-label="Bastidores">
+            {steps.map((step) => (
+              <li key={step.id}>
+                {step.label} {step.state}
+              </li>
+            ))}
+          </ol>
           <Link to="/fila">Ver na fila do time</Link>
           <button type="button" onClick={() => setPanel('home')}>
             Voltar ao início
