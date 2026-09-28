@@ -94,7 +94,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	var httpSrv *http.Server
 	var amqpCleanup func()
 
-	server := bff.NewHandler(board, actions, tl, queue, review, casesSrc)
+	server := bff.NewHandlerWithPOV(board, actions, tl, queue, review, casesSrc, newMemoryPOV(), nil)
 	if addr != "" {
 		httpSrv = &http.Server{
 			Addr:              addr,
