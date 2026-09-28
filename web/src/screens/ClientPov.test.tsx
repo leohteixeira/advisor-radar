@@ -134,6 +134,67 @@ describe('phone client pov', () => {
     await waitFor(() => expect(posts.some((url) => url.includes('/deposits'))).toBe(true));
   });
 
+  it('uses a desktop panel, the light theme, and a free message', async () => {
+    const user = userEvent.setup();
+    window.matchMedia = (query: string) =>
+      ({
+        matches: query === '(min-width: 900px)',
+        media: query,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        dispatchEvent: () => false,
+        onchange: null,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+      }) as MediaQueryList;
+    const posts: { url: string; body: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          posts.push({ url: String(url), body: String(init.body) });
+          return json({ event_id: EVENT });
+        }
+        return json({
+          customer_id: FERNANDA,
+          name: 'Fernanda Lima',
+          segment: 'Essencial',
+          advisor: 'Ana Paula Ribeiro',
+          sla: '24 h',
+          assets: 820000,
+          caixa: 114800,
+          allocation: { acoes: 1, etfs: 1, renda_fixa: 1, caixa: 114800 },
+          activity: [],
+          messages: [],
+        });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      class {
+        addEventListener() {}
+        removeEventListener() {}
+        close() {}
+      },
+    );
+    renderAt(`/client-pov/${FERNANDA}`);
+    expect(await screen.findByRole('button', { name: 'Tema claro' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tema claro' }));
+    expect(screen.getByRole('button', { name: 'Tema escuro' })).toBeInTheDocument();
+    expect(document.querySelector('.pov-app--light')).not.toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Mensagem' }));
+    expect(screen.getByRole('button', { name: 'Fechar' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Ação' })).toHaveClass('pov-app__panel');
+    expect(screen.getByText('Ainda não há mensagens. Escreva a primeira.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'E-mail' }));
+    await user.type(screen.getByLabelText('Texto'), 'Olá, assessoria');
+    await user.click(screen.getByRole('button', { name: 'Enviar' }));
+    expect(await screen.findByRole('heading', { name: 'Mensagem enviada' })).toBeInTheDocument();
+    expect(posts.some((post) => post.url.includes('/messages') && post.body.includes('e-mail'))).toBe(true);
+  });
+
   it('shows the client error state', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('no', { status: 404 })));
     renderAt(`/client-pov/${FERNANDA}`);
