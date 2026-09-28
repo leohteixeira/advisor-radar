@@ -25,11 +25,24 @@ type Handler struct {
 	cases    CaseSource
 	review   ReviewSource
 	timeline TimelineClient
+	pov      POVSource
 	now      func() time.Time
+	limits   *povLimiter
+	counts   *povCounts
 }
 
 // NewHandler returns an HTTP handler. Nil sources are treated as empty.
 func NewHandler(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource) http.Handler {
+	return newHandler(board, actions, tl, queue, review, cases, nil, nil)
+}
+
+// NewHandlerWithPOV is NewHandler plus the client POV command port.
+// now may be nil; the rate limit then uses time.Now.
+func NewHandlerWithPOV(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource, pov POVSource, now func() time.Time) http.Handler {
+	return newHandler(board, actions, tl, queue, review, cases, pov, now)
+}
+
+func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource, pov POVSource, now func() time.Time) http.Handler {
 	if actions == nil {
 		actions = UnavailableActions{}
 	}
@@ -52,7 +65,16 @@ func NewHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 		cases:    cases,
 		review:   review,
 		timeline: tl,
-		now:      time.Now,
+		pov:      pov,
+		now:      now,
+		limits:   newPOVLimiter(),
+		counts:   newPOVCounts(),
+	}
+	if h.now == nil {
+		h.now = time.Now
+	}
+	if h.pov == nil {
+		h.pov = emptyPOV{}
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/queue", h.queueHandler)
@@ -67,6 +89,13 @@ func NewHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	mux.HandleFunc("GET /v1/review", h.listReview)
 	mux.HandleFunc("PUT /v1/review/{id}", h.correctReview)
 	mux.HandleFunc("GET /v1/manager", h.manager)
+	mux.HandleFunc("GET /v1/client-pov/customers", h.listPOV)
+	mux.HandleFunc("GET /v1/client-pov/customers/{id}", h.getPOV)
+	mux.HandleFunc("POST /v1/client-pov/customers/{id}/deposits", h.postPOVDeposit)
+	mux.HandleFunc("POST /v1/client-pov/customers/{id}/withdrawals", h.postPOVWithdrawal)
+	mux.HandleFunc("POST /v1/client-pov/customers/{id}/messages", h.postPOVMessage)
+	mux.HandleFunc("POST /v1/client-pov/customers/{id}/complaints", h.postPOVComplaint)
+	mux.HandleFunc("GET /v1/client-pov/counters", h.povCounters)
 	return mux
 }
 
