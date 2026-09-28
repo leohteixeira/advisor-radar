@@ -20,6 +20,7 @@ import (
 	advisoryv1 "github.com/leohteixeira/advisor-radar/gen/advisory/v1"
 	"github.com/leohteixeira/advisor-radar/internal/advisory"
 	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/sim"
 )
 
 const amqpDialTimeout = 10 * time.Second
@@ -387,7 +388,15 @@ func handleDelivery(ctx context.Context, store *advisory.PGXStore, body []byte) 
 		return permanentDeliveryError{err: fmt.Errorf("advisory: validate delivery: %w", err)}
 	}
 	if err := advisory.Apply(ctx, store, env); err != nil {
-		return err
+		return classifyApplyError(err)
 	}
 	return nil
+}
+
+// classifyApplyError marks sim money-scale failures as permanent so they do not requeue.
+func classifyApplyError(err error) error {
+	if errors.Is(err, sim.ErrMoneyScale) {
+		return permanentDeliveryError{err: err}
+	}
+	return err
 }

@@ -46,7 +46,7 @@ func EvaluateAccount(p sim.AccountPayload) []Decision {
 	out := make([]Decision, 0, 2)
 
 	switch p.Kind {
-	case "withdrawal":
+	case "withdrawal", "saque":
 		if d, ok := ruleWithdrawal(p); ok {
 			out = append(out, d)
 		}
@@ -54,7 +54,7 @@ func EvaluateAccount(p sim.AccountPayload) []Decision {
 		if d, ok := ruleDrop(p); ok {
 			out = append(out, d)
 		}
-	case "deposit":
+	case "deposit", "aporte":
 		if d, ok := ruleDeposit(p); ok {
 			out = append(out, d)
 		}

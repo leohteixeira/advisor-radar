@@ -76,7 +76,12 @@ func Apply(ctx context.Context, store Store, env event.Envelope) error {
 		return fmt.Errorf("advisory: apply %s: %w", env.EventID, err)
 	}
 
-	decisions := EvaluateAccount(payload)
+	dollars, err := payload.Dollars(env.SchemaVersion)
+	if err != nil {
+		return fmt.Errorf("advisory: apply %s: %w", env.EventID, err)
+	}
+
+	decisions := EvaluateAccount(dollars)
 	return raise(ctx, store, raiseInput{
 		sourceEventID: env.EventID,
 		customerID:    env.CustomerID,

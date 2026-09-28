@@ -18,8 +18,11 @@ const (
 	NameCaseSLABreached      = "case.sla.breached"
 )
 
-// SchemaVersionMVP is the only schema version used by the MVP body.
-const SchemaVersionMVP = 1
+// Schema versions accepted on the shared envelope.
+const (
+	SchemaVersionMVP   = 1 // whole USD dollars
+	SchemaVersionCents = 2 // integer USD cents
+)
 
 var knownNames = map[string]struct{}{
 	NameAccountEventRecorded: {},
@@ -56,8 +59,8 @@ func (e Envelope) Validate() error {
 	if e.OccurredAt.IsZero() {
 		return fmt.Errorf("event: occurred_at is required")
 	}
-	if e.SchemaVersion < SchemaVersionMVP {
-		return fmt.Errorf("event: schema_version %d is below %d", e.SchemaVersion, SchemaVersionMVP)
+	if e.SchemaVersion != SchemaVersionMVP && e.SchemaVersion != SchemaVersionCents {
+		return fmt.Errorf("event: unsupported schema_version %d", e.SchemaVersion)
 	}
 	return nil
 }
