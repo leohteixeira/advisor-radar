@@ -21,9 +21,11 @@ The BFF stores nothing durable. POV progress lives in an in-memory hub. OpenTele
 | PUT | `/v1/review/{id}` | Correct an intent |
 | GET | `/v1/manager` | Manager snapshot |
 
+A queue alert item carries `alert`, the advisory kind (`saque`, `queda`, `aporte`, `segmento`, `contato`, or `perfil`), with `rule` and `reason`. A `perfil` item ("Compra acima do perfil de investidor") also carries `amount` in dollars, `product_id`, `risk`, `profile`, and `max_risk`; its `reason` names the product from the account-sim catalog, for example "Compra de US$ 1.000,00 em Cobalto Semicondutores, risco 5. Perfil conservador vai até risco 2.", and falls back to the `product_id`, then "produto", when the catalog is unavailable; without a `risk` it leaves the risk out. The BFF reads the catalog with a 300 ms deadline and keeps the names after the first successful read; a failed read is retried on the next render. The motivo facet labels it "Compra acima do perfil". A `perfil` alert opens no case.
+
 ## POV routes
 
-Money fields are integer USD cents. Every POST requires `Idempotency-Key`. A missing key is `400`. A new command spends a budget of 10 per minute and 40 per 24 hours for that customer. A replay of a known key does not spend the budget and does not append a second event. Over the limit the response is `429` and account-sim is not called. A withdrawal above caixa is `422` and publishes nothing.
+Money fields are integer USD cents. Every POST requires `Idempotency-Key`. A missing key is `400`. A new command spends a budget of 10 per minute and 40 per 24 hours for that customer. A replay of a known key does not spend the budget and does not append a second event. Over the limit the response is `429` and account-sim is not called. A withdrawal or purchase above caixa is `422` and publishes nothing.
 
 | Method | Path | Result |
 |---|---|---|
@@ -33,12 +35,13 @@ Money fields are integer USD cents. Every POST requires `Idempotency-Key`. A mis
 | POST | `/v1/client-pov/customers/{id}/withdrawals` | `202`, or `422` when amount exceeds caixa. Body: `amount`, `destination` |
 | POST | `/v1/client-pov/customers/{id}/messages` | `202`. Body: `channel` `chat` or `e-mail`, `text` |
 | POST | `/v1/client-pov/customers/{id}/complaints` | `202`. Body: `text`. Channel is chat |
+| POST | `/v1/client-pov/customers/{id}/purchases` | `202` `{"event_id"}`, or `422` `{"error":"insufficient"}` when `amount_cents` exceeds caixa, or `422` `{"error":"invalid"}` for a bad body, an unknown product, or an amount at or below 0, above the command maximum, or below the product minimum. Body: `product_id`, `amount_cents` |
 | GET | `/v1/client-pov/customers/{id}/stream` | SSE event `bastidores` with `event_id` and steps `feito`, `agora`, or `aguardando` |
-| GET | `/v1/client-pov/counters` | `actions` by type, `refusals` by rule, `duplicates` |
+| GET | `/v1/client-pov/counters` | `actions` by type (`deposit`, `withdrawal`, `message`, `complaint`, `purchase`), `refusals` by rule, `duplicates` |
 
 `202` has `event_id` and no protocol field. The UI formats the protocol as the first two UUID groups, uppercased.
 
-Deposit and withdrawal become `account.event.recorded` at schema version 2. Message and complaint become `message.received` with `origin: "client_app"` in the payload (seeded and burst messages omit `origin`); triage copies it into `message.triaged`. The BFF does not publish. account-sim writes state and the outbox row in one transaction.
+Deposit and withdrawal become `account.event.recorded` at schema version 2. A purchase becomes `account.event.recorded` `kind: aplicacao` at schema version 3: `amount` is the purchase, `before` and `after` both equal the patrimony (cash moves into a position at the catalog price), and the payload adds `product_id`, `asset_class`, and `risk` from the catalog row. Consumers accept versions 1, 2, and 3 and read v3 money as cents, like v2. An undecodable purchase body is `422 invalid` and spends no budget; account-sim refusals (`insufficient`, `invalid`) spend it, as for withdrawals. The Bastidores stream follows a purchase like the other account events. Message and complaint become `message.received` with `origin: "client_app"` in the payload (seeded and burst messages omit `origin`); triage copies it into `message.triaged`. The BFF does not publish. account-sim writes state and the outbox row in one transaction.
 
 ## Screens (phase 3)
 
@@ -117,7 +120,7 @@ An action is an object with `type` and `label`. There are four types:
 - A `purchase` panel without `product_id` is hidden.
 - `link.href` must use `https:` and opens with `rel="noopener noreferrer"`. Any other scheme is refused and the control is hidden.
 
-The `deposit`, `withdraw`, `message`, and `complaint` panels submit through the POV routes above. The route behind the `purchase` panel arrives with the purchase story and is documented here then. The over-cash check runs inside the account-sim transaction and answers `422`. Capping a form's input at a `*_cents` value the BFF sent is only a form convenience.
+The `deposit`, `withdraw`, `message`, and `complaint` panels submit through the POV routes above. The purchase route `/v1/client-pov/customers/{id}/purchases` exists now, but the web purchase form ships in story 10; until then web keeps the `purchase` panel hidden. The over-cash check runs inside the account-sim transaction and answers `422`. Capping a form's input at a `*_cents` value the BFF sent is only a form convenience.
 
 ### Failure policy
 
@@ -184,7 +187,7 @@ The BFF serves home `v1` with every moment variant of the priority list except `
 - `wealth`: `total_label` "Patrimônio total" with the patrimony account-sim reports, `cash_label` "Disponível para saque", and one allocation row per non-zero class in the order Ações (`stocks`), ETFs (`etfs`), Renda fixa (`fixed_income`), Caixa (`cash`). `bar_width` equals the rounded share.
 - `actions`: Depositar (`deposit` icon), Sacar (`withdraw`), Mensagem (`msg`), and Reclamar (`alert`), each a `panel` action.
 - `advisor`: `name` is the advisory book advisor, `initials` its first two name initials, `meta` "Resposta em até {{sla}} · cliente {{segment}}" with the catalog SLA per segment (Essencial 24 h, Advance 4 h, Singular 1 h), and action "Conversar" → `panel` `message`. An unknown segment is a `build_error`.
-- `activity`: title "Atividade recente". `recent` holds the five most recent client-facing timeline rows as `{icon, title, meta}`. A row is client-facing when its timeline `source` is `account.event.recorded` or `message.received`; rows from `alert.raised`, `message.triaged`, `case.*`, advisor notes, and calls never reach the client, and neither does a row without `source`. `meta` is the relative time from the row's `occurred_at` to the request time, or from the indexed `ago` when `occurred_at` is absent. Icons are `aporte` `in`, `saque` `out`, and `mensagem` `msg`; any other kind has no icon. With no client-facing row, `empty` carries `items: []` and the empty text.
+- `activity`: title "Atividade recente". `recent` holds the five most recent client-facing timeline rows as `{icon, title, meta}`. A row is client-facing when its timeline `source` is `account.event.recorded` or `message.received`; rows from `alert.raised`, `message.triaged`, `case.*`, advisor notes, and calls never reach the client, and neither does a row without `source`. `meta` is the relative time from the row's `occurred_at` to the request time, or from the indexed `ago` when `occurred_at` is absent. Icons are `aporte` `in`, `saque` and `aplicacao` `out`, and `mensagem` `msg`; any other kind has no icon. With no client-facing row, `empty` carries `items: []` and the empty text.
 
 ### Components (15 types)
 

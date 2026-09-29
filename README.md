@@ -27,7 +27,7 @@ The phone app can deposit, withdraw, send a free message, or file a preset compl
 
 An accepted action returns `202` with `event_id`. The confirmation protocol is the first two UUID groups of that id, uppercased. Bastidores follows `GET /v1/client-pov/customers/{id}/stream`. The queue link is `/advisor-radar/fila`.
 
-Money on the POV wire is integer USD cents. Schema version 1 events stay whole dollars. Schema version 2 account events are cents; advisory converts them into the dollar book before the phase-1 rules run.
+Money on the POV wire is integer USD cents. Schema version 1 events stay whole dollars. Schema version 2 and 3 account events are cents; advisory converts them into the dollar book before the phase-1 rules run. Schema version 3 is the purchase (`kind: aplicacao`, from `POST /v1/client-pov/customers/{id}/purchases`): cash moves into a position at the catalog price, so `before` equals `after`, and the payload adds `product_id`, `asset_class`, and `risk`. A purchase whose risk is above the client's investor profile raises the alert-only `perfil` card "Compra acima do perfil de investidor" in the team queue; it opens no case. The phase-2 commands stay at version 2.
 
 Names, balances, and Orla Invest are fictional. No message is sent to a real person.
 
