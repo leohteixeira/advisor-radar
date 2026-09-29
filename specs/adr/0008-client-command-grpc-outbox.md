@@ -37,3 +37,16 @@ continue to evaluate dollar amounts after a version-aware conversion.
 
 Revisit if the BFF gains durable storage and can own an outbox, or if a
 synchronous cross-service write must complete without an event.
+
+## Note (2026-09-29): the code now follows this ADR
+
+The BFF calls account-sim over `account/v1` gRPC on `ACCOUNT_SIM_GRPC_TARGET`.
+It passes the HTTP request context, so a client that disconnects cancels the
+call. The HTTP server sets no per-request deadline; a client interceptor applies
+a 2 s default deadline when the context has none, and a second interceptor
+retries only `Unavailable`, with at most three attempts in total and jittered
+exponential backoff from 50 ms. The retry is safe because every command carries
+its idempotency key. The BFF maps `FailedPrecondition`, `NotFound`, and
+`InvalidArgument` back to the phase-2 HTTP answers. It no longer runs
+`sim.Memory` in process and no longer publishes: account-sim writes the account
+state and the outbox row in one transaction, and its relay publishes.
