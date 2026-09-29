@@ -39,6 +39,7 @@ func builtinVariants(cat Catalog) map[variantKey]registered {
 	maps.Copy(variants, momentVariants(cat))
 	maps.Copy(variants, investirVariants())
 	maps.Copy(variants, carteiraVariants())
+	maps.Copy(variants, perfilVariants())
 	return variants
 }
 

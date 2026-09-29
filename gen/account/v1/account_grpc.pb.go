@@ -19,15 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AccountService_Deposit_FullMethodName         = "/account.v1.AccountService/Deposit"
-	AccountService_Withdraw_FullMethodName        = "/account.v1.AccountService/Withdraw"
-	AccountService_SendMessage_FullMethodName     = "/account.v1.AccountService/SendMessage"
-	AccountService_FileComplaint_FullMethodName   = "/account.v1.AccountService/FileComplaint"
-	AccountService_Purchase_FullMethodName        = "/account.v1.AccountService/Purchase"
-	AccountService_GetAccount_FullMethodName      = "/account.v1.AccountService/GetAccount"
-	AccountService_ListAccounts_FullMethodName    = "/account.v1.AccountService/ListAccounts"
-	AccountService_ListProducts_FullMethodName    = "/account.v1.AccountService/ListProducts"
-	AccountService_GetRegistration_FullMethodName = "/account.v1.AccountService/GetRegistration"
+	AccountService_Deposit_FullMethodName           = "/account.v1.AccountService/Deposit"
+	AccountService_Withdraw_FullMethodName          = "/account.v1.AccountService/Withdraw"
+	AccountService_SendMessage_FullMethodName       = "/account.v1.AccountService/SendMessage"
+	AccountService_FileComplaint_FullMethodName     = "/account.v1.AccountService/FileComplaint"
+	AccountService_Purchase_FullMethodName          = "/account.v1.AccountService/Purchase"
+	AccountService_GetAccount_FullMethodName        = "/account.v1.AccountService/GetAccount"
+	AccountService_ListAccounts_FullMethodName      = "/account.v1.AccountService/ListAccounts"
+	AccountService_ListProducts_FullMethodName      = "/account.v1.AccountService/ListProducts"
+	AccountService_GetRegistration_FullMethodName   = "/account.v1.AccountService/GetRegistration"
+	AccountService_GetPreferences_FullMethodName    = "/account.v1.AccountService/GetPreferences"
+	AccountService_UpdatePreferences_FullMethodName = "/account.v1.AccountService/UpdatePreferences"
 )
 
 // AccountServiceClient is the client API for AccountService service.
@@ -53,6 +55,14 @@ type AccountServiceClient interface {
 	ListAccounts(ctx context.Context, in *ListAccountsRequest, opts ...grpc.CallOption) (*ListAccountsResponse, error)
 	ListProducts(ctx context.Context, in *ListProductsRequest, opts ...grpc.CallOption) (*ListProductsResponse, error)
 	GetRegistration(ctx context.Context, in *GetRegistrationRequest, opts ...grpc.CallOption) (*Registration, error)
+	// GetPreferences returns the customer's contact channel and beta flag.
+	// An unknown customer is NotFound.
+	GetPreferences(ctx context.Context, in *GetPreferencesRequest, opts ...grpc.CallOption) (*Preferences, error)
+	// UpdatePreferences stores the contact channel and beta flag and returns
+	// what is stored. It writes no outbox row and publishes no event. A channel
+	// other than "chat" or "email" is InvalidArgument; an unknown customer is
+	// NotFound.
+	UpdatePreferences(ctx context.Context, in *UpdatePreferencesRequest, opts ...grpc.CallOption) (*Preferences, error)
 }
 
 type accountServiceClient struct {
@@ -153,6 +163,26 @@ func (c *accountServiceClient) GetRegistration(ctx context.Context, in *GetRegis
 	return out, nil
 }
 
+func (c *accountServiceClient) GetPreferences(ctx context.Context, in *GetPreferencesRequest, opts ...grpc.CallOption) (*Preferences, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Preferences)
+	err := c.cc.Invoke(ctx, AccountService_GetPreferences_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accountServiceClient) UpdatePreferences(ctx context.Context, in *UpdatePreferencesRequest, opts ...grpc.CallOption) (*Preferences, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Preferences)
+	err := c.cc.Invoke(ctx, AccountService_UpdatePreferences_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AccountServiceServer is the server API for AccountService service.
 // All implementations must embed UnimplementedAccountServiceServer
 // for forward compatibility.
@@ -176,6 +206,14 @@ type AccountServiceServer interface {
 	ListAccounts(context.Context, *ListAccountsRequest) (*ListAccountsResponse, error)
 	ListProducts(context.Context, *ListProductsRequest) (*ListProductsResponse, error)
 	GetRegistration(context.Context, *GetRegistrationRequest) (*Registration, error)
+	// GetPreferences returns the customer's contact channel and beta flag.
+	// An unknown customer is NotFound.
+	GetPreferences(context.Context, *GetPreferencesRequest) (*Preferences, error)
+	// UpdatePreferences stores the contact channel and beta flag and returns
+	// what is stored. It writes no outbox row and publishes no event. A channel
+	// other than "chat" or "email" is InvalidArgument; an unknown customer is
+	// NotFound.
+	UpdatePreferences(context.Context, *UpdatePreferencesRequest) (*Preferences, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
 
@@ -212,6 +250,12 @@ func (UnimplementedAccountServiceServer) ListProducts(context.Context, *ListProd
 }
 func (UnimplementedAccountServiceServer) GetRegistration(context.Context, *GetRegistrationRequest) (*Registration, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRegistration not implemented")
+}
+func (UnimplementedAccountServiceServer) GetPreferences(context.Context, *GetPreferencesRequest) (*Preferences, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPreferences not implemented")
+}
+func (UnimplementedAccountServiceServer) UpdatePreferences(context.Context, *UpdatePreferencesRequest) (*Preferences, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdatePreferences not implemented")
 }
 func (UnimplementedAccountServiceServer) mustEmbedUnimplementedAccountServiceServer() {}
 func (UnimplementedAccountServiceServer) testEmbeddedByValue()                        {}
@@ -396,6 +440,42 @@ func _AccountService_GetRegistration_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccountService_GetPreferences_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPreferencesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).GetPreferences(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_GetPreferences_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).GetPreferences(ctx, req.(*GetPreferencesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AccountService_UpdatePreferences_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdatePreferencesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).UpdatePreferences(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_UpdatePreferences_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).UpdatePreferences(ctx, req.(*UpdatePreferencesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccountService_ServiceDesc is the grpc.ServiceDesc for AccountService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -438,6 +518,14 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRegistration",
 			Handler:    _AccountService_GetRegistration_Handler,
+		},
+		{
+			MethodName: "GetPreferences",
+			Handler:    _AccountService_GetPreferences_Handler,
+		},
+		{
+			MethodName: "UpdatePreferences",
+			Handler:    _AccountService_UpdatePreferences_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

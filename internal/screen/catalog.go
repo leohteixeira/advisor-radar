@@ -58,6 +58,8 @@ type Fields struct {
 	Amount string
 	// Percent is a formatted percentage, such as "+11,5%".
 	Percent string
+	// AssessedOn is the investor profile assessment date as dd/mm/yyyy.
+	AssessedOn string
 }
 
 // headingSources maps each field a screen heading may use to the Snapshot

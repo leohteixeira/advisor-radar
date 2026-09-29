@@ -39,6 +39,23 @@ func MaxRisk(profile string) (int, error) {
 	return risk, nil
 }
 
+// ProfileMaxRisk is one row of the max-risk table.
+type ProfileMaxRisk struct {
+	Profile string
+	MaxRisk int
+}
+
+// MaxRiskTable returns the whole max-risk table, from the most conservative
+// profile to the boldest, so a client can show every level next to its own.
+func MaxRiskTable() []ProfileMaxRisk {
+	profiles := []string{ProfileConservador, ProfileModerado, ProfileArrojado}
+	table := make([]ProfileMaxRisk, 0, len(profiles))
+	for _, profile := range profiles {
+		table = append(table, ProfileMaxRisk{Profile: profile, MaxRisk: maxRisk[profile]})
+	}
+	return table
+}
+
 // InvestorProfile is the suitability profile of one book customer and the
 // date it was assessed.
 type InvestorProfile struct {

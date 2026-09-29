@@ -28,6 +28,10 @@ const (
 	SourceCases Source = "cases"
 	// SourceCatalog is the account-sim product catalog.
 	SourceCatalog Source = "catalog"
+	// SourceRegistration is the account-sim registration data.
+	SourceRegistration Source = "registration"
+	// SourcePreferences is the account-sim contact channel and beta flag.
+	SourcePreferences Source = "preferences"
 )
 
 // allSources is every Snapshot source in fetch and failure-report order.
@@ -39,6 +43,8 @@ var allSources = []Source{
 	SourceProfile,
 	SourceCases,
 	SourceCatalog,
+	SourceRegistration,
+	SourcePreferences,
 }
 
 // errNotFetched is the error of a source the screen's plan does not read:
@@ -116,11 +122,13 @@ type MomentFacts struct {
 
 // InvestorProfile is the customer's suitability profile from advisory:
 // Profile is "conservador", "moderado", or "arrojado", and MaxRisk the
-// highest product risk it accepts.
+// highest product risk it accepts. MaxRiskTable is the whole advisory
+// max-risk table, so Perfil can show every level without holding the table.
 type InvestorProfile struct {
-	Profile    string
-	MaxRisk    int
-	AssessedOn time.Time
+	Profile      string
+	MaxRisk      int
+	AssessedOn   time.Time
+	MaxRiskTable []ProfileMaxRisk
 }
 
 // OpenCase is one of the customer's cases that is not resolved. Age is how
@@ -194,12 +202,16 @@ type Sources struct {
 	Profiles  ProfileSource
 	Cases     CaseSource
 	Products  ProductSource
+	// Registrations and Preferences are the account-sim reads of Perfil.
+	Registrations RegistrationSource
+	Preferences   PreferenceSource
 }
 
 // complete reports whether every source is set.
 func (s Sources) complete() bool {
 	return s.Accounts != nil && s.Customers != nil && s.Activity != nil &&
-		s.Moments != nil && s.Profiles != nil && s.Cases != nil && s.Products != nil
+		s.Moments != nil && s.Profiles != nil && s.Cases != nil && s.Products != nil &&
+		s.Registrations != nil && s.Preferences != nil
 }
 
 // Fetched is one source result. Err is set when the source failed or ran past
@@ -224,6 +236,9 @@ type Snapshot struct {
 	Profile    Fetched[InvestorProfile]
 	Cases      Fetched[[]OpenCase]
 	Products   Fetched[[]Product]
+	// Registration and Preferences are read for Perfil only.
+	Registration Fetched[Registration]
+	Preferences  Fetched[Preferences]
 }
 
 // failed returns the error of src, or nil when it answered.
@@ -243,6 +258,10 @@ func (s Snapshot) failed(src Source) error {
 		return s.Cases.Err
 	case SourceCatalog:
 		return s.Products.Err
+	case SourceRegistration:
+		return s.Registration.Err
+	case SourcePreferences:
+		return s.Preferences.Err
 	default:
 		return fmt.Errorf("screen: unknown source %q", src)
 	}
@@ -267,6 +286,9 @@ func fetchSnapshot(ctx context.Context, tracer trace.Tracer, src Sources, want [
 		Profile:    Fetched[InvestorProfile]{Err: errNotFetched},
 		Cases:      Fetched[[]OpenCase]{Err: errNotFetched},
 		Products:   Fetched[[]Product]{Err: errNotFetched},
+		// Perfil reads.
+		Registration: Fetched[Registration]{Err: errNotFetched},
+		Preferences:  Fetched[Preferences]{Err: errNotFetched},
 	}
 	var g errgroup.Group
 	g.SetLimit(len(allSources))
@@ -318,6 +340,20 @@ func fetchSnapshot(ctx context.Context, tracer trace.Tracer, src Sources, want [
 			g.Go(func() error {
 				snap.Products = fetch(ctx, tracer, SourceCatalog, func(ctx context.Context) ([]Product, error) {
 					return src.Products.Products(ctx)
+				})
+				return nil
+			})
+		case SourceRegistration:
+			g.Go(func() error {
+				snap.Registration = fetch(ctx, tracer, SourceRegistration, func(ctx context.Context) (Registration, error) {
+					return src.Registrations.Registration(ctx, customerID)
+				})
+				return nil
+			})
+		case SourcePreferences:
+			g.Go(func() error {
+				snap.Preferences = fetch(ctx, tracer, SourcePreferences, func(ctx context.Context) (Preferences, error) {
+					return src.Preferences.Preferences(ctx, customerID)
 				})
 				return nil
 			})

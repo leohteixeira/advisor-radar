@@ -130,6 +130,7 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/messages", h.postPOVMessage)
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/complaints", h.postPOVComplaint)
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/purchases", h.postPOVPurchase)
+	mux.HandleFunc("PUT /v1/client-pov/customers/{id}/preferences", h.putPOVPreferences)
 	mux.HandleFunc("GET /v1/client-pov/counters", h.povCounters)
 	mux.HandleFunc("GET /v1/client-pov/customers/{id}/stream", h.povStream)
 	mux.HandleFunc("GET /v1/client-pov/customers/{id}/screens/{slug}", h.getScreen)

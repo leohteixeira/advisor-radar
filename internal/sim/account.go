@@ -114,6 +114,7 @@ type SeedAccount struct {
 	CashCents    int64
 	Positions    []Position
 	Registration Registration
+	Preferences  Preferences
 }
 
 // Seed is everything Reseed restores: the catalog and the three POV accounts.
@@ -136,8 +137,8 @@ func Catalog() []Product {
 }
 
 // DemoSeed is the day-0 state of the three POV accounts: cash, per-product
-// positions, and registration. Each class aggregate equals the phase-2 seed.
-// seeds/account_sim holds the same rows.
+// positions, registration, and preferences (chat, beta off). Each class
+// aggregate equals the phase-2 seed. seeds/account_sim holds the same rows.
 func DemoSeed() Seed {
 	products := Catalog()
 	classOf := make(map[string]string, len(products))
@@ -177,6 +178,7 @@ func DemoSeed() Seed {
 					City:          "São Paulo, SP · Brasil",
 					AccountNumber: "Conta 1190-4 · Orla Invest",
 				},
+				Preferences: DefaultPreferences(),
 			},
 			{
 				CustomerID: CustomerFernanda,
@@ -194,6 +196,7 @@ func DemoSeed() Seed {
 					City:          "Campinas, SP · Brasil",
 					AccountNumber: "Conta 3301-7 · Orla Invest",
 				},
+				Preferences: DefaultPreferences(),
 			},
 			{
 				CustomerID: CustomerThiago,
@@ -209,6 +212,7 @@ func DemoSeed() Seed {
 					City:          "Florianópolis, SC · Brasil",
 					AccountNumber: "Conta 2847-1 · Orla Invest",
 				},
+				Preferences: DefaultPreferences(),
 			},
 		},
 	}
@@ -310,14 +314,20 @@ type Result struct {
 // GetAccount returns cash, the positions valued at the current day, and their
 // class aggregates. PutAccount writes only the cash (Caixa); positions are
 // untouched. AddPosition adds delta's UnitsCents and AppliedCents to the
-// customer's position in delta.ProductID, creating it when absent. ResetPOV
-// restores the catalog, cash, positions, and registration of seed.
+// customer's position in delta.ProductID, creating it when absent.
+// GetPreferences reports ok false for an unknown customer; a known customer
+// without a stored row reads DefaultPreferences. Like GetAccount, it
+// serializes with the customer's other writers. PutPreferences stores them
+// for a known customer. ResetPOV restores the catalog, cash, positions,
+// registration, and preferences of seed.
 type Tx interface {
 	GetAccount(ctx context.Context, customerID string) (Account, bool, error)
 	PutAccount(ctx context.Context, account Account) error
 	AddPosition(ctx context.Context, customerID string, delta Position) error
 	ListProducts(ctx context.Context) ([]Product, error)
 	GetRegistration(ctx context.Context, customerID string) (Registration, bool, error)
+	GetPreferences(ctx context.Context, customerID string) (Preferences, bool, error)
+	PutPreferences(ctx context.Context, customerID string, prefs Preferences) error
 	LookupKey(ctx context.Context, customerID, key string) (eventID string, ok bool, err error)
 	SaveKey(ctx context.Context, customerID, key, eventID string) error
 	InsertOutbox(ctx context.Context, row outbox.Row) error
@@ -429,7 +439,7 @@ func Apply(ctx context.Context, store Store, cmd Command) (Result, error) {
 }
 
 // Reseed restores the catalog and the three POV accounts (cash, positions,
-// and registration) to DemoSeed.
+// registration, and preferences) to DemoSeed.
 func Reseed(ctx context.Context, store Store) error {
 	if store == nil {
 		return fmt.Errorf("sim: store is required")

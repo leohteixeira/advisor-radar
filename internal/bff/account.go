@@ -171,6 +171,46 @@ func (p *grpcPOV) Products(ctx context.Context) ([]POVProduct, error) {
 	return out, nil
 }
 
+// Registration returns one customer's registration data, or
+// sim.ErrUnknownCustomer.
+func (p *grpcPOV) Registration(ctx context.Context, customerID string) (POVRegistration, error) {
+	res, err := p.client.GetRegistration(ctx, &accountv1.GetRegistrationRequest{CustomerId: customerID})
+	if err != nil {
+		return POVRegistration{}, accountSimError("get registration", err)
+	}
+	return POVRegistration{
+		Email:         res.GetEmail(),
+		Phone:         res.GetPhone(),
+		City:          res.GetCity(),
+		AccountNumber: res.GetAccountNumber(),
+	}, nil
+}
+
+// Preferences returns one customer's stored preferences, or
+// sim.ErrUnknownCustomer.
+func (p *grpcPOV) Preferences(ctx context.Context, customerID string) (POVPreferences, error) {
+	res, err := p.client.GetPreferences(ctx, &accountv1.GetPreferencesRequest{CustomerId: customerID})
+	if err != nil {
+		return POVPreferences{}, accountSimError("get preferences", err)
+	}
+	return POVPreferences{Channel: res.GetChannel(), Beta: res.GetBeta()}, nil
+}
+
+// UpdatePreferences stores the preferences. A bad channel is sim.ErrCommand
+// and an unknown customer sim.ErrUnknownCustomer. The retry interceptor may
+// resend it on Unavailable, which is safe: the update is idempotent.
+func (p *grpcPOV) UpdatePreferences(ctx context.Context, customerID string, prefs POVPreferences) (POVPreferences, error) {
+	res, err := p.client.UpdatePreferences(ctx, &accountv1.UpdatePreferencesRequest{
+		CustomerId: customerID,
+		Channel:    prefs.Channel,
+		Beta:       prefs.Beta,
+	})
+	if err != nil {
+		return POVPreferences{}, accountSimError("update preferences", err)
+	}
+	return POVPreferences{Channel: res.GetChannel(), Beta: res.GetBeta()}, nil
+}
+
 // Apply sends one client command to account-sim, which writes the account
 // state and the outbox row in one transaction. Retried is set when the
 // interceptor sent the command more than once.

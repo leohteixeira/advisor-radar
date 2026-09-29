@@ -33,7 +33,46 @@ func newScreenEngine(pov POVSource, queue QueueSource, cases CaseSource, tl Time
 		Profiles:  screenProfiles{queue: queue},
 		Cases:     screenCases{cases: cases},
 		Products:  screenProducts{pov: pov},
+		// Perfil reads.
+		Registrations: screenRegistrations{pov: pov},
+		Preferences:   screenPreferences{pov: pov},
 	}, screen.WithClock(now))
+}
+
+// screenRegistrations reads the registration data over account/v1 through
+// the POV source. Any failure, NotFound included, only omits what needs it:
+// the account read alone decides an unknown customer.
+type screenRegistrations struct {
+	pov POVSource
+}
+
+// Registration implements screen.RegistrationSource.
+func (r screenRegistrations) Registration(ctx context.Context, customerID string) (screen.Registration, error) {
+	reg, err := r.pov.Registration(ctx, customerID)
+	if err != nil {
+		return screen.Registration{}, fmt.Errorf("bff: screen registration: %w", err)
+	}
+	return screen.Registration{
+		Email:         reg.Email,
+		Phone:         reg.Phone,
+		City:          reg.City,
+		AccountNumber: reg.AccountNumber,
+	}, nil
+}
+
+// screenPreferences reads the stored preferences over account/v1 through the
+// POV source.
+type screenPreferences struct {
+	pov POVSource
+}
+
+// Preferences implements screen.PreferenceSource.
+func (p screenPreferences) Preferences(ctx context.Context, customerID string) (screen.Preferences, error) {
+	prefs, err := p.pov.Preferences(ctx, customerID)
+	if err != nil {
+		return screen.Preferences{}, fmt.Errorf("bff: screen preferences: %w", err)
+	}
+	return screen.Preferences{Channel: prefs.Channel, Beta: prefs.Beta}, nil
 }
 
 // screenProducts reads the product catalog over account/v1 through the POV
@@ -183,7 +222,11 @@ func (p screenProfiles) Profile(ctx context.Context, customerID string) (screen.
 	if err != nil {
 		return screen.InvestorProfile{}, fmt.Errorf("bff: screen profile: %w", err)
 	}
-	return screen.InvestorProfile{Profile: ip.Profile, MaxRisk: ip.MaxRisk, AssessedOn: ip.AssessedOn}, nil
+	table := make([]screen.ProfileMaxRisk, 0, len(ip.MaxRiskTable))
+	for _, row := range ip.MaxRiskTable {
+		table = append(table, screen.ProfileMaxRisk{Profile: row.Profile, MaxRisk: row.MaxRisk})
+	}
+	return screen.InvestorProfile{Profile: ip.Profile, MaxRisk: ip.MaxRisk, AssessedOn: ip.AssessedOn, MaxRiskTable: table}, nil
 }
 
 // caseResolved is the state label of a closed case.

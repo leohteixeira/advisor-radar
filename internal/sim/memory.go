@@ -13,13 +13,15 @@ import (
 )
 
 // Memory is an in-process POV store seeded with DemoSeed: the product
-// catalog, and the cash, positions, and registration of the three accounts.
+// catalog, and the cash, positions, registration, and preferences of the
+// three accounts.
 type Memory struct {
 	mu            sync.Mutex
 	products      []Product
 	cash          map[string]int64
 	positions     map[string][]Position
 	registrations map[string]Registration
+	preferences   map[string]Preferences
 	keys          map[string]string
 	outbox        []outbox.Row
 	published     map[string]struct{}
@@ -31,6 +33,7 @@ func NewMemory() *Memory {
 		cash:          map[string]int64{},
 		positions:     map[string][]Position{},
 		registrations: map[string]Registration{},
+		preferences:   map[string]Preferences{},
 		keys:          map[string]string{},
 		published:     map[string]struct{}{},
 	}
@@ -46,6 +49,7 @@ func (m *Memory) reset(seed Seed) {
 		m.cash[account.CustomerID] = account.CashCents
 		m.positions[account.CustomerID] = slices.Clone(account.Positions)
 		m.registrations[account.CustomerID] = account.Registration
+		m.preferences[account.CustomerID] = seedPreferences(account.Preferences)
 	}
 }
 
@@ -61,6 +65,7 @@ func (m *Memory) WithTx(ctx context.Context, fn func(Tx) error) error {
 	snapCash := maps.Clone(m.cash)
 	snapPositions := maps.Clone(m.positions)
 	snapRegistrations := maps.Clone(m.registrations)
+	snapPreferences := maps.Clone(m.preferences)
 	snapKeys := maps.Clone(m.keys)
 	snapOut := slices.Clone(m.outbox)
 
@@ -70,6 +75,7 @@ func (m *Memory) WithTx(ctx context.Context, fn func(Tx) error) error {
 		m.cash = snapCash
 		m.positions = snapPositions
 		m.registrations = snapRegistrations
+		m.preferences = snapPreferences
 		m.keys = snapKeys
 		m.outbox = snapOut
 		return err
@@ -178,6 +184,34 @@ func (t *memoryTx) GetRegistration(ctx context.Context, customerID string) (Regi
 	}
 	registration, ok := t.store.registrations[customerID]
 	return registration, ok, nil
+}
+
+// GetPreferences reads the preferences reset stored with the account; a
+// known customer without an entry answers DefaultPreferences, as pgx does
+// without a row. The store lock already serializes it with every writer.
+func (t *memoryTx) GetPreferences(ctx context.Context, customerID string) (Preferences, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return Preferences{}, false, err
+	}
+	if _, ok := t.store.cash[customerID]; !ok {
+		return Preferences{}, false, nil
+	}
+	prefs, ok := t.store.preferences[customerID]
+	if !ok {
+		return DefaultPreferences(), true, nil
+	}
+	return prefs, true, nil
+}
+
+func (t *memoryTx) PutPreferences(ctx context.Context, customerID string, prefs Preferences) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, ok := t.store.cash[customerID]; !ok {
+		return fmt.Errorf("sim memory: put preferences: %w", ErrUnknownCustomer)
+	}
+	t.store.preferences[customerID] = prefs
+	return nil
 }
 
 func (t *memoryTx) LookupKey(ctx context.Context, customerID, key string) (string, bool, error) {

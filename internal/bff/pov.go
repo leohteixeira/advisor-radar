@@ -133,6 +133,22 @@ type POVResult struct {
 	Retried bool
 }
 
+// POVRegistration is the account-sim fictional registration data. Phone is
+// already masked display text.
+type POVRegistration struct {
+	Email         string
+	Phone         string
+	City          string
+	AccountNumber string
+}
+
+// POVPreferences are the client's contact channel ("chat" or "email") and
+// beta program flag.
+type POVPreferences struct {
+	Channel string
+	Beta    bool
+}
+
 // POVSource is the account-sim port. The BFF does not publish. Refusals are
 // the sim sentinels: ErrInsufficient, ErrUnknownCustomer, ErrAmount, and
 // ErrCommand; any other error is an upstream failure.
@@ -142,6 +158,13 @@ type POVSource interface {
 	Apply(ctx context.Context, cmd POVCommand) (POVResult, error)
 	// Products returns the fictional product catalog.
 	Products(ctx context.Context) ([]POVProduct, error)
+	// Registration returns one customer's registration data.
+	Registration(ctx context.Context, customerID string) (POVRegistration, error)
+	// Preferences returns one customer's stored preferences.
+	Preferences(ctx context.Context, customerID string) (POVPreferences, error)
+	// UpdatePreferences stores them and returns what is stored. It publishes
+	// no event.
+	UpdatePreferences(ctx context.Context, customerID string, prefs POVPreferences) (POVPreferences, error)
 }
 
 type povMeta struct {
@@ -170,6 +193,15 @@ func (emptyPOV) Apply(context.Context, POVCommand) (POVResult, error) {
 }
 func (emptyPOV) Products(context.Context) ([]POVProduct, error) {
 	return nil, errPOVDisabled
+}
+func (emptyPOV) Registration(context.Context, string) (POVRegistration, error) {
+	return POVRegistration{}, errPOVDisabled
+}
+func (emptyPOV) Preferences(context.Context, string) (POVPreferences, error) {
+	return POVPreferences{}, errPOVDisabled
+}
+func (emptyPOV) UpdatePreferences(context.Context, string, POVPreferences) (POVPreferences, error) {
+	return POVPreferences{}, errPOVDisabled
 }
 
 type povLimiter struct {

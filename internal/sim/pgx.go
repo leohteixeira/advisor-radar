@@ -14,8 +14,8 @@ import (
 )
 
 // PGXStore is the PostgreSQL Store over pov_account, pov_position,
-// pov_product, pov_registration, pov_idempotency, and outbox in the
-// account_sim database. Every writer takes a transaction-scoped advisory lock
+// pov_product, pov_registration, pov_preferences, pov_idempotency, and outbox
+// in the account_sim database. Every writer takes a transaction-scoped advisory lock
 // per customer, so commands for one customer run one at a time and a
 // concurrent request with the same key becomes a replay.
 type PGXStore struct {
@@ -197,6 +197,50 @@ WHERE customer_id = $1`
 	return registration, true, nil
 }
 
+// GetPreferences takes the customer lock first, so it serializes with the
+// customer's commands and a concurrent update, then reads the stored row. A
+// known customer without a row answers DefaultPreferences.
+func (t *pgxTx) GetPreferences(ctx context.Context, customerID string) (Preferences, bool, error) {
+	if err := t.lock(ctx, customerID); err != nil {
+		return Preferences{}, false, err
+	}
+	const q = `
+SELECT p.channel, p.beta
+FROM pov_account a
+LEFT JOIN pov_preferences p ON p.customer_id = a.customer_id
+WHERE a.customer_id = $1`
+	var (
+		channel *string
+		beta    *bool
+	)
+	err := t.tx.QueryRow(ctx, q, customerID).Scan(&channel, &beta)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Preferences{}, false, nil
+	}
+	if err != nil {
+		return Preferences{}, false, fmt.Errorf("sim pgx: get preferences: %w", err)
+	}
+	if channel == nil || beta == nil {
+		return DefaultPreferences(), true, nil
+	}
+	return Preferences{Channel: *channel, Beta: *beta}, true, nil
+}
+
+// PutPreferences upserts the customer's preferences. The customer lock is
+// already held: UpdatePreferences reads the preferences first.
+func (t *pgxTx) PutPreferences(ctx context.Context, customerID string, prefs Preferences) error {
+	const q = `
+INSERT INTO pov_preferences (customer_id, channel, beta)
+VALUES ($1, $2, $3)
+ON CONFLICT (customer_id) DO UPDATE SET
+  channel = EXCLUDED.channel,
+  beta = EXCLUDED.beta`
+	if _, err := t.tx.Exec(ctx, q, customerID, prefs.Channel, prefs.Beta); err != nil {
+		return fmt.Errorf("sim pgx: put preferences: %w", err)
+	}
+	return nil
+}
+
 // LookupKey runs first in Apply, so it takes the customer lock before reading
 // the key: a concurrent same-key request waits here and then sees the key.
 func (t *pgxTx) LookupKey(ctx context.Context, customerID, key string) (string, bool, error) {
@@ -241,7 +285,7 @@ VALUES ($1::uuid, $2, $3::jsonb)`
 }
 
 // ResetPOV upserts the catalog, then restores each seeded account: cash,
-// exactly the seeded positions, and registration. It sorts the accounts by
+// exactly the seeded positions, registration, and preferences. It sorts the accounts by
 // customer_id (byte-wise string order, not by lock hash) and takes each
 // customer lock in that order, so it serializes with Apply and two resets
 // acquire their locks in the same order and cannot deadlock.
@@ -314,6 +358,9 @@ ON CONFLICT (customer_id) DO UPDATE SET
 		account.CustomerID, registration.Email, registration.Phone, registration.City, registration.AccountNumber,
 	); err != nil {
 		return fmt.Errorf("sim pgx: reset registration: %w", err)
+	}
+	if err := t.PutPreferences(ctx, account.CustomerID, seedPreferences(account.Preferences)); err != nil {
+		return fmt.Errorf("sim pgx: reset preferences: %w", err)
 	}
 	return nil
 }

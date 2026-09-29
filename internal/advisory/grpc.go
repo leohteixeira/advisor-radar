@@ -348,7 +348,7 @@ func (s *GRPCServer) ContactMetrics(ctx context.Context, _ *advisoryv1.ContactMe
 }
 
 // GetInvestorProfile implements AdvisoryService. max_risk comes from the
-// advisory max-risk table.
+// advisory max-risk table, which max_risk_table carries whole.
 func (s *GRPCServer) GetInvestorProfile(ctx context.Context, req *advisoryv1.GetInvestorProfileRequest) (*advisoryv1.InvestorProfile, error) {
 	id, err := identity.ParseV7(req.GetCustomerId())
 	if err != nil {
@@ -371,10 +371,16 @@ func (s *GRPCServer) GetInvestorProfile(ctx context.Context, req *advisoryv1.Get
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "investor profile: %v", err)
 	}
+	table := MaxRiskTable()
+	rows := make([]*advisoryv1.ProfileMaxRisk, 0, len(table))
+	for _, row := range table {
+		rows = append(rows, &advisoryv1.ProfileMaxRisk{Profile: row.Profile, MaxRisk: int32(row.MaxRisk)})
+	}
 	return &advisoryv1.InvestorProfile{
-		Profile:    p.Profile,
-		MaxRisk:    int32(risk), // risk is 2, 3, or 5
-		AssessedOn: p.AssessedOn.Format(time.DateOnly),
+		Profile:      p.Profile,
+		MaxRisk:      int32(risk), // risk is 2, 3, or 5
+		AssessedOn:   p.AssessedOn.Format(time.DateOnly),
+		MaxRiskTable: rows,
 	}, nil
 }
 

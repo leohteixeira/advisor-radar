@@ -23,6 +23,14 @@ service AccountService {
   rpc ListAccounts(ListAccountsRequest) returns (ListAccountsResponse);
   rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
   rpc GetRegistration(GetRegistrationRequest) returns (Registration);
+  // GetPreferences returns the customer's contact channel and beta flag.
+  // An unknown customer is NotFound.
+  rpc GetPreferences(GetPreferencesRequest) returns (Preferences);
+  // UpdatePreferences stores the contact channel and beta flag and returns
+  // what is stored. It writes no outbox row and publishes no event. A channel
+  // other than "chat" or "email" is InvalidArgument; an unknown customer is
+  // NotFound.
+  rpc UpdatePreferences(UpdatePreferencesRequest) returns (Preferences);
 }
 
 message DepositRequest {
@@ -135,4 +143,22 @@ message Registration {
   string phone = 3;
   string city = 4;
   string account_number = 5;
+}
+
+message GetPreferencesRequest {
+  string customer_id = 1;
+}
+
+message UpdatePreferencesRequest {
+  string customer_id = 1;
+  // channel is "chat" or "email".
+  string channel = 2;
+  bool beta = 3;
+}
+
+// Preferences are the client's contact channel and beta program flag.
+message Preferences {
+  // channel is "chat" or "email".
+  string channel = 1;
+  bool beta = 2;
 }

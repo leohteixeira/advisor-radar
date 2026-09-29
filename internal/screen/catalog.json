@@ -57,6 +57,22 @@
           ]
         }
       }
+    },
+    "perfil": {
+      "revision": "v1",
+      "revisions": {
+        "v1": {
+          "title": "Perfil",
+          "subtitle": "Seus dados, seu perfil de investidor e suas preferências",
+          "sections": [
+            { "id": "header", "type": "profile_header", "variants": ["default"] },
+            { "id": "suitability", "type": "profile_scale", "variants": ["conservador", "moderado", "arrojado"] },
+            { "id": "registration", "type": "profile_field_list", "variants": ["default"] },
+            { "id": "preferences", "type": "preference_list", "variants": ["default"] },
+            { "id": "advisor", "type": "advisor_card", "variants": ["dedicated", "default"] }
+          ]
+        }
+      }
     }
   },
   "copy": {
@@ -207,6 +223,74 @@
         "badge": "Acima do seu perfil",
         "warning": "Este produto tem risco {{.Risk}}. Seu perfil é {{.Profile}}, que vai até risco {{.MaxRisk}}. Você pode investir mesmo assim, e a sua assessora será avisada.",
         "action": "Investir"
+      }
+    },
+    "profile_header": {
+      "default": {
+        "subtitle": "Cliente {{.Segment}}{{if .Since}} desde {{.Since}}{{end}}"
+      }
+    },
+    "profile_scale": {
+      "conservador": {
+        "title": "Seu perfil de investidor",
+        "subtitle": "Define os destaques de Investir e quando uma compra recebe aviso.",
+        "current_label": "Seu perfil",
+        "limit": "Produtos até risco {{.MaxRisk}}",
+        "footer": "Última avaliação em {{.AssessedOn}}. Para refazer o questionário, fale com a sua assessora."
+      },
+      "moderado": {
+        "title": "Seu perfil de investidor",
+        "subtitle": "Define os destaques de Investir e quando uma compra recebe aviso.",
+        "current_label": "Seu perfil",
+        "limit": "Produtos até risco {{.MaxRisk}}",
+        "footer": "Última avaliação em {{.AssessedOn}}. Para refazer o questionário, fale com a sua assessora."
+      },
+      "arrojado": {
+        "title": "Seu perfil de investidor",
+        "subtitle": "Define os destaques de Investir e quando uma compra recebe aviso.",
+        "current_label": "Seu perfil",
+        "limit": "Produtos até risco {{.MaxRisk}}",
+        "footer": "Última avaliação em {{.AssessedOn}}. Para refazer o questionário, fale com a sua assessora."
+      }
+    },
+    "profile_level": {
+      "conservador": {
+        "label": "Conservador",
+        "description": "Prioriza preservar o patrimônio. Aceita pouca oscilação."
+      },
+      "moderado": {
+        "label": "Moderado",
+        "description": "Aceita oscilação moderada em busca de mais retorno."
+      },
+      "arrojado": {
+        "label": "Arrojado",
+        "description": "Aceita oscilação alta no curto prazo para buscar retorno maior."
+      }
+    },
+    "profile_field_list": {
+      "default": {
+        "title": "Dados cadastrais",
+        "name": "Nome",
+        "email": "E-mail",
+        "phone": "Telefone",
+        "city": "Cidade",
+        "segment": "Segmento",
+        "since": "Cliente desde",
+        "footnote": "Dados fictícios. Alterar cadastro fica fora da simulação."
+      }
+    },
+    "preference_list": {
+      "default": {
+        "title": "Preferências",
+        "theme_label": "Tema",
+        "theme_hint": "Fica salvo só neste navegador",
+        "channel_label": "Canal preferido",
+        "channel_hint": "Por onde a assessoria fala com você",
+        "channel_chat": "Chat",
+        "channel_email": "E-mail",
+        "beta_label": "Programa beta",
+        "beta_hint_off": "Veja antes as novas versões das telas.",
+        "beta_hint_on": "Ligado. Você recebe a revision v2 do início antes dos outros clientes."
       }
     }
   },

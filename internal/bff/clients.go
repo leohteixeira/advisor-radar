@@ -67,11 +67,19 @@ type MomentFacts struct {
 	PortfolioDrop      bool
 }
 
-// InvestorProfile is one customer's advisory investor profile.
+// InvestorProfile is one customer's advisory investor profile. MaxRiskTable
+// is the whole advisory max-risk table, in level order.
 type InvestorProfile struct {
-	Profile    string
-	MaxRisk    int
-	AssessedOn time.Time
+	Profile      string
+	MaxRisk      int
+	AssessedOn   time.Time
+	MaxRiskTable []ProfileMaxRisk
+}
+
+// ProfileMaxRisk is one row of the advisory max-risk table.
+type ProfileMaxRisk struct {
+	Profile string
+	MaxRisk int
 }
 
 // Operator is one advisory operator.
@@ -224,10 +232,15 @@ func (g *GRPCQueue) InvestorProfile(ctx context.Context, customerID string) (Inv
 	if err != nil {
 		return InvestorProfile{}, fmt.Errorf("bff: investor profile assessed_on: %w", err)
 	}
+	table := make([]ProfileMaxRisk, 0, len(res.GetMaxRiskTable()))
+	for _, row := range res.GetMaxRiskTable() {
+		table = append(table, ProfileMaxRisk{Profile: row.GetProfile(), MaxRisk: int(row.GetMaxRisk())})
+	}
 	return InvestorProfile{
-		Profile:    res.GetProfile(),
-		MaxRisk:    int(res.GetMaxRisk()),
-		AssessedOn: assessed,
+		Profile:      res.GetProfile(),
+		MaxRisk:      int(res.GetMaxRisk()),
+		AssessedOn:   assessed,
+		MaxRiskTable: table,
 	}, nil
 }
 

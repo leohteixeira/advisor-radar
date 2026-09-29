@@ -185,6 +185,33 @@ func (s *GRPCServer) GetRegistration(ctx context.Context, req *accountv1.GetRegi
 	}, nil
 }
 
+// GetPreferences returns the customer's contact channel and beta flag.
+func (s *GRPCServer) GetPreferences(ctx context.Context, req *accountv1.GetPreferencesRequest) (*accountv1.Preferences, error) {
+	customerID, err := identity.ParseV7(req.GetCustomerId())
+	if err != nil {
+		return nil, errInvalidCustomer
+	}
+	prefs, err := GetPreferences(ctx, s.store, customerID)
+	if err != nil {
+		return nil, s.statusOf("GetPreferences", err)
+	}
+	return preferencesToProto(prefs), nil
+}
+
+// UpdatePreferences stores the contact channel and beta flag. It writes no
+// outbox row, so no event is published.
+func (s *GRPCServer) UpdatePreferences(ctx context.Context, req *accountv1.UpdatePreferencesRequest) (*accountv1.Preferences, error) {
+	customerID, err := identity.ParseV7(req.GetCustomerId())
+	if err != nil {
+		return nil, errInvalidCustomer
+	}
+	prefs, err := UpdatePreferences(ctx, s.store, customerID, Preferences{Channel: req.GetChannel(), Beta: req.GetBeta()})
+	if err != nil {
+		return nil, s.statusOf("UpdatePreferences", err)
+	}
+	return preferencesToProto(prefs), nil
+}
+
 // loadAccount reads one customer's cash, positions, and the class aggregates
 // summed from those same positions.
 func loadAccount(ctx context.Context, tx Tx, customerID string) (*accountv1.Account, bool, error) {
@@ -226,7 +253,8 @@ func (s *GRPCServer) statusOf(method string, err error, attrs ...any) error {
 		return status.Error(codes.NotFound, "customer not found")
 	case errors.Is(err, identity.ErrInvalidID):
 		return errInvalidCustomer
-	case errors.Is(err, ErrAmount), errors.Is(err, ErrCommand), errors.Is(err, ErrKey), errors.Is(err, ErrProduct):
+	case errors.Is(err, ErrAmount), errors.Is(err, ErrCommand), errors.Is(err, ErrKey), errors.Is(err, ErrProduct),
+		errors.Is(err, ErrChannel):
 		// These messages come from sim validation only, never from storage.
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, context.Canceled):
@@ -272,6 +300,10 @@ func accountToProto(a Account) *accountv1.Account {
 		Positions:      out,
 		PatrimonyCents: a.Assets(),
 	}
+}
+
+func preferencesToProto(p Preferences) *accountv1.Preferences {
+	return &accountv1.Preferences{Channel: p.Channel, Beta: p.Beta}
 }
 
 func productToProto(p Product) *accountv1.Product {
