@@ -29,8 +29,19 @@ import (
 const testDatabaseEnv = "ACCOUNT_SIM_TEST_DATABASE_URL"
 
 // newTestPool returns a pool whose search_path is a fresh schema migrated with
-// migrations/account_sim and seeded with the POV accounts.
+// migrations/account_sim and seeded with the POV accounts through Reseed.
 func newTestPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool := newMigratedPool(t)
+	if err := sim.Reseed(t.Context(), sim.NewPGXStore(pool)); err != nil {
+		t.Fatalf("reseed: %v", err)
+	}
+	return pool
+}
+
+// newMigratedPool returns a pool whose search_path is a fresh schema migrated
+// with migrations/account_sim and holding no seed rows.
+func newMigratedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv(testDatabaseEnv)
 	if dsn == "" {
@@ -73,10 +84,16 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 	// Registered after the drop, so it runs first and releases connections.
 	t.Cleanup(pool.Close)
 
-	dir := filepath.Join("..", "..", "migrations", "account_sim")
+	applySQLDir(t, pool, filepath.Join("..", "..", "migrations", "account_sim"))
+	return pool
+}
+
+// applySQLDir runs every .sql file of dir in name order, as cmd/db does.
+func applySQLDir(t *testing.T, pool *pgxpool.Pool, dir string) {
+	t.Helper()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("read migrations: %v", err)
+		t.Fatalf("read %s: %v", dir, err)
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -90,14 +107,10 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
-		if _, err := pool.Exec(ctx, string(body)); err != nil {
+		if _, err := pool.Exec(t.Context(), string(body)); err != nil {
 			t.Fatalf("apply %s: %v", name, err)
 		}
 	}
-	if err := sim.Reseed(ctx, sim.NewPGXStore(pool)); err != nil {
-		t.Fatalf("reseed: %v", err)
-	}
-	return pool
 }
 
 func countRows(t *testing.T, pool *pgxpool.Pool, table string) int {
@@ -353,5 +366,58 @@ func TestPGXStore_GRPCQueries(t *testing.T) {
 	}
 	if len(list.GetAccounts()) != 3 {
 		t.Fatalf("accounts = %d, want 3", len(list.GetAccounts()))
+	}
+}
+
+// TestPGXStore_SQLSeedPositions runs the account_sim migrations and the SQL
+// seed that `cmd/db seed` applies, twice to prove reseed is idempotent, then
+// checks the seed matrix rows over gRPC, the cash-only commands, and that the
+// Go Reseed lands on the same state.
+func TestPGXStore_SQLSeedPositions(t *testing.T) {
+	t.Parallel()
+	pool := newMigratedPool(t)
+	seeds := filepath.Join("..", "..", "seeds", "account_sim")
+	applySQLDir(t, pool, seeds)
+	applySQLDir(t, pool, seeds)
+	store := sim.NewPGXStore(pool)
+	client := startAccountServer(t, store)
+	assertSeedState(t, client)
+
+	assertCashOnlyCommands(t, client, func(eventID string) []byte {
+		t.Helper()
+		var payload []byte
+		if err := pool.QueryRow(t.Context(),
+			`SELECT payload FROM outbox WHERE event_id = $1::uuid`, eventID,
+		).Scan(&payload); err != nil {
+			t.Fatalf("read outbox %s: %v", eventID, err)
+		}
+		return payload
+	})
+
+	// A position bought after the seed is dropped by reseed.
+	if _, err := pool.Exec(t.Context(),
+		`INSERT INTO pov_position (customer_id, product_id, units_cents, applied_cents) VALUES ($1, 'tbill', 5000, 5000)`,
+		sim.CustomerThiago,
+	); err != nil {
+		t.Fatalf("insert extra position: %v", err)
+	}
+	applySQLDir(t, pool, seeds)
+	assertSeedState(t, client)
+	if got := countRows(t, pool, "pov_position"); got != 11 {
+		t.Fatalf("positions after SQL reseed = %d, want 11", got)
+	}
+
+	if _, err := pool.Exec(t.Context(),
+		`INSERT INTO pov_position (customer_id, product_id, units_cents, applied_cents) VALUES ($1, 'tbill', 5000, 5000)`,
+		sim.CustomerThiago,
+	); err != nil {
+		t.Fatalf("insert extra position: %v", err)
+	}
+	if err := sim.Reseed(t.Context(), store); err != nil {
+		t.Fatalf("Reseed: %v", err)
+	}
+	assertSeedState(t, client)
+	if got := countRows(t, pool, "pov_position"); got != 11 {
+		t.Fatalf("positions after Go reseed = %d, want 11", got)
 	}
 }

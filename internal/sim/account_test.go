@@ -3,6 +3,7 @@ package sim_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -101,14 +102,45 @@ func (t *memTx) InsertOutbox(ctx context.Context, row outbox.Row) error {
 	return nil
 }
 
-func (t *memTx) ResetPOV(ctx context.Context, accounts []sim.Account) error {
+func (t *memTx) ListProducts(ctx context.Context) ([]sim.Product, error) {
+	return nil, ctx.Err()
+}
+
+func (t *memTx) GetRegistration(ctx context.Context, _ string) (sim.Registration, bool, error) {
+	return sim.Registration{}, false, ctx.Err()
+}
+
+// ResetPOV keeps only the class aggregates of the seed: this fake models the
+// account as four balances.
+func (t *memTx) ResetPOV(ctx context.Context, seed sim.Seed) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	for _, account := range accounts {
-		t.store.accounts[account.CustomerID] = account
+	for _, account := range seed.Accounts {
+		t.store.accounts[account.CustomerID] = aggregateOf(account)
 	}
 	return nil
+}
+
+// sameAccount compares every field, including the positions.
+func sameAccount(a, b sim.Account) bool {
+	return a.CustomerID == b.CustomerID && a.Acoes == b.Acoes && a.ETFs == b.ETFs &&
+		a.RendaFixa == b.RendaFixa && a.Caixa == b.Caixa && slices.Equal(a.Positions, b.Positions)
+}
+
+func aggregateOf(seed sim.SeedAccount) sim.Account {
+	account := sim.Account{CustomerID: seed.CustomerID, Caixa: seed.CashCents, Positions: seed.Positions}
+	for _, position := range seed.Positions {
+		switch position.AssetClass {
+		case sim.ClassAcoes:
+			account.Acoes += position.ValueCents
+		case sim.ClassETFs:
+			account.ETFs += position.ValueCents
+		case sim.ClassRendaFixa:
+			account.RendaFixa += position.ValueCents
+		}
+	}
+	return account
 }
 
 func TestPOVSeedSums(t *testing.T) {
@@ -184,7 +216,7 @@ func TestWithdrawalAboveCaixaWritesNothing(t *testing.T) {
 	if !errors.Is(err, sim.ErrInsufficient) {
 		t.Fatalf("err = %v, want insufficient", err)
 	}
-	if store.accounts[sim.CustomerMariana] != before {
+	if !sameAccount(store.accounts[sim.CustomerMariana], before) {
 		t.Fatalf("account changed: %+v", store.accounts[sim.CustomerMariana])
 	}
 	if len(store.outbox) != 0 || len(store.keys) != 0 {
@@ -207,7 +239,7 @@ func TestOutboxFailureRollsBackBalance(t *testing.T) {
 	if err == nil {
 		t.Fatal("Apply error = nil, want outbox failure")
 	}
-	if store.accounts[sim.CustomerFernanda] != before {
+	if !sameAccount(store.accounts[sim.CustomerFernanda], before) {
 		t.Fatalf("account changed: %+v", store.accounts[sim.CustomerFernanda])
 	}
 	if len(store.outbox) != 0 {
@@ -257,7 +289,7 @@ func TestComplaintDoesNotMoveCash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if store.accounts[sim.CustomerMariana] != before {
+	if !sameAccount(store.accounts[sim.CustomerMariana], before) {
 		t.Fatalf("account changed")
 	}
 	if store.outbox[0].RoutingKey != "message.received" {

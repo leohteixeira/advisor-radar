@@ -76,6 +76,22 @@ func TestSeedSQL_UUIDv7AndCrossFileIDs(t *testing.T) {
 		}
 	}
 
+	// The POV accounts (cash) and their positions and registration (ADR 0010)
+	// use the same customer ids as the advisory book.
+	povAccounts := files["account_sim/002_pov_accounts.sql"]
+	povPositions := files["account_sim/003_pov_positions.sql"]
+	for _, pov := range []struct{ label, id string }{
+		{"mariana", "01a0e3a4-9a44-7566-b5de-eb2e365799f8"},
+		{"fernanda", "01a0e3a4-9a44-757a-ac8f-dab7db5eb068"},
+		{"thiago", "01a0e3a4-9a44-75dd-b3a0-403a7a87836e"},
+	} {
+		for _, body := range []string{advisory, povAccounts, povPositions} {
+			if !strings.Contains(strings.ToLower(body), pov.id) {
+				t.Fatalf("pov customer %s id %s missing from a required seed file", pov.label, pov.id)
+			}
+		}
+	}
+
 	if len(allIDs) < 50 {
 		t.Fatalf("too few distinct ids: %d", len(allIDs))
 	}
