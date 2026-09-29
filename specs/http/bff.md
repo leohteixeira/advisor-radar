@@ -16,7 +16,7 @@ The BFF stores nothing durable. POV progress lives in an in-memory hub. OpenTele
 | PUT | `/v1/actions/{id}` | Contatado or Adiar 1 h |
 | DELETE | `/v1/actions/{id}` | Undo |
 | GET | `/v1/customers/{id}` | Customer book row |
-| GET | `/v1/customers/{id}/timeline` | Customer 360 rows |
+| GET | `/v1/customers/{id}/timeline` | Customer 360 rows. Each row may carry `source`, the routing key of its event, and `occurred_at`, the event time in RFC 3339; `ago` stays as indexed |
 | GET | `/v1/review` | Triage review queue |
 | PUT | `/v1/review/{id}` | Correct an intent |
 | GET | `/v1/manager` | Manager snapshot |
@@ -48,13 +48,16 @@ The client app gets each screen from the BFF as a page of sections and component
 |---|---|---|
 | GET | `/v1/client-pov/customers/{id}/screens/{slug}` | `200` screen envelope. `slug` is `home`, `investir`, `carteira`, or `perfil` |
 
+- The BFF serves `home` now. `investir`, `carteira`, and `perfil` answer `404` until their stories land and add them here.
 - The phase-2 home route `GET /v1/client-pov/customers/{id}` stays until the web home moves to this screen route.
 - Opening a screen is one HTTP request. There is no pagination and no single-section reload.
 - A slug outside the four is `404`. An unknown customer is `404` only when account-sim answers `NotFound` for that customer. Any other source failure never changes the status.
 - Screen responses carry `Cache-Control: no-store`.
-- `X-SDUI-Schema` is an optional request header with the range of `schema_version` values the client renders: one integer (`1`) or an inclusive range (`1-2`). A range needs `1 ≤ min ≤ max`. The BFF serves only its current `schema_version`, never a lower one. Without the header, it serves that version. When the range excludes it, the answer is `406 Not Acceptable` with the supported range in the body, `{"supported":{"min":1,"max":1}}`. A malformed header or an invalid range is `400`. On `406`, web shows "Atualize o app para ver esta tela." with a reload button; the simulation strip and the tabs stay.
+- `X-SDUI-Schema` is not implemented yet: the BFF ignores the header until story 16 adds it. When it lands, it behaves as follows. `X-SDUI-Schema` is an optional request header with the range of `schema_version` values the client renders: one integer (`1`) or an inclusive range (`1-2`). A range needs `1 ≤ min ≤ max`. The BFF serves only its current `schema_version`, never a lower one. Without the header, it serves that version. When the range excludes it, the answer is `406 Not Acceptable` with the supported range in the body, `{"supported":{"min":1,"max":1}}`. A malformed header or an invalid range is `400`. On `406`, web shows "Atualize o app para ver esta tela." with a reload button; the simulation strip and the tabs stay.
 
 ### Envelope
+
+Thiago's home with the timeline down. Only the `moment` section is shown; `wealth`, `actions`, and `advisor` follow it in the real response, and `activity` is the one omitted section. The `idle_cash` moment arrives with the moment-facts story.
 
 ```json
 {
@@ -62,7 +65,7 @@ The client app gets each screen from the BFF as a page of sections and component
   "slug": "home",
   "revision": "v1",
   "title": "Olá, Thiago",
-  "subtitle": "Cliente Advance desde 2023",
+  "subtitle": "Cliente Advance desde 2024",
   "sections": [
     { "id": "moment", "components": [
       { "type": "moment_card", "variant": "idle_cash",
@@ -71,13 +74,17 @@ The client app gets each screen from the BFF as a page of sections and component
                    "body": "US$ 60.520,00 parados há 4 dias. Veja produtos para o seu perfil arrojado.",
                    "tone": "info",
                    "action": { "type": "navigate", "label": "Ver produtos", "target": "investir" } } } ] }
+  ],
+  "omitted": [
+    { "id": "activity", "type": "activity_list", "reason": "timeline" }
   ]
 }
 ```
 
 - `schema_version` is an integer, the version of this envelope and of the component table below.
 - A section object has `id` and `components`, an array of `{type, variant, props}`.
-- `title` and `subtitle` are the screen heading, filled from the catalog: home "Olá, {{first}}" / "Cliente {{segment}} desde {{since}}", investir "Investir" / "Produtos fictícios · preço fixo da simulação", carteira "Carteira" / "Valores de mercado no dia simulado {{day}}", perfil "Perfil" / "Seus dados, seu perfil de investidor e suas preferências".
+- `omitted` is always present: one `{id, type, reason}` per catalog section this response left out, in catalog order, so Raio-X can draw a placeholder. `reason` is the failed source (`account-sim`, `advisory`, `timeline`, or later `cases`) or `build_error`. Web renders nothing for an omitted section outside Raio-X.
+- `title` and `subtitle?` are the screen heading, filled from the catalog: home "Olá, {{first}}" / "Cliente {{segment}} desde {{since}}", investir "Investir" / "Produtos fictícios · preço fixo da simulação", carteira "Carteira" / "Valores de mercado no dia simulado {{day}}", perfil "Perfil" / "Seus dados, seu perfil de investidor e suas preferências".
 - `revision` names the catalog revision of the screen. A client outside the beta gets `v1`. A beta client gets home `v2`, which inserts the `highlights` section right after `moment`. Investir, Carteira, and Perfil stay at `v1`.
 - Section order in the array is the render order. Web owns style, the breakpoint grid, and the span of each section.
 - `variant` is informational for web: it drives Raio-X and telemetry, never rendering logic. A new variant of an existing type needs no web change. A new `type` needs web code and a row in the table below.
@@ -89,6 +96,7 @@ The client app gets each screen from the BFF as a page of sections and component
 - A value a form needs as a number is also sent as an integer USD cents field named `*_cents`.
 - Every visible label is a prop, so copy changes need no web change. Copy is Portuguese.
 - Negative signs use U+2212 "−", not the hyphen-minus.
+- Relative times read "agora" (under a minute), "há 5 min", "há 3 h", "ontem" (24 to 48 hours), and "há 4 dias".
 - Shares use largest-remainder rounding in Go, so the allocation shares of one component sum to 100%.
 - `tone` is `pos`, `neg`, `info`, `gold`, or `neutral`. Each type lists the tones it accepts. Web maps tone to color, and renders an unknown `tone` as `neutral`.
 - `icon` is an optional semantic name from the web icon set (`in`, `out`, `msg`, `alert`, `segment`, `drop`, `inbox`, `cash`, `calendar`, `spark`, `deposit`, `withdraw`). An unknown name renders no icon.
@@ -119,7 +127,8 @@ The `deposit`, `withdraw`, `message`, and `complaint` panels submit through the 
 - When the beta flag is unavailable, the BFF serves revision `v1`.
 - When the investor profile fact fails, the sections whose variant depends on it (`highlights` and `suitability`) are omitted.
 - `title` and `subtitle` fall back to "Olá" and no subtitle when their source fails.
-- A `Build` error drops only that component. A section left with zero components is omitted.
+- A `Build` error drops only that component. A section left with zero components is omitted with reason `build_error`.
+- Every omitted section is listed in `omitted` with its reason.
 - The response is still `200` with the remaining sections. When every section is omitted, it is `200` with `"sections": []`.
 
 ### Home moment priority
@@ -148,6 +157,24 @@ The catalog's starting order. The server may change it without a web change.
 - **investir:** `cash`, `highlights`, `fixed_income`, `etfs`, `stocks`.
 - **carteira:** `summary`, `allocation`, `positions_stocks`, `positions_etf`, `positions_fixed_income`, `history`. A class with no position has no section.
 - **perfil:** `header`, `suitability`, `registration`, `preferences`, `advisor`.
+
+### Home `v1` served now
+
+The BFF serves home `v1` with `moment` fixed on `welcome` until the moment facts arrive; the other moment variants, `with_day_change`, and revision `v2` come with their stories. The screen deadline is 800 ms.
+
+| Section | Type | Variants in evaluation order | Source | When the source fails |
+|---|---|---|---|---|
+| `moment` | `moment_card` | `welcome` | none | always rendered |
+| `wealth` | `wealth_summary` | `default` | account-sim | omitted, reason `account-sim` |
+| `actions` | `action_grid` | `default` | none | always rendered |
+| `advisor` | `advisor_card` | `dedicated` (Singular), `default` | advisory | omitted, reason `advisory` |
+| `activity` | `activity_list` | `recent` (at least one row), `empty` | timeline | omitted, reason `timeline` |
+
+- `moment` `welcome`: kicker "Tudo em dia", title "Olá, {{first}}. Sua conta está em dia." ("Olá. Sua conta está em dia." without advisory), body "Quando algo mudar na sua carteira, você vê aqui primeiro.", `tone` `neutral`, `icon` `spark`, no action.
+- `wealth`: `total_label` "Patrimônio total" with the patrimony account-sim reports, `cash_label` "Disponível para saque", and one allocation row per non-zero class in the order Ações (`stocks`), ETFs (`etfs`), Renda fixa (`fixed_income`), Caixa (`cash`). `bar_width` equals the rounded share.
+- `actions`: Depositar (`deposit` icon), Sacar (`withdraw`), Mensagem (`msg`), and Reclamar (`alert`), each a `panel` action.
+- `advisor`: `name` is the advisory book advisor, `initials` its first two name initials, `meta` "Resposta em até {{sla}} · cliente {{segment}}" with the catalog SLA per segment (Essencial 24 h, Advance 4 h, Singular 1 h), and action "Conversar" → `panel` `message`. An unknown segment is a `build_error`.
+- `activity`: title "Atividade recente". `recent` holds the five most recent client-facing timeline rows as `{icon, title, meta}`. A row is client-facing when its timeline `source` is `account.event.recorded` or `message.received`; rows from `alert.raised`, `message.triaged`, `case.*`, advisor notes, and calls never reach the client, and neither does a row without `source`. `meta` is the relative time from the row's `occurred_at` to the request time, or from the indexed `ago` when `occurred_at` is absent. Icons are `aporte` `in`, `saque` `out`, and `mensagem` `msg`; any other kind has no icon. With no client-facing row, `empty` carries `items: []` and the empty text.
 
 ### Components (15 types)
 
