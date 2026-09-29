@@ -1,0 +1,140 @@
+- id: "1"
+  title: Record ADR 0009, ADR 0010, and the screen contract
+  description: >-
+    Covers the written half of CAP-12. Write ADR 0009 (Server-Driven UI in the
+    BFF, embedded read-only catalog) and ADR 0010 (individual positions,
+    revoking phase-2 decision 9), and add the screen envelope, the 15 types,
+    and the action types from architecture.md and ux.md to specs/http/bff.md.
+
+- id: "2"
+  title: Serve account/v1 from account-sim
+  description: >-
+    Covers Phase A in architecture.md. Add proto/account/v1 for the four
+    phase-2 commands and the account queries, generated into gen/, and serve
+    it from account-sim through a pgx adapter for sim.Tx that writes state and
+    the outbox row in one transaction and maps refusals to gRPC statuses.
+
+- id: "3"
+  title: Move BFF POV commands onto account-sim gRPC
+  description: >-
+    Completes Phase A and the code half of CAP-12. The BFF calls account-sim
+    with the request deadline and a retry interceptor, cmd/bff/povmem.go is
+    deleted, POV responses become typed DTOs, and ADR 0008 notes the code now
+    follows it, while the phase-2 HTTP contract and ClientPov.test.tsx stay
+    unchanged.
+
+- id: "4"
+  title: Store per-product positions and the product catalog
+  description: >-
+    Implements ADR 0010 in account-sim, where the four classes become
+    aggregates of positions plus cash. Seed the six products, the day-0
+    positions, and the fictional registration data from the Seed section of
+    architecture.md, keeping every phase-2 class total.
+
+- id: "5"
+  title: Build the BFF screen engine and serve the home
+  description: >-
+    Covers the backend of CAP-1 and the Go half of CAP-3. Add internal/screen
+    with Snapshot, Variant, the go:embed catalog, and the failure policy, and
+    serve GET .../screens/home with default variants and timeline activity.
+
+- id: "6"
+  title: Render SDUI screens in web and migrate the home
+  description: >-
+    Covers the web half of CAP-1 and the React half of CAP-3. Add
+    web/src/sdui (type registry, per-component error boundary, unknown-type
+    reporting, action dispatcher) and move the home onto it, with
+    ClientPov.test.tsx passing before and after.
+
+- id: "7"
+  title: Personalize the home by client moment
+  description: >-
+    Covers CAP-2 up to the market day: advisory gains the investor profile,
+    the max-risk table, and a moment-facts gRPC query, and ListCases gains the
+    customer filter. The BFF applies the moment priority in architecture.md,
+    so the three seed clients open on different homes and a complaint switches
+    Mariana to case_open.
+
+- id: "8"
+  title: Accept purchases and raise the suitability-mismatch alert
+  description: >-
+    Covers the backend of CAP-4 and the team-queue card: account-sim gains the
+    aplicacao command at schema_version 3, the BFF gains the idempotent,
+    rate-limited purchase route, and advisory follows aplicacao in the book and
+    raises a perfil alert, with no automatic case, when risk exceeds the profile
+    max. The team queue renders card kind perfil with its label and icon, as in
+    the Team queue section of ux.md.
+
+- id: "9"
+  title: Build the Investir screen and the coded purchase form
+  description: >-
+    Covers the rest of CAP-4. Serve the cash, highlights, and product-list
+    sections with the above-profile badge, and build the coded form and the
+    Bastidores confirmation from ux.md, so Thiago's purchase removes idle_cash.
+
+- id: "10"
+  title: Build the Carteira screen with movement history
+  description: >-
+    Covers CAP-5. Serve the summary, allocation, per-class positions, and
+    history sections with backend percentages and formatted values; the same
+    timeline history fills the home activity section.
+
+- id: "11"
+  title: Build the Perfil screen with preferences and beta
+  description: >-
+    Covers CAP-7 by serving the header, suitability scale, registration,
+    preferences, and advisor sections. Add the preferences route and the
+    account-sim RPCs that persist the contact channel and the beta flag
+    without events.
+
+- id: "12"
+  title: Advance the global market day and revalue portfolios
+  description: >-
+    Covers CAP-6 and the portfolio_drop part of CAP-2. Add advance-day end to
+    end: one transaction with a reavaliacao row per account, advisory's drop
+    rule on negative reavaliacao, the scripted shock, the simulation-strip
+    control, and the with_day_change and portfolio_drop variants.
+
+- id: "13"
+  title: Add Raio-X SDUI and the selection-screen SDUI section
+  description: >-
+    Covers CAP-11. Add the Raio-X toggle and banner in the simulation strip,
+    and the Novo band, anchors, fifth pillar, and interactive #sdui section on
+    /advisor-radar at desktop and 390 px, as specified in ux.md.
+
+- id: "14"
+  title: Ship the add-sdui-variant skill
+  description: >-
+    Covers CAP-10. Write .claude/skills/add-sdui-variant/SKILL.md so that a
+    section, a moment, and copy produce the catalog entry, the Variant rule
+    with tests, and the contract update, and a new variant shows after
+    restarting only the BFF.
+
+- id: "15"
+  title: Version screens and serve the beta revision
+  description: >-
+    Covers CAP-8. Every screen carries slug and revision, the BFF answers 406
+    with the supported range when X-SDUI-Schema excludes its version (cut 1),
+    and a beta client gets home revision v2 with the highlights section after
+    moment.
+
+- id: "16"
+  title: Instrument screen builds with spans and SDUI metrics
+  description: >-
+    Covers CAP-9. Add one span per screen and per section with the sdui.*
+    attributes, Snapshot child spans, and the variant-served,
+    component-dropped, build-latency, purchase, and suitability-alert metrics.
+
+- id: "17"
+  title: Add desktop layouts for Investir, Carteira, and Perfil
+  description: >-
+    Covers the desktop artboards for the new screens (cut 2 in
+    architecture.md). Web lays out the same server sections in the
+    two-column desktop grid, with no contract change.
+
+- id: "18"
+  title: Write the phase-3 README demo script
+  description: >-
+    Covers the documentation half of CAP-12. The README gains the seven-step
+    phase-3 demo script and points at ADRs 0008-0010, specs/http/bff.md, and
+    the design reference.
