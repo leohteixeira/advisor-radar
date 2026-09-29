@@ -55,6 +55,11 @@ func TestClassifyApplyError_UnfixableFailuresArePermanent(t *testing.T) {
 		{name: "unknown investor profile", err: fmt.Errorf("advisory: raise: %w", profileErr), sentinel: advisory.ErrUnknownProfile},
 		{name: "invalid purchase", err: fmt.Errorf("advisory: raise: %w", invalidErr), sentinel: advisory.ErrInvalidPurchase},
 		{name: "money scale", err: fmt.Errorf("advisory: apply evt-1: %w", sim.ErrMoneyScale), sentinel: sim.ErrMoneyScale},
+		{
+			name:     "invalid revaluation",
+			err:      fmt.Errorf("advisory: apply evt-1: %w: sim_day 0", advisory.ErrInvalidRevaluation),
+			sentinel: advisory.ErrInvalidRevaluation,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -28,7 +28,25 @@ function answerGet(url: string): Response {
   if (url.endsWith('/screens/perfil')) {
     return json(fernandaPerfil());
   }
+  if (url.endsWith('/v1/client-pov/simulation')) {
+    return json({ sim_day: 2 });
+  }
   return json(fernandaPhase2());
+}
+
+/** Sets the layout the client app reads from `(min-width: 900px)`. */
+function setWide(wide: boolean) {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: wide && query === '(min-width: 900px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+    }) as MediaQueryList;
 }
 
 function renderAt(path: string) {
@@ -42,6 +60,7 @@ function renderAt(path: string) {
 afterEach(() => {
   localStorage.removeItem('advisor-radar.pov-theme');
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('phone client pov', () => {
@@ -207,5 +226,229 @@ describe('phone client pov', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('no', { status: 404 })));
     renderAt(`/client-pov/${FERNANDA}`);
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível abrir este cliente.');
+  });
+});
+
+describe('simulation strip', () => {
+  const ADVANCE = '/v1/client-pov/simulation/advance-day';
+
+  it('shows the day, advances it with a fresh key, and re-fetches the screen', async () => {
+    const user = userEvent.setup();
+    setWide(false);
+    const keys: string[] = [];
+    const answers: ((res: Response) => void)[] = [];
+    let homeReads = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).endsWith(ADVANCE)) {
+          expect(init?.method).toBe('POST');
+          keys.push(new Headers(init?.headers).get('Idempotency-Key') ?? '');
+          return new Promise<Response>((resolve) => answers.push(resolve));
+        }
+        if (String(url).endsWith('/screens/home')) {
+          homeReads += 1;
+        }
+        return answerGet(String(url));
+      }),
+    );
+    renderAt(`/client-pov/${FERNANDA}`);
+    expect(await screen.findByText('Dia simulado 2')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Olá, Fernanda' })).toBeInTheDocument();
+    const reads = homeReads;
+
+    const advance = screen.getByRole('button', { name: '+1 dia' });
+    expect(advance).toHaveAttribute('title', 'Avançar um dia');
+    await user.click(advance);
+    expect(advance).toBeDisabled();
+    expect(advance).toHaveAttribute('aria-busy', 'true');
+    answers[0]?.(json({ sim_day: 3, event_id: EVENT }, 202));
+    expect(await screen.findByText('Dia simulado 3')).toBeInTheDocument();
+    await waitFor(() => expect(homeReads).toBe(reads + 1));
+    expect(advance).toBeEnabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    await user.click(advance);
+    answers[1]?.(json({ sim_day: 4, event_id: EVENT }, 202));
+    expect(await screen.findByText('Dia simulado 4')).toBeInTheDocument();
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe('');
+    expect(keys[1]).not.toBe(keys[0]);
+  });
+
+  it('keeps the key until a definite answer, shows the strip errors, and re-reads the day after a failure', async () => {
+    const user = userEvent.setup();
+    setWide(false);
+    let simNow = 2;
+    const keys: string[] = [];
+    const replies: (() => Response)[] = [
+      () => json({ error: 'ten_minutes' }, 429),
+      () => {
+        // The deadline hit after account-sim committed: the day moved.
+        simNow = 3;
+        return new Response('down', { status: 502 });
+      },
+      () => json({ sim_day: 3, event_id: EVENT }, 202),
+      () => json({ error: 'invalid' }, 400),
+      () => json({ sim_day: 'x' }, 202),
+      () => {
+        simNow = 4;
+        return json({ sim_day: 4, event_id: EVENT }, 202);
+      },
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).endsWith(ADVANCE)) {
+          keys.push(new Headers(init?.headers).get('Idempotency-Key') ?? '');
+          return (replies.shift() ?? (() => new Response('none', { status: 500 })))();
+        }
+        if (String(url).endsWith('/v1/client-pov/simulation')) {
+          return json({ sim_day: simNow });
+        }
+        return answerGet(String(url));
+      }),
+    );
+    renderAt(`/client-pov/${FERNANDA}`);
+    expect(await screen.findByText('Dia simulado 2')).toBeInTheDocument();
+    const advance = screen.getByRole('button', { name: '+1 dia' });
+
+    await user.click(advance);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Muitos dias avançados em pouco tempo. Espere até 10 minutos e tente de novo.');
+    expect(screen.getByText('Dia simulado 2')).toBeInTheDocument();
+
+    await user.click(advance);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível registrar a ação.');
+    // The failure re-reads the day, which the uncertain advance did move.
+    expect(await screen.findByText('Dia simulado 3')).toBeInTheDocument();
+
+    // The retry replays the same key instead of advancing again.
+    await user.click(advance);
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByText('Dia simulado 3')).toBeInTheDocument();
+    expect(keys).toHaveLength(3);
+    expect(new Set(keys).size).toBe(1);
+
+    // After the 202 a press takes a fresh key; a 400 is definite and drops it.
+    await user.click(advance);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível registrar a ação.');
+    expect(keys[3]).not.toBe(keys[2]);
+    // A 202 without a whole day is not a definite answer: the key is kept.
+    await user.click(advance);
+    await waitFor(() => expect(keys).toHaveLength(5));
+    expect(keys[4]).not.toBe(keys[3]);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível registrar a ação.');
+    await user.click(advance);
+    expect(await screen.findByText('Dia simulado 4')).toBeInTheDocument();
+    expect(keys[5]).toBe(keys[4]);
+  });
+
+  it('reads the screen and the day once more after the advance settles', async () => {
+    vi.useFakeTimers();
+    setWide(false);
+    let simNow = 2;
+    let homeReads = 0;
+    let carteiraReads = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith(ADVANCE)) {
+        simNow += 1;
+        return json({ sim_day: simNow, event_id: EVENT }, 202);
+      }
+      if (String(url).endsWith('/v1/client-pov/simulation')) {
+        return json({ sim_day: simNow });
+      }
+      if (String(url).endsWith('/screens/home')) {
+        homeReads += 1;
+      }
+      if (String(url).endsWith('/screens/carteira')) {
+        carteiraReads += 1;
+      }
+      return answerGet(String(url));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const settle = async (ms = 0) => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+      for (let i = 0; i < 5; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+        });
+      }
+    };
+    const view = renderAt(`/client-pov/${FERNANDA}`);
+    await settle();
+    expect(screen.getByText('Dia simulado 2')).toBeInTheDocument();
+    const reads = homeReads;
+
+    fireEvent.click(screen.getByRole('button', { name: '+1 dia' }));
+    await settle();
+    expect(screen.getByText('Dia simulado 3')).toBeInTheDocument();
+    expect(homeReads).toBe(reads + 1);
+
+    // Another viewer advances before the second read.
+    simNow = 5;
+    await settle(1_400);
+    expect(homeReads).toBe(reads + 1);
+    expect(screen.getByText('Dia simulado 3')).toBeInTheDocument();
+    await settle(200);
+    expect(homeReads).toBe(reads + 2);
+    expect(screen.getByText('Dia simulado 5')).toBeInTheDocument();
+    await settle(5_000);
+    expect(homeReads).toBe(reads + 2);
+
+    // Leaving the screen cancels the second read.
+    fireEvent.click(screen.getByRole('button', { name: '+1 dia' }));
+    await settle();
+    expect(homeReads).toBe(reads + 3);
+    fireEvent.click(screen.getByRole('button', { name: 'Carteira' }));
+    await settle();
+    expect(carteiraReads).toBe(1);
+    await settle(3_000);
+    expect(carteiraReads).toBe(1);
+    expect(homeReads).toBe(reads + 3);
+
+    // So does leaving the app.
+    fireEvent.click(screen.getByRole('button', { name: '+1 dia' }));
+    await settle();
+    expect(carteiraReads).toBe(2);
+    view.unmount();
+    const calls = fetchMock.mock.calls.length;
+    await settle(3_000);
+    expect(fetchMock.mock.calls.length).toBe(calls);
+  });
+
+  it('labels the desktop button in full and hides a day it could not read', async () => {
+    setWide(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (String(url).endsWith('/v1/client-pov/simulation')) {
+          return new Response('down', { status: 502 });
+        }
+        return answerGet(String(url));
+      }),
+    );
+    renderAt(`/client-pov/${FERNANDA}`);
+    expect(await screen.findByRole('button', { name: 'Avançar um dia' })).not.toHaveAttribute('title');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Fernanda' })).toBeInTheDocument();
+    expect(screen.queryByText(/Dia simulado/)).not.toBeInTheDocument();
+  });
+
+  it('hides a day the BFF did not send as a whole number', async () => {
+    setWide(false);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (String(url).endsWith('/v1/client-pov/simulation')) {
+          return json({ sim_day: 'três' });
+        }
+        return answerGet(String(url));
+      }),
+    );
+    renderAt(`/client-pov/${FERNANDA}`);
+    expect(await screen.findByRole('heading', { name: 'Olá, Fernanda' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+1 dia' })).toBeEnabled();
+    expect(screen.queryByText(/Dia simulado/)).not.toBeInTheDocument();
   });
 });

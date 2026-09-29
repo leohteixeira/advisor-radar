@@ -623,3 +623,147 @@ func TestPGXStore_PreferencesWaitForTheCustomerLock(t *testing.T) {
 		t.Fatalf("preferences = %+v, %v; want %+v", got, err, want)
 	}
 }
+
+// pgxOutbox reads every outbox row of pool in insert order.
+func pgxOutbox(t *testing.T, pool *pgxpool.Pool) outboxRows {
+	return func() []outbox.Row {
+		t.Helper()
+		rows, err := pool.Query(t.Context(), `SELECT event_id::text, routing_key, payload FROM outbox ORDER BY id`)
+		if err != nil {
+			t.Fatalf("read outbox: %v", err)
+		}
+		out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (outbox.Row, error) {
+			var r outbox.Row
+			err := row.Scan(&r.EventID, &r.RoutingKey, &r.Payload)
+			return r, err
+		})
+		if err != nil {
+			t.Fatalf("scan outbox: %v", err)
+		}
+		return out
+	}
+}
+
+// TestPGXStore_AdvanceDay runs the advance-day matrix of TestAdvanceDay_Memory
+// over PostgreSQL, loaded from the SQL seed as `cmd/db seed` does. The reseed
+// row runs twice: through the Go Reseed and through the SQL seed.
+func TestPGXStore_AdvanceDay(t *testing.T) {
+	t.Parallel()
+	seeds := filepath.Join("..", "..", "seeds", "account_sim")
+	tests := []struct {
+		name   string
+		run    func(*testing.T, accountv1.AccountServiceClient, outboxRows, func())
+		reseed func(*testing.T, *pgxpool.Pool)
+	}{
+		{name: "day 0 to 1 is flat", run: assertDay0To1},
+		{name: "day 3 shocks cobalto holders", run: assertShock},
+		{name: "replay advances nothing", run: assertAdvanceReplay},
+		{name: "commands use the stored day", run: assertCommandsUseStoredDay},
+		{
+			name: "go reseed returns to day 0 in a new epoch",
+			run:  assertReseedDay,
+			reseed: func(t *testing.T, pool *pgxpool.Pool) {
+				if err := sim.Reseed(t.Context(), sim.NewPGXStore(pool)); err != nil {
+					t.Fatalf("Reseed: %v", err)
+				}
+			},
+		},
+		{
+			name: "sql reseed returns to day 0 in a new epoch",
+			run:  assertReseedDay,
+			reseed: func(t *testing.T, pool *pgxpool.Pool) {
+				applySQLDir(t, pool, seeds)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pool := newMigratedPool(t)
+			applySQLDir(t, pool, seeds)
+			reseed := func() {
+				if tt.reseed == nil {
+					t.Fatal("this row does not reseed")
+				}
+				tt.reseed(t, pool)
+			}
+			tt.run(t, startAccountServer(t, sim.NewPGXStore(pool)), pgxOutbox(t, pool), reseed)
+		})
+	}
+}
+
+// TestPGXStore_GetAccountWithoutSimulation deletes the simulation row that
+// migration 006 seeds: reading an account fails instead of pricing at day 0.
+func TestPGXStore_GetAccountWithoutSimulation(t *testing.T) {
+	t.Parallel()
+	pool := newTestPool(t)
+	if _, err := pool.Exec(t.Context(), `DELETE FROM pov_sim`); err != nil {
+		t.Fatalf("delete pov_sim: %v", err)
+	}
+	err := sim.NewPGXStore(pool).WithTx(t.Context(), func(tx sim.Tx) error {
+		_, _, err := tx.GetAccount(t.Context(), sim.CustomerMariana)
+		return err
+	})
+	if err == nil || !strings.Contains(err.Error(), "simulation row is missing") {
+		t.Fatalf("GetAccount without pov_sim err = %v, want the missing row", err)
+	}
+}
+
+// TestPGXStore_AdvanceSerializesWithDeposits races an advance to the shock
+// day with a deposit: the simulation lock comes before the customer lock, so
+// they serialize without deadlock and each sees the other's result.
+func TestPGXStore_AdvanceSerializesWithDeposits(t *testing.T) {
+	t.Parallel()
+	for i := range 5 {
+		pool := newTestPool(t)
+		assertAdvanceSerializes(t, i, startAccountServer(t, sim.NewPGXStore(pool)), pgxOutbox(t, pool))
+	}
+}
+
+// TestPGXStore_ConcurrentSameAdvanceKey sends one key four times at once:
+// exactly one advance commits and the others replay its reply.
+func TestPGXStore_ConcurrentSameAdvanceKey(t *testing.T) {
+	t.Parallel()
+	pool := newTestPool(t)
+	store := sim.NewPGXStore(pool)
+
+	const callers = 4
+	results := make([]sim.AdvanceResult, callers)
+	errs := make([]error, callers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range callers {
+		wg.Go(func() {
+			<-start
+			results[i], errs[i] = sim.AdvanceDay(t.Context(), store, sim.AdvanceCommand{IdempotencyKey: "race"})
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	fresh := 0
+	for i := range callers {
+		if errs[i] != nil {
+			t.Fatalf("AdvanceDay %d: %v", i, errs[i])
+		}
+		if results[i].SimDay != 1 || !slices.Equal(results[i].EventIDs, results[0].EventIDs) {
+			t.Fatalf("result %d = %+v, want day 1 and the ids of %+v", i, results[i], results[0])
+		}
+		if !results[i].Replay {
+			fresh++
+		}
+	}
+	if fresh != 1 {
+		t.Fatalf("committed advances = %d, want 1", fresh)
+	}
+	if got := countRows(t, pool, "outbox"); got != 3 {
+		t.Fatalf("outbox rows = %d, want 3", got)
+	}
+	var day int
+	if err := pool.QueryRow(t.Context(), `SELECT sim_day FROM pov_sim`).Scan(&day); err != nil {
+		t.Fatalf("read sim_day: %v", err)
+	}
+	if day != 1 {
+		t.Fatalf("sim_day = %d, want 1", day)
+	}
+}

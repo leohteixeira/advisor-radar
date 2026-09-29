@@ -94,8 +94,8 @@ describe('wealth_summary', () => {
   });
 
   it.each([
-    ['neg', '− US$ 38.502,00 (−15,5%) no dia 3', 'sdui-tone--neg'],
-    ['pos', '+ US$ 1.200,00 (+1,8%) no dia 4', 'sdui-tone--pos'],
+    ['neg', '−US$ 38.520,00 (−15,5%) no dia 3', 'sdui-tone--neg'],
+    ['pos', '+US$ 1.200,00 (+1,8%) no dia 4', 'sdui-tone--pos'],
     ['neutral', 'US$ 0,00 (0,0%) no dia 5', 'sdui-tone--neutral'],
     ['info', 'US$ 0,00 (0,0%) no dia 6', 'sdui-tone--neutral'],
   ])('renders with_day_change in tone %s', (tone, change, cls) => {
@@ -129,7 +129,7 @@ describe('wealth_summary', () => {
     await user.click(screen.getByRole('button', { name: 'Esconder valores' }));
     expect(value.onToggleMask).toHaveBeenCalledTimes(1);
 
-    rerenderWith(<WealthSummary variant="with_day_change" props={{ ...base, day_change: '+ US$ 1,00 (+0,1%) no dia 2', day_change_tone: 'pos' }} />, {
+    rerenderWith(<WealthSummary variant="with_day_change" props={{ ...base, day_change: '+US$ 1,00 (+0,1%) no dia 2', day_change_tone: 'pos' }} />, {
       masked: true,
     });
     expect(screen.getByRole('button', { name: 'Mostrar valores' })).toHaveAttribute('aria-pressed', 'true');

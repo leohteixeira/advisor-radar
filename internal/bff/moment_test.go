@@ -232,6 +232,7 @@ func TestGRPCQueue_MomentFacts(t *testing.T) {
 		SegmentUpgradeNear: true, UpgradeGapCents: 180_000,
 		IdleCash: true, CashCents: 1_114_800, PatrimonyCents: 1_820_000,
 		PortfolioReview: true, PortfolioDrop: true,
+		DropBp: 1551, DropProductId: "cobalto", DropProductBp: -5350, DropDay: 3,
 	}
 	conn := serveBufconn(t, func(s *grpc.Server) {
 		advisoryv1.RegisterAdvisoryServiceServer(s, factsAdvisory{facts: facts})
@@ -245,6 +246,7 @@ func TestGRPCQueue_MomentFacts(t *testing.T) {
 		SegmentUpgradeNear: true, UpgradeGapCents: 180_000,
 		IdleCash: true, CashCents: 1_114_800, PatrimonyCents: 1_820_000,
 		PortfolioReview: true, PortfolioDrop: true,
+		DropBP: 1551, DropProductID: "cobalto", DropProductBP: -5350, DropDay: 3,
 	}
 	if got != want {
 		t.Errorf("MomentFacts = %+v, want %+v", got, want)

@@ -118,6 +118,53 @@ func TestChangePercent(t *testing.T) {
 	}
 }
 
+func TestPercentBP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		bp       int
+		expected string
+	}{
+		{name: "mariana loss", bp: 1551, expected: "15,5%"},
+		{name: "cobalto day change", bp: -5350, expected: "53,5%"},
+		{name: "half rounds away from zero", bp: 1555, expected: "15,6%"},
+		{name: "negative half rounds away from zero", bp: -5, expected: "0,1%"},
+		{name: "below half rounds down", bp: 4, expected: "0,0%"},
+		{name: "zero", bp: 0, expected: "0,0%"},
+		{name: "everything", bp: 10_000, expected: "100,0%"},
+		{name: "grouped thousands", bp: 1_234_560, expected: "12.345,6%"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := PercentBP(tt.bp); got != tt.expected {
+				t.Errorf("PercentBP(%d) = %q, want %q", tt.bp, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestChangePercentBP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		bp       int
+		expected string
+	}{
+		{name: "cobalto day change", bp: -5350, expected: "−53,5%"},
+		{name: "gain", bp: 200, expected: "+2,0%"},
+		{name: "zero", bp: 0, expected: "0,0%"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ChangePercentBP(tt.bp); got != tt.expected {
+				t.Errorf("ChangePercentBP(%d) = %q, want %q", tt.bp, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestSignTone(t *testing.T) {
 	t.Parallel()
 	for n, expected := range map[int64]string{1: TonePos, -1: ToneNeg, 0: ToneNeutral} {

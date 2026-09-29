@@ -190,14 +190,20 @@ func assertCashOnlyCommands(t *testing.T, client accountv1.AccountServiceClient,
 	}
 }
 
-func TestValue_FlatAndDeterministic(t *testing.T) {
+// TestValue_ScriptedPathAndDeterministic pins the only scripted move:
+// Cobalto at 46.5% of its day-0 price from day 3 on; everything else flat.
+func TestValue_ScriptedPathAndDeterministic(t *testing.T) {
 	t.Parallel()
 	for _, product := range sim.Catalog() {
 		for day := range 30 {
 			for _, units := range []int64{0, 1, 164_000, 7_200_000} {
 				got := sim.Value(product.ID, units, day)
-				if got != units {
-					t.Fatalf("Value(%s, %d, %d) = %d, want %d", product.ID, units, day, got, units)
+				want := units
+				if product.ID == "cobalto" && day >= 3 {
+					want = (units*465 + 500) / 1000
+				}
+				if got != want {
+					t.Fatalf("Value(%s, %d, %d) = %d, want %d", product.ID, units, day, got, want)
 				}
 				if again := sim.Value(product.ID, units, day); again != got {
 					t.Fatalf("Value(%s, %d, %d) is not deterministic: %d then %d", product.ID, units, day, got, again)

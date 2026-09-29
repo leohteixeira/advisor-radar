@@ -33,6 +33,7 @@ type fakeBook struct {
 	segments map[string]string
 	profiles map[string]advisory.InvestorProfile
 	alerts   map[string][]advisory.SegmentAlert
+	revals   map[string]*advisory.Revaluation
 	err      error
 
 	mu    sync.Mutex
@@ -67,7 +68,7 @@ func (b *fakeBook) MomentBook(ctx context.Context, customerID string, since time
 	if !ok {
 		return advisory.MomentBook{}, fmt.Errorf("fake: %w", advisory.ErrUnknownCustomer)
 	}
-	return advisory.MomentBook{Segment: segment, Alerts: b.alerts[customerID]}, nil
+	return advisory.MomentBook{Segment: segment, Alerts: b.alerts[customerID], Revaluation: b.revals[customerID]}, nil
 }
 
 func (b *fakeBook) sinceSeen() []time.Time {
@@ -201,6 +202,19 @@ func TestGRPCServer_GetMomentFacts(t *testing.T) {
 	}
 	depositBalances := seedBalances()
 	depositBalances.balances[fernandaID] = advisory.Balance{PatrimonyCents: 1_820_000, CashCents: 1_114_800}
+	// shocked is a fresh book per case: each records the reads it serves.
+	shocked := func() *fakeBook {
+		b := seedBook()
+		b.revals = map[string]*advisory.Revaluation{marianaID: {
+			SimDay: 3, AmountCents: -3_852_000, BeforeCents: 24_830_000, ProductID: "cobalto", ProductChangeBP: -5350,
+		}}
+		return b
+	}
+	shockDay := func(day int) fakeBalances {
+		b := seedBalances()
+		b.balances[marianaID] = advisory.Balance{PatrimonyCents: 20_978_000, CashCents: 6_000_000, SimDay: day}
+		return b
+	}
 
 	tests := []struct {
 		name     string
@@ -230,6 +244,17 @@ func TestGRPCServer_GetMomentFacts(t *testing.T) {
 				SegmentUpgraded: true, UpgradedSegment: "Advance",
 				IdleCash: true, CashCents: 1_114_800, PatrimonyCents: 1_820_000,
 			},
+		},
+		{
+			name: "mariana on the shock day", book: shocked(), accounts: shockDay(3), id: marianaID,
+			expected: &advisoryv1.MomentFacts{
+				PortfolioReview: true, CashCents: 6_000_000, PatrimonyCents: 20_978_000,
+				PortfolioDrop: true, DropBp: 1551, DropProductId: "cobalto", DropProductBp: -5350, DropDay: 3,
+			},
+		},
+		{
+			name: "mariana a day after the shock", book: shocked(), accounts: shockDay(4), id: marianaID,
+			expected: &advisoryv1.MomentFacts{PortfolioReview: true, CashCents: 6_000_000, PatrimonyCents: 20_978_000},
 		},
 		{name: "unknown customer", book: seedBook(), accounts: seedBalances(), id: identity.MustNewV7(), code: codes.NotFound},
 		{name: "invalid id", book: seedBook(), accounts: seedBalances(), id: "x", code: codes.InvalidArgument},

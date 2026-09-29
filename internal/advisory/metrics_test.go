@@ -85,6 +85,8 @@ func (inboxTx) InsertOutbox(context.Context, OutboxRow) error { return nil }
 
 func (inboxTx) UpdateBook(context.Context, string, float64, string) error { return nil }
 
+func (inboxTx) SaveRevaluation(context.Context, string, Revaluation) error { return nil }
+
 func (inboxTx) InvestorProfile(context.Context, string) (string, error) {
 	return ProfileConservador, nil
 }

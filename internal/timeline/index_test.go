@@ -258,6 +258,10 @@ func TestIndex_ApplyDeliverySchemaVersions(t *testing.T) {
 		// the row carries.
 		wantProduct string
 		wantCents   int64
+		// wantDay and wantBP are the simulated day and product day change a
+		// reavaliacao row carries.
+		wantDay int
+		wantBP  int
 	}{
 		{name: "v1 saque", version: 1, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "saque", "amount": 100}, wantKind: "saque", wantTitle: "Saque", wantCents: 10000},
 		{name: "v2 aporte", version: 2, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte", "amount": 10000}, wantKind: "aporte", wantTitle: "Aporte", wantCents: 10000},
@@ -273,8 +277,17 @@ func TestIndex_ApplyDeliverySchemaVersions(t *testing.T) {
 		},
 		{
 			name: "v3 reavaliacao", version: 3, routing: event.NameAccountEventRecorded,
-			payload:  map[string]any{"kind": "reavaliacao", "amount": -100, "before": 1000, "after": 900, "sim_day": 3},
-			wantKind: "reavaliacao", wantTitle: "Reavaliação", wantCents: -100,
+			payload: map[string]any{
+				"kind": "reavaliacao", "amount": -3852000, "before": 24830000, "after": 20978000,
+				"sim_day": 3, "product_id": "cobalto", "product_change_bp": -5350,
+			},
+			wantKind: "reavaliacao", wantTitle: "Reavaliação", wantProduct: "cobalto", wantCents: -3852000,
+			wantDay: 3, wantBP: -5350,
+		},
+		{
+			name: "v3 flat reavaliacao", version: 3, routing: event.NameAccountEventRecorded,
+			payload:  map[string]any{"kind": "reavaliacao", "amount": 0, "before": 820000, "after": 820000, "sim_day": 1, "product_id": ""},
+			wantKind: "reavaliacao", wantTitle: "Reavaliação", wantDay: 1,
 		},
 		{
 			name: "perfil alert", version: 1, routing: event.NameAlertRaised,
@@ -311,6 +324,9 @@ func TestIndex_ApplyDeliverySchemaVersions(t *testing.T) {
 			}
 			if entry.ProductID != tt.wantProduct || entry.AmountCents != tt.wantCents {
 				t.Errorf("entry product, cents = %q, %d, want %q, %d", entry.ProductID, entry.AmountCents, tt.wantProduct, tt.wantCents)
+			}
+			if entry.SimDay != tt.wantDay || entry.ProductChangeBP != tt.wantBP {
+				t.Errorf("entry day, bp = %d, %d, want %d, %d", entry.SimDay, entry.ProductChangeBP, tt.wantDay, tt.wantBP)
 			}
 			conta, err := idx.Search(context.Background(), cust, "", timeline.KindConta)
 			if err != nil || len(conta) != 1 {

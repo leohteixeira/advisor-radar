@@ -180,6 +180,75 @@ func TestPortfolioReview(t *testing.T) {
 	}
 }
 
+// marianaShock is Mariana's day-3 revaluation: −US$ 38.520,00 of
+// US$ 248.300,00, led by Cobalto at −53.5%.
+var marianaShock = Revaluation{
+	SimDay: 3, AmountCents: -3_852_000, BeforeCents: 24_830_000,
+	ProductID: "cobalto", ProductChangeBP: -5350,
+}
+
+func TestPortfolioDrop(t *testing.T) {
+	t.Parallel()
+	with := func(day int, amount, before int64) *Revaluation {
+		rev := marianaShock
+		rev.SimDay, rev.AmountCents, rev.BeforeCents = day, amount, before
+		return &rev
+	}
+	tests := []struct {
+		name     string
+		rev      *Revaluation
+		simDay   int
+		expected bool
+	}{
+		{name: "no revaluation", simDay: 3},
+		{name: "mariana on the shock day", rev: &marianaShock, simDay: 3, expected: true},
+		{name: "mariana a day later", rev: &marianaShock, simDay: 4},
+		{name: "mariana after a reseed", rev: &marianaShock, simDay: 0},
+		{name: "thiago loses 1.6%", rev: with(3, -109_140, 6_800_000), simDay: 3},
+		{name: "a flat day", rev: with(1, 0, 24_830_000), simDay: 1},
+		{name: "a gain above 15%", rev: with(3, 4_000_000, 24_830_000), simDay: 3},
+		{name: "exactly 15% is not above", rev: with(3, -150, 1_000), simDay: 3},
+		{name: "one cent above 15%", rev: with(3, -151, 1_000), simDay: 3, expected: true},
+		{name: "exactly 15% where float division is above", rev: with(3, -123, 820), simDay: 3},
+		{name: "one cent above 15% of 820", rev: with(3, -124, 820), simDay: 3, expected: true},
+		{name: "nothing before", rev: with(3, -100, 0), simDay: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := portfolioDrop(tt.rev, tt.simDay)
+			if ok != tt.expected {
+				t.Fatalf("portfolioDrop = %t, want %t", ok, tt.expected)
+			}
+			if ok && got != *tt.rev {
+				t.Fatalf("portfolioDrop = %+v, want %+v", got, *tt.rev)
+			}
+		})
+	}
+}
+
+func TestLossBP(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		amount, before int64
+		expected       int
+	}{
+		{name: "mariana", amount: -3_852_000, before: 24_830_000, expected: 1551},
+		{name: "exact half rounds away from zero", amount: -1, before: 20_000, expected: 1},
+		{name: "below half rounds down", amount: -1, before: 20_001, expected: 0},
+		{name: "everything lost", amount: -500, before: 500, expected: 10_000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := lossBP(tt.amount, tt.before); got != tt.expected {
+				t.Errorf("lossBP(%d, %d) = %d, want %d", tt.amount, tt.before, got, tt.expected)
+			}
+		})
+	}
+}
+
 // TestEvaluateMoments covers the seed clients on day 0 and the two live
 // changes of the demo.
 func TestEvaluateMoments(t *testing.T) {
@@ -234,6 +303,25 @@ func TestEvaluateMoments(t *testing.T) {
 				SegmentUpgraded: true, UpgradedSegment: "Advance",
 				IdleCash: true, CashCents: 1_114_800, PatrimonyCents: 1_820_000,
 			},
+		},
+		{
+			name: "mariana on day 3",
+			in: MomentInput{
+				Segment: "Singular", Balance: Balance{PatrimonyCents: 20_978_000, CashCents: 6_000_000, SimDay: 3},
+				Revaluation: &marianaShock,
+			},
+			expected: MomentFacts{
+				PortfolioReview: true, CashCents: 6_000_000, PatrimonyCents: 20_978_000,
+				PortfolioDrop: true, DropBP: 1551, DropProductID: "cobalto", DropProductBP: -5350, DropDay: 3,
+			},
+		},
+		{
+			name: "mariana on day 4",
+			in: MomentInput{
+				Segment: "Singular", Balance: Balance{PatrimonyCents: 20_978_000, CashCents: 6_000_000, SimDay: 4},
+				Revaluation: &Revaluation{SimDay: 4, BeforeCents: 20_978_000},
+			},
+			expected: MomentFacts{PortfolioReview: true, CashCents: 6_000_000, PatrimonyCents: 20_978_000},
 		},
 	}
 	for _, tt := range tests {

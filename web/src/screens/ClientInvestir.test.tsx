@@ -101,6 +101,9 @@ function stubBFF(stub: Stub) {
       if (url.endsWith('/screens/investir')) {
         return json(stub.investir());
       }
+      if (url.endsWith('/v1/client-pov/simulation')) {
+        return json({ sim_day: 0 });
+      }
       return json(stub.phase2());
     }),
   );

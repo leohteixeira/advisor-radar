@@ -26,12 +26,14 @@ func TestScreenAccounts_Account(t *testing.T) {
 	src := screenAccounts{pov: onePOV{account: POVAccount{
 		Acoes: 1, ETFs: 2, RendaFixa: 3, Caixa: 4, Patrimony: 10,
 		Positions: []POVPosition{{ProductID: "tbill", AssetClass: "renda_fixa", AppliedCents: 2, ValueCents: 3}},
+		SimDay:    3, DayChange: -5,
 	}}}
 	got, err := src.Account(t.Context(), "c")
 	if err != nil {
 		t.Fatalf("Account error = %v", err)
 	}
-	if got.Acoes != 1 || got.ETFs != 2 || got.RendaFixa != 3 || got.Cash != 4 || got.Patrimony != 10 {
+	if got.Acoes != 1 || got.ETFs != 2 || got.RendaFixa != 3 || got.Cash != 4 || got.Patrimony != 10 ||
+		got.SimDay != 3 || got.DayChange != -5 {
 		t.Errorf("account = %+v", got)
 	}
 	want := []screen.Position{{ProductID: "tbill", AssetClass: "renda_fixa", AppliedCents: 2, ValueCents: 3}}
@@ -61,6 +63,7 @@ func TestScreenActivity_Activity(t *testing.T) {
 	src := screenActivity{timeline: rowsTimeline{rows: []TimelineEntry{
 		{Kind: "aporte", Title: "Aporte", Ago: 90, Source: "account.event.recorded", OccurredAt: time.Unix(1_700_000_000, 0)},
 		{Kind: "saque", Title: "Saque", Ago: -3},
+		{Kind: "reavaliacao", Title: "Reavaliação", ProductID: "cobalto", AmountCents: -3_852_000, SimDay: 3, ProductChangeBP: -5350},
 	}}}
 	got, err := src.Activity(t.Context(), "c")
 	if err != nil {
@@ -69,6 +72,7 @@ func TestScreenActivity_Activity(t *testing.T) {
 	want := []screen.Activity{
 		{Kind: "aporte", Title: "Aporte", Source: "account.event.recorded", OccurredAt: time.Unix(1_700_000_000, 0), Age: 90 * time.Minute},
 		{Kind: "saque", Title: "Saque", Age: 0},
+		{Kind: "reavaliacao", Title: "Reavaliação", ProductID: "cobalto", AmountCents: -3_852_000, SimDay: 3, ProductChangeBP: -5350},
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("activity = %+v, want %+v", got, want)
@@ -198,6 +202,7 @@ func TestScreenMoments_Moments(t *testing.T) {
 	facts := MomentFacts{
 		SegmentUpgraded: true, UpgradedSegment: "Advance", SegmentUpgradeNear: true, UpgradeGapCents: 1,
 		IdleCash: true, CashCents: 2, PatrimonyCents: 3, PortfolioReview: true, PortfolioDrop: true,
+		DropBP: 1551, DropProductID: "cobalto", DropProductBP: -5350, DropDay: 3,
 	}
 	got, err := screenMoments{queue: momentQueue{facts: facts}}.Moments(t.Context(), "c")
 	if err != nil {
@@ -206,6 +211,7 @@ func TestScreenMoments_Moments(t *testing.T) {
 	want := screen.MomentFacts{
 		SegmentUpgraded: true, UpgradedSegment: "Advance", SegmentUpgradeNear: true, UpgradeGapCents: 1,
 		IdleCash: true, CashCents: 2, PatrimonyCents: 3, PortfolioReview: true, PortfolioDrop: true,
+		DropBP: 1551, DropProductID: "cobalto", DropProductBP: -5350, DropDay: 3,
 	}
 	if got != want {
 		t.Errorf("moments = %+v, want %+v", got, want)

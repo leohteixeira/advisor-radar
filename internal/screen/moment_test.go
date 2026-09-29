@@ -1,6 +1,7 @@
 package screen
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -38,13 +39,14 @@ func TestMomentVariants_Registry(t *testing.T) {
 		}
 	}
 	expected := []string{
-		momentCaseOpen, momentSegmentUpgraded, momentSegmentUpgradeNear,
+		momentPortfolioDrop, momentCaseOpen, momentSegmentUpgraded, momentSegmentUpgradeNear,
 		momentIdleCash, momentPortfolioReview, momentWelcome,
 	}
 	if !slices.Equal(order, expected) {
 		t.Fatalf("moment priority = %v, want %v", order, expected)
 	}
 	needs := map[string][]Source{
+		momentPortfolioDrop:      {SourceMoments, SourceAdvisory},
 		momentCaseOpen:           {SourceCases, SourceAdvisory},
 		momentSegmentUpgraded:    {SourceMoments},
 		momentSegmentUpgradeNear: {SourceMoments},
@@ -65,6 +67,9 @@ func TestMomentVariants_Registry(t *testing.T) {
 		if !slices.Equal(r.needs, want) {
 			t.Errorf("%s needs %v, want %v", variant, r.needs, want)
 		}
+	}
+	if uses := reg[variantKey{typeMomentCard, momentPortfolioDrop}].uses; !slices.Equal(uses, []Source{SourceCatalog}) {
+		t.Errorf("portfolio_drop uses %v, want the catalog", uses)
 	}
 }
 
@@ -471,5 +476,173 @@ func TestLatestCase(t *testing.T) {
 		if got := latestCase(cases); got != newest {
 			t.Errorf("latestCase(%v) = %v, want %v", cases, got, newest)
 		}
+	}
+}
+
+// TestHome_PortfolioDrop checks where portfolio_drop sits in the moment
+// priority and what makes the section fall through it.
+func TestHome_PortfolioDrop(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		fixture  fixture
+		change   func(*Sources)
+		expected string
+	}{
+		{name: "mariana on the shock day", fixture: marianaShocked(), expected: momentPortfolioDrop},
+		{name: "the drop outranks an open case", fixture: withCase(marianaShocked()), expected: momentPortfolioDrop},
+		{
+			name: "a day later mariana is back to the review", fixture: marianaShocked(),
+			change: func(s *Sources) {
+				m := marianaShocked().moments
+				m.PortfolioDrop, m.DropBP, m.DropProductID, m.DropProductBP, m.DropDay = false, 0, "", 0, 0
+				s.Moments = fakeMoments{facts: m}
+			},
+			expected: momentPortfolioReview,
+		},
+		{
+			name: "catalog down falls through to the review", fixture: marianaShocked(),
+			change:   func(s *Sources) { s.Products = fakeProducts{err: errDown} },
+			expected: momentPortfolioReview,
+		},
+		{
+			name: "a product the catalog does not list falls through", fixture: marianaShocked(),
+			change: func(s *Sources) {
+				m := marianaShocked().moments
+				m.DropProductID = "gone"
+				s.Moments = fakeMoments{facts: m}
+			},
+			expected: momentPortfolioReview,
+		},
+		{
+			name: "a product that rose the most falls through", fixture: marianaShocked(),
+			change: func(s *Sources) {
+				m := marianaShocked().moments
+				m.DropProductBP = 1_200
+				s.Moments = fakeMoments{facts: m}
+			},
+			expected: momentPortfolioReview,
+		},
+		{
+			name: "a flat product falls through", fixture: marianaShocked(),
+			change: func(s *Sources) {
+				m := marianaShocked().moments
+				m.DropProductBP = 0
+				s.Moments = fakeMoments{facts: m}
+			},
+			expected: momentPortfolioReview,
+		},
+		{
+			name: "advisory down falls through to welcome", fixture: marianaShocked(),
+			change:   func(s *Sources) { s.Customers = fakeCustomers{err: errDown} },
+			expected: momentWelcome,
+		},
+		{
+			name: "moments down falls through to welcome", fixture: marianaShocked(),
+			change:   func(s *Sources) { s.Moments = fakeMoments{err: errDown} },
+			expected: momentWelcome,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			src := tt.fixture.sources()
+			if tt.change != nil {
+				tt.change(&src)
+			}
+			res, err := newTestEngine(t, src).Build(t.Context(), "home", tt.fixture.id)
+			if err != nil {
+				t.Fatalf("Build error = %v", err)
+			}
+			if got := variantOf(t, res.Page, "moment"); got != tt.expected {
+				t.Errorf("moment = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestPortfolioDropMoment(t *testing.T) {
+	t.Parallel()
+	got, err := portfolioDropMoment{}.Build(marianaShocked().snapshot(), embedded(t))
+	if err != nil {
+		t.Fatalf("Build error = %v", err)
+	}
+	want := MomentCard{
+		Kicker: "Sua carteira hoje",
+		Title:  "Mariana, sua carteira caiu 15,5% hoje",
+		Body:   "Cobalto Semicondutores recuou 53,5% no dia simulado 3. A Ana Paula Ribeiro já foi avisada e vai falar com você.",
+		Tone:   ToneNeg,
+		Icon:   "drop",
+		Action: &Action{Type: ActionNavigate, Label: "Ver carteira", Target: "carteira"},
+	}
+	if got.Type != typeMomentCard || got.Variant != momentPortfolioDrop || !reflect.DeepEqual(got.Props, want) {
+		t.Errorf("component = %s/%s %+v, want portfolio_drop %+v", got.Type, got.Variant, got.Props, want)
+	}
+
+	t.Run("without a first name", func(t *testing.T) {
+		t.Parallel()
+		snap := marianaShocked().snapshot()
+		snap.Customer.Value.Name = ""
+		got, err := portfolioDropMoment{}.Build(snap, embedded(t))
+		if err != nil {
+			t.Fatalf("Build error = %v", err)
+		}
+		if title := got.Props.(MomentCard).Title; title != "Sua carteira caiu 15,5% hoje" {
+			t.Errorf("title = %q", title)
+		}
+	})
+}
+
+func TestPortfolioDropMoment_BuildErrors(t *testing.T) {
+	t.Parallel()
+	noFact := marianaShocked().snapshot()
+	noFact.Moments.Value.PortfolioDrop = false
+	momentsDown := marianaShocked().snapshot()
+	momentsDown.Moments = Fetched[MomentFacts]{Err: errDown}
+	noAdvisor := marianaShocked().snapshot()
+	noAdvisor.Customer.Value.Advisor = ""
+	unknown := marianaShocked().snapshot()
+	unknown.Moments.Value.DropProductID = "gone"
+	rose := marianaShocked().snapshot()
+	rose.Moments.Value.DropProductBP = 1_200
+	tests := []struct {
+		name string
+		snap Snapshot
+		cat  Catalog
+	}{
+		{name: "no drop fact", snap: noFact, cat: embedded(t)},
+		{name: "moments down", snap: momentsDown, cat: embedded(t)},
+		{name: "no advisor", snap: noAdvisor, cat: embedded(t)},
+		{name: "unknown product", snap: unknown, cat: embedded(t)},
+		{name: "the product rose", snap: rose, cat: embedded(t)},
+		{name: "missing copy", snap: marianaShocked().snapshot(), cat: Catalog{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			v := portfolioDropMoment{}
+			if _, err := v.Build(tt.snap, tt.cat); err == nil {
+				t.Error("Build returned no error")
+			}
+		})
+	}
+}
+
+// A revaluation is the market moving, not the client: it never dates the
+// idle cash.
+func TestIdleDays_SkipsRevaluations(t *testing.T) {
+	t.Parallel()
+	snap := thiagoFixture().snapshot()
+	snap.Activity.Value = append(snap.Activity.Value, Activity{
+		Kind: "reavaliacao", Source: "account.event.recorded", OccurredAt: testNow.Add(-time.Hour),
+		AmountCents: -109_140, SimDay: 3,
+	})
+	days, ok := idleDays(snap)
+	if !ok || days != 4 {
+		t.Errorf("idleDays = %d %t, want 4 true", days, ok)
+	}
+	snap.Activity.Value = []Activity{{Kind: "reavaliacao", Source: "account.event.recorded", Age: time.Hour}}
+	if _, ok := idleDays(snap); ok {
+		t.Error("idleDays counted a revaluation as a movement")
 	}
 }

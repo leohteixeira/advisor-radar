@@ -2,6 +2,7 @@ package advisory_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/leohteixeira/advisor-radar/internal/advisory"
@@ -17,6 +18,84 @@ func TestEvaluateAccount_AplicacaoIsQuiet(t *testing.T) {
 	})
 	if len(got) != 0 {
 		t.Fatalf("decisions = %+v, want none", got)
+	}
+}
+
+// The drop rule runs on a negative reavaliacao above 15% of before; money is
+// in dollars, as Apply scales it.
+func TestEvaluateAccount_Reavaliacao(t *testing.T) {
+	t.Parallel()
+	drop := advisory.Decision{
+		RuleKey: advisory.RuleKeyDrop, Kind: advisory.KindQueda, Rule: "Queda acima de 15% em 5 dias úteis",
+		Amount: -38_520, Before: 248_300, After: 209_780,
+	}
+	tests := []struct {
+		name     string
+		payload  sim.AccountPayload
+		expected []advisory.Decision
+	}{
+		{
+			name:     "mariana loses 15.5% on day 3",
+			payload:  sim.AccountPayload{Kind: sim.KindReavaliacao, Amount: -38_520, Before: 248_300, After: 209_780, SimDay: 3},
+			expected: []advisory.Decision{drop},
+		},
+		{
+			name:    "thiago loses 1.6%",
+			payload: sim.AccountPayload{Kind: sim.KindReavaliacao, Amount: -1_091.40, Before: 68_000, After: 66_908.60, SimDay: 3},
+		},
+		{
+			name:    "a flat day",
+			payload: sim.AccountPayload{Kind: sim.KindReavaliacao, Before: 8_200, After: 8_200, SimDay: 1},
+		},
+		{
+			name:    "a gain above 15% is not a drop",
+			payload: sim.AccountPayload{Kind: sim.KindReavaliacao, Amount: 20_000, Before: 60_000, After: 80_000, SimDay: 2},
+		},
+		{
+			name:    "exactly 15% is not above",
+			payload: sim.AccountPayload{Kind: sim.KindReavaliacao, Amount: -15, Before: 100, After: 85, SimDay: 2},
+		},
+		{
+			// 1,23/8,20 is 0.15000000000000002 in float64; in cents 123·20 = 820·3.
+			name:    "exactly 15% in cents, above in float division, is not above",
+			payload: sim.AccountPayload{Kind: sim.KindReavaliacao, Amount: -1.23, Before: 8.20, After: 6.97, SimDay: 2},
+		},
+		{
+			name:    "one cent above 15%",
+			payload: sim.AccountPayload{Kind: sim.KindReavaliacao, Amount: -1.24, Before: 8.20, After: 6.96, SimDay: 2},
+			expected: []advisory.Decision{
+				{RuleKey: advisory.RuleKeyDrop, Kind: advisory.KindQueda, Rule: advisory.RuleDrop, Amount: -1.24, Before: 8.20, After: 6.96},
+			},
+		},
+		{
+			name:    "money beyond exact cents raises nothing",
+			payload: sim.AccountPayload{Kind: sim.KindReavaliacao, Amount: -1e17, Before: 2e17, After: 1e17, SimDay: 2},
+		},
+		{
+			name:    "a drop that crosses a segment also moves it",
+			payload: sim.AccountPayload{Kind: sim.KindReavaliacao, Amount: -4_000, Before: 12_000, After: 8_000, SimDay: 3},
+			expected: []advisory.Decision{
+				{RuleKey: advisory.RuleKeyDrop, Kind: advisory.KindQueda, Rule: advisory.RuleDrop, Amount: -4_000, Before: 12_000, After: 8_000},
+				{
+					RuleKey: advisory.RuleKeySegment, Kind: advisory.KindSegmento, Rule: advisory.RuleSegment,
+					Before: 12_000, After: 8_000, From: "Advance", To: "Essencial",
+				},
+			},
+		},
+		{
+			name:     "the phase-1 asset_drop path is unchanged",
+			payload:  sim.AccountPayload{Kind: "asset_drop", Amount: 38_520, Before: 248_300, After: 209_780},
+			expected: []advisory.Decision{{RuleKey: advisory.RuleKeyDrop, Kind: advisory.KindQueda, Rule: advisory.RuleDrop, Amount: 38_520, Before: 248_300, After: 209_780}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := advisory.EvaluateAccount(tt.payload)
+			if !slices.Equal(got, tt.expected) {
+				t.Fatalf("decisions = %+v, want %+v", got, tt.expected)
+			}
+		})
 	}
 }
 

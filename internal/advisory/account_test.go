@@ -78,12 +78,12 @@ func startAccountSim(t *testing.T, stub *stubAccountSim) *advisory.AccountSim {
 
 func TestAccountSim_Balance(t *testing.T) {
 	t.Parallel()
-	stub := &stubAccountSim{account: &accountv1.Account{PatrimonyCents: 820_000, CaixaCents: 114_800, AcoesCents: 164_000}}
+	stub := &stubAccountSim{account: &accountv1.Account{PatrimonyCents: 820_000, CaixaCents: 114_800, AcoesCents: 164_000, SimDay: 3}}
 	got, err := startAccountSim(t, stub).Balance(t.Context(), "01a0e3a4-9a44-757a-ac8f-dab7db5eb068")
 	if err != nil {
 		t.Fatalf("Balance: %v", err)
 	}
-	if want := (advisory.Balance{PatrimonyCents: 820_000, CashCents: 114_800}); got != want {
+	if want := (advisory.Balance{PatrimonyCents: 820_000, CashCents: 114_800, SimDay: 3}); got != want {
 		t.Errorf("Balance = %+v, want %+v", got, want)
 	}
 }

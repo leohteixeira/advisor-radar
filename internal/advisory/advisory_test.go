@@ -5,10 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"math"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/leohteixeira/advisor-radar/internal/advisory"
 	"github.com/leohteixeira/advisor-radar/internal/event"
@@ -26,6 +31,7 @@ type memStore struct {
 	alerts  map[string]advisory.AlertRow
 	outbox  map[string]memOutbox
 	book    map[string]bookRow
+	revals  map[string]advisory.Revaluation
 	order   []string
 	failIns string
 	// profiles is the book investor profile per customer; a customer
@@ -44,6 +50,7 @@ type memTx struct {
 	alerts map[string]advisory.AlertRow
 	outbox map[string]advisory.OutboxRow
 	book   map[string]bookRow
+	revals map[string]advisory.Revaluation
 	order  []string
 }
 
@@ -53,6 +60,7 @@ func newMemStore() *memStore {
 		alerts: make(map[string]advisory.AlertRow),
 		outbox: make(map[string]memOutbox),
 		book:   make(map[string]bookRow),
+		revals: make(map[string]advisory.Revaluation),
 	}
 }
 
@@ -66,6 +74,7 @@ func (s *memStore) WithTx(ctx context.Context, fn func(advisory.Tx) error) error
 		alerts: make(map[string]advisory.AlertRow),
 		outbox: make(map[string]advisory.OutboxRow),
 		book:   make(map[string]bookRow),
+		revals: make(map[string]advisory.Revaluation),
 	}
 	if err := fn(tx); err != nil {
 		return err
@@ -80,6 +89,13 @@ func (s *memStore) WithTx(ctx context.Context, fn func(advisory.Tx) error) error
 	}
 	for id, row := range tx.book {
 		s.book[id] = row
+	}
+	for id, rev := range tx.revals {
+		// As the pgx upsert: only another epoch or a later day replaces.
+		if old, ok := s.revals[id]; ok && old.Epoch == rev.Epoch && rev.SimDay <= old.SimDay {
+			continue
+		}
+		s.revals[id] = rev
 	}
 	for _, id := range tx.order {
 		row := tx.outbox[id]
@@ -122,6 +138,17 @@ func (t *memTx) UpdateBook(ctx context.Context, customerID string, aum float64, 
 		return err
 	}
 	t.book[customerID] = bookRow{aum: aum, segment: segment}
+	return nil
+}
+
+func (t *memTx) SaveRevaluation(ctx context.Context, customerID string, rev advisory.Revaluation) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if t.store.failIns == "revaluation" {
+		return errors.New("forced revaluation save failure")
+	}
+	t.revals[customerID] = rev
 	return nil
 }
 
@@ -878,34 +905,265 @@ func TestApply_InvalidPurchaseIsRejected(t *testing.T) {
 	}
 }
 
-// A v3 reavaliacao follows the book generically: AUM from after and the
-// segment rule. The drop rule waits for story 13, so a 15% loss raises no
-// queda yet.
-func TestApply_ReavaliacaoFollowsBookAndSegment(t *testing.T) {
+// revaluationEnv is a v3 reavaliacao in cents, as account-sim writes it on
+// advance-day.
+func revaluationEnv(eventID, customerID string, day int, amount, before float64, productID string, productBP int) event.Envelope {
+	return event.Envelope{
+		Name:          event.NameAccountEventRecorded,
+		EventID:       testEventID(eventID),
+		OccurredAt:    time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC),
+		CustomerID:    customerID,
+		SchemaVersion: event.SchemaVersionPositions,
+		Payload: map[string]any{
+			"kind": "reavaliacao", "amount": amount, "before": before, "after": before + amount,
+			"sim_day": day, "product_id": productID, "product_change_bp": productBP,
+			"epoch": testEpoch,
+		},
+	}
+}
+
+// testEpoch is the account-sim simulation epoch of revaluationEnv.
+const testEpoch = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+
+// testEventID is a stable UUID for a readable test event name, as account-sim
+// ids its reavaliacao events.
+func testEventID(name string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(name)).String()
+}
+
+// withPayload returns env with key set in its reavaliacao payload.
+func withPayload(env event.Envelope, key string, value any) event.Envelope {
+	p := maps.Clone(env.Payload.(map[string]any))
+	p[key] = value
+	env.Payload = p
+	return env
+}
+
+// A v3 reavaliacao follows the book (AUM from after, the segment rule), raises
+// queda on a loss above 15% of before, and is kept in cents as the latest
+// revaluation.
+func TestApply_Reavaliacao(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		env       event.Envelope
+		wantKinds []string
+		wantAUM   float64
+		wantSeg   string
+	}{
+		{
+			name:      "mariana loses 15.5% on day 3",
+			env:       revaluationEnv("ev-mariana-3", "c-mariana", 3, -3_852_000, 24_830_000, "cobalto", -5350),
+			wantKinds: []string{advisory.KindQueda},
+			wantAUM:   209_780, wantSeg: "Singular",
+		},
+		{
+			name:    "thiago loses 1.6% on day 3",
+			env:     revaluationEnv("ev-thiago-3", "c-thiago", 3, -109_140, 6_800_000, "cobalto", -5350),
+			wantAUM: 66_908.60, wantSeg: "Advance",
+		},
+		{
+			name:    "fernanda has a flat day",
+			env:     revaluationEnv("ev-fernanda-1", "c-fernanda", 1, 0, 820_000, "", 0),
+			wantAUM: 8_200, wantSeg: "Essencial",
+		},
+		{
+			name:      "a drop across the band raises queda and segmento",
+			env:       revaluationEnv("ev-cross", "c-thiago", 3, -200_000, 1_100_000, "farol", -1818),
+			wantKinds: []string{advisory.KindQueda, advisory.KindSegmento},
+			wantAUM:   9_000, wantSeg: "Essencial",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := newMemStore()
+			if err := advisory.Apply(context.Background(), store, tt.env); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			kinds := slices.Sorted(maps.Values(store.alertKinds()))
+			if !slices.Equal(kinds, tt.wantKinds) {
+				t.Fatalf("alerts = %v, want %v", kinds, tt.wantKinds)
+			}
+			customer := tt.env.CustomerID
+			if row := store.book[customer]; math.Abs(row.aum-tt.wantAUM) > 1e-9 || row.segment != tt.wantSeg {
+				t.Fatalf("book = %+v, want aum %v %s", row, tt.wantAUM, tt.wantSeg)
+			}
+			p := tt.env.Payload.(map[string]any)
+			want := advisory.Revaluation{
+				Epoch:           testEpoch,
+				SimDay:          p["sim_day"].(int),
+				AmountCents:     int64(p["amount"].(float64)),
+				BeforeCents:     int64(p["before"].(float64)),
+				ProductID:       p["product_id"].(string),
+				ProductChangeBP: p["product_change_bp"].(int),
+				SourceEventID:   tt.env.EventID,
+			}
+			if got := store.revals[customer]; got != want {
+				t.Fatalf("revaluation = %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
+// Mariana's queda carries the rule text and the dollars of the loss, and a
+// redelivery raises nothing more.
+func TestApply_ReavaliacaoQuedaPayloadAndRedelivery(t *testing.T) {
 	t.Parallel()
 	store := newMemStore()
-	env := event.Envelope{
-		Name:          event.NameAccountEventRecorded,
-		EventID:       "ev-reval",
-		OccurredAt:    time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC),
-		CustomerID:    "c-thiago",
-		SchemaVersion: event.SchemaVersionPositions,
-		Payload:       map[string]any{"kind": "reavaliacao", "amount": -200_000, "before": 1_100_000, "after": 900_000, "sim_day": 3},
-	}
-	if err := advisory.Apply(context.Background(), store, env); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	kinds := store.alertKinds()
-	if len(kinds) != 1 {
-		t.Fatalf("alerts = %v, want only the segment alert", kinds)
-	}
-	for _, kind := range kinds {
-		if kind != advisory.KindSegmento {
-			t.Fatalf("kind = %s, want segmento", kind)
+	env := revaluationEnv("ev-mariana-3", "c-mariana", 3, -3_852_000, 24_830_000, "cobalto", -5350)
+	for range 2 {
+		if err := advisory.Apply(context.Background(), store, env); err != nil {
+			t.Fatalf("Apply: %v", err)
 		}
 	}
-	if row := store.book["c-thiago"]; row.aum != 9_000 || row.segment != "Essencial" {
-		t.Fatalf("book = %+v, want aum 9000 Essencial", row)
+	if store.alertCount() != 1 || store.outboxCount() != 1 {
+		t.Fatalf("alerts %d outbox %d, want 1 and 1", store.alertCount(), store.outboxCount())
+	}
+	for _, row := range store.alerts {
+		var payload advisory.AlertPayload
+		if err := json.Unmarshal(row.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		want := advisory.AlertPayload{
+			Kind: advisory.KindQueda, Rule: "Queda acima de 15% em 5 dias úteis", SourceEventID: env.EventID,
+			Amount: -38_520, Before: 248_300, After: 209_780,
+		}
+		if payload != want || row.SourceSchemaVersion != event.SchemaVersionPositions {
+			t.Fatalf("queda = %+v (v%d), want %+v (v3)", payload, row.SourceSchemaVersion, want)
+		}
+	}
+}
+
+// A reavaliacao that cannot be kept is rejected before anything is written,
+// with ErrInvalidRevaluation, so the consumer dead-letters it; a failed save
+// rolls the whole fact back.
+func TestApply_InvalidReavaliacaoIsRejected(t *testing.T) {
+	t.Parallel()
+	valid := func() event.Envelope {
+		return revaluationEnv("ev-bad-reval", "c-mariana", 3, -3_852_000, 24_830_000, "cobalto", -5350)
+	}
+	tests := []struct {
+		name    string
+		env     func() event.Envelope
+		failIns string
+		wantErr error
+	}{
+		{
+			name:    "schema_version 2",
+			env:     func() event.Envelope { e := valid(); e.SchemaVersion = event.SchemaVersionCents; return e },
+			wantErr: advisory.ErrInvalidRevaluation,
+		},
+		{
+			name: "sim_day 0",
+			env: func() event.Envelope {
+				return revaluationEnv("ev-bad-reval", "c-mariana", 0, -3_852_000, 24_830_000, "cobalto", -5350)
+			},
+			wantErr: advisory.ErrInvalidRevaluation,
+		},
+		{
+			name: "fractional amount",
+			env: func() event.Envelope {
+				return revaluationEnv("ev-bad-reval", "c-mariana", 3, -3_852_000.5, 24_830_000, "cobalto", -5350)
+			},
+			wantErr: sim.ErrMoneyScale,
+		},
+		{
+			name: "fractional before",
+			env: func() event.Envelope {
+				return revaluationEnv("ev-bad-reval", "c-mariana", 3, -3_852_000, 24_830_000.25, "cobalto", -5350)
+			},
+			wantErr: sim.ErrMoneyScale,
+		},
+		{
+			name: "amount too large to be exact",
+			env: func() event.Envelope {
+				return revaluationEnv("ev-bad-reval", "c-mariana", 3, -(1 << 54), 1<<52, "cobalto", -5350)
+			},
+			wantErr: advisory.ErrInvalidRevaluation,
+		},
+		{
+			name: "before too large to be exact",
+			env: func() event.Envelope {
+				return revaluationEnv("ev-bad-reval", "c-mariana", 3, 0, 1<<54, "cobalto", -5350)
+			},
+			wantErr: advisory.ErrInvalidRevaluation,
+		},
+		{
+			name:    "sim_day beyond int32",
+			env:     func() event.Envelope { return withPayload(valid(), "sim_day", int64(math.MaxInt32)+1) },
+			wantErr: advisory.ErrInvalidRevaluation,
+		},
+		{
+			name:    "product_change_bp beyond int32",
+			env:     func() event.Envelope { return withPayload(valid(), "product_change_bp", int64(math.MinInt32)-1) },
+			wantErr: advisory.ErrInvalidRevaluation,
+		},
+		{
+			name:    "event id not a uuid",
+			env:     func() event.Envelope { e := valid(); e.EventID = "ev-bad-reval"; return e },
+			wantErr: advisory.ErrInvalidRevaluation,
+		},
+		{
+			name:    "epoch missing",
+			env:     func() event.Envelope { return withPayload(valid(), "epoch", "") },
+			wantErr: advisory.ErrInvalidRevaluation,
+		},
+		{
+			name:    "epoch not a uuid",
+			env:     func() event.Envelope { return withPayload(valid(), "epoch", "epoch-1") },
+			wantErr: advisory.ErrInvalidRevaluation,
+		},
+		{name: "save fails", env: valid, failIns: "revaluation"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := newMemStore()
+			store.failIns = tt.failIns
+			err := advisory.Apply(context.Background(), store, tt.env())
+			if err == nil || tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Apply error = %v, want %v", err, tt.wantErr)
+			}
+			if store.inboxCount() != 0 || store.alertCount() != 0 || store.outboxCount() != 0 || len(store.book) != 0 || len(store.revals) != 0 {
+				t.Fatalf("partial write: inbox %d alerts %d outbox %d book %d revaluations %d",
+					store.inboxCount(), store.alertCount(), store.outboxCount(), len(store.book), len(store.revals))
+			}
+		})
+	}
+}
+
+// The kept revaluation moves only forward within an epoch: a redelivered older
+// day leaves the newer one, and any day of a new epoch replaces it.
+func TestApply_ReavaliacaoKeepsTheNewestDay(t *testing.T) {
+	t.Parallel()
+	const nextEpoch = "0b0a7f1c-3a3e-4c1d-9a55-2f1d6c0e8b11"
+	day3 := revaluationEnv("ev-mariana-3", "c-mariana", 3, -3_852_000, 24_830_000, "cobalto", -5350)
+	day2 := revaluationEnv("ev-mariana-2", "c-mariana", 2, 0, 24_830_000, "", 0)
+	reseeded := withPayload(revaluationEnv("ev-mariana-new-1", "c-mariana", 1, 0, 24_830_000, "", 0), "epoch", nextEpoch)
+	tests := []struct {
+		name      string
+		envs      []event.Envelope
+		wantDay   int
+		wantEpoch string
+	}{
+		{name: "a later day replaces", envs: []event.Envelope{day2, day3}, wantDay: 3, wantEpoch: testEpoch},
+		{name: "an older day redelivered late is ignored", envs: []event.Envelope{day3, day2}, wantDay: 3, wantEpoch: testEpoch},
+		{name: "a new epoch replaces a later day", envs: []event.Envelope{day3, reseeded}, wantDay: 1, wantEpoch: nextEpoch},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := newMemStore()
+			for _, env := range tt.envs {
+				if err := advisory.Apply(context.Background(), store, env); err != nil {
+					t.Fatalf("Apply: %v", err)
+				}
+			}
+			if got := store.revals["c-mariana"]; got.SimDay != tt.wantDay || got.Epoch != tt.wantEpoch {
+				t.Fatalf("kept revaluation = %+v, want day %d of epoch %s", got, tt.wantDay, tt.wantEpoch)
+			}
+		})
 	}
 }
 

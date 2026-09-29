@@ -159,6 +159,28 @@ func (t *memTx) ResetPOV(ctx context.Context, seed sim.Seed) error {
 	return nil
 }
 
+// errNoSimulation is what the simulation methods of this command fake answer:
+// the advance-day tests run on sim.Memory and PGXStore instead.
+var errNoSimulation = errors.New("fake store has no simulation")
+
+func (t *memTx) LockSimulation(context.Context) (sim.SimState, error) {
+	return sim.SimState{}, errNoSimulation
+}
+
+func (t *memTx) Simulation(context.Context) (sim.SimState, error) {
+	return sim.SimState{}, errNoSimulation
+}
+
+func (t *memTx) SetSimDay(context.Context, int) error { return errNoSimulation }
+
+func (t *memTx) CustomerIDs(context.Context) ([]string, error) { return nil, errNoSimulation }
+
+func (t *memTx) LookupAdvance(context.Context, string) (sim.AdvanceResult, bool, error) {
+	return sim.AdvanceResult{}, false, errNoSimulation
+}
+
+func (t *memTx) SaveAdvance(context.Context, string, sim.AdvanceResult) error { return errNoSimulation }
+
 // sameAccount compares every field, including the positions.
 func sameAccount(a, b sim.Account) bool {
 	return a.CustomerID == b.CustomerID && a.Acoes == b.Acoes && a.ETFs == b.ETFs &&

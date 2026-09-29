@@ -41,6 +41,9 @@ func TestParseCatalog_Embedded(t *testing.T) {
 	if want := []string{"moment_card", "wealth_summary", "action_grid", "advisor_card", "activity_list"}; !slices.Equal(types, want) {
 		t.Errorf("home types = %v, want %v", types, want)
 	}
+	if want := []string{"with_day_change", "default"}; !slices.Equal(home.sections[1].variants, want) {
+		t.Errorf("home wealth variants = %v, want %v", home.sections[1].variants, want)
+	}
 	investir, ok := cat.screens["investir"]
 	if !ok {
 		t.Fatal("catalog has no investir screen")
@@ -77,7 +80,7 @@ func TestParseCatalog_Embedded(t *testing.T) {
 		t.Errorf("carteira %s sections = %v, want v1 %v", carteira.revision, ids, want)
 	}
 	if want := []string{
-		"portfolio_summary/default",
+		"portfolio_summary/with_day_change,default",
 		"allocation_breakdown/default",
 		"position_list/stocks",
 		"position_list/etf",

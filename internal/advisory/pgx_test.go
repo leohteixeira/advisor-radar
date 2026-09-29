@@ -82,6 +82,18 @@ func applySQL(t *testing.T, pool *pgxpool.Pool, parts ...string) {
 	}
 }
 
+// newSeededAdvisoryPool returns a fresh schema with every advisory migration
+// and the cast seed applied, as cmd/db does.
+func newSeededAdvisoryPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool := newAdvisoryPool(t)
+	for _, name := range []string{"001_book.sql", "002_uuidv7.sql", "003_investor_profile.sql", "004_revaluation.sql"} {
+		applySQL(t, pool, "migrations", "advisory", name)
+	}
+	applySQL(t, pool, "seeds", "advisory", "001_cast.sql")
+	return pool
+}
+
 // TestPGX_InvestorProfileMigration applies 003 to a book that already has a
 // row, then the seed: the existing row gets the migration default, later
 // inserts must state a profile, and the CHECK refuses an unknown one.
@@ -122,12 +134,8 @@ VALUES ('01a0e3a4-9a44-7000-8000-00000000e002', 'Sem Perfil', 'Essencial', 100, 
 // reads what the moment and profile RPCs read.
 func TestPGX_SeedAndMomentReads(t *testing.T) {
 	t.Parallel()
-	pool := newAdvisoryPool(t)
+	pool := newSeededAdvisoryPool(t)
 	ctx := t.Context()
-	for _, name := range []string{"001_book.sql", "002_uuidv7.sql", "003_investor_profile.sql"} {
-		applySQL(t, pool, "migrations", "advisory", name)
-	}
-	applySQL(t, pool, "seeds", "advisory", "001_cast.sql")
 	reader := advisory.NewBookReader(pool)
 
 	profiles := []struct {
@@ -180,7 +188,7 @@ func TestPGX_SeedAndMomentReads(t *testing.T) {
 		t.Fatalf("MomentBook(thiago): %v", err)
 	}
 	if mb.Segment != "Advance" || len(mb.Alerts) != 1 || mb.Alerts[0].SchemaVersion != 0 ||
-		mb.Alerts[0].From != "Essencial" || mb.Alerts[0].To != "Advance" {
+		mb.Alerts[0].From != "Essencial" || mb.Alerts[0].To != "Advance" || mb.Revaluation != nil {
 		t.Errorf("MomentBook(thiago) = %+v", mb)
 	}
 	if f := advisory.EvaluateMoments(advisory.MomentInput{Segment: mb.Segment, Alerts: mb.Alerts, Now: time.Now()}); f.SegmentUpgraded {
@@ -228,12 +236,8 @@ func TestPGX_SeedAndMomentReads(t *testing.T) {
 // follow the unchanged patrimony.
 func TestPGX_PurchaseSuitability(t *testing.T) {
 	t.Parallel()
-	pool := newAdvisoryPool(t)
+	pool := newSeededAdvisoryPool(t)
 	ctx := t.Context()
-	for _, name := range []string{"001_book.sql", "002_uuidv7.sql", "003_investor_profile.sql"} {
-		applySQL(t, pool, "migrations", "advisory", name)
-	}
-	applySQL(t, pool, "seeds", "advisory", "001_cast.sql")
 	store := advisory.NewPGXStore(pool)
 
 	purchase := func(eventID, customerID string, patrimony float64) event.Envelope {
@@ -321,5 +325,137 @@ WHERE kind = $1`, advisory.KindPerfil)
 		if err := pool.QueryRow(ctx, `SELECT count(*) FROM inbox WHERE event_id = $1::uuid`, env.EventID).Scan(&claimed); err != nil || claimed != 0 {
 			t.Fatalf("inbox rows for %s = %d, %v, want 0", env.EventID, claimed, err)
 		}
+	}
+}
+
+// TestPGX_Revaluation applies the day-3 revaluations over the seeded book:
+// Mariana's −15.5% raises one queda and her latest revaluation reads back as
+// the portfolio_drop fact on day 3 only; Thiago's −1.6% raises nothing; a
+// later revaluation replaces the latest one, a redelivered older day does
+// not, and any day of a new epoch does.
+func TestPGX_Revaluation(t *testing.T) {
+	t.Parallel()
+	pool := newSeededAdvisoryPool(t)
+	ctx := t.Context()
+	store := advisory.NewPGXStore(pool)
+
+	const epoch = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+	revaluation := func(eventID, customerID string, day int, amount, before float64, productID string, productBP int) event.Envelope {
+		return event.Envelope{
+			Name:          event.NameAccountEventRecorded,
+			EventID:       eventID,
+			OccurredAt:    time.Now().UTC(),
+			CustomerID:    customerID,
+			SchemaVersion: event.SchemaVersionPositions,
+			Payload: sim.AccountPayload{
+				Kind: sim.KindReavaliacao, Amount: amount, Before: before, After: before + amount,
+				SimDay: day, ProductID: productID, ProductChangeBP: productBP, Epoch: epoch,
+			},
+		}
+	}
+	const marianaDay3 = "01a0e3a4-9a44-7000-8000-00000000e201"
+	mariana := revaluation(marianaDay3, sim.CustomerMariana, 3, -3_852_000, 24_830_000, "cobalto", -5350)
+	for range 2 {
+		if err := advisory.Apply(ctx, store, mariana); err != nil {
+			t.Fatalf("Apply mariana: %v", err)
+		}
+	}
+	thiago := revaluation("01a0e3a4-9a44-7000-8000-00000000e202", sim.CustomerThiago, 3, -109_140, 6_800_000, "cobalto", -5350)
+	if err := advisory.Apply(ctx, store, thiago); err != nil {
+		t.Fatalf("Apply thiago: %v", err)
+	}
+
+	rows, err := pool.Query(ctx, `SELECT customer_id::text FROM alerts WHERE source_event_id = ANY($1::uuid[]) AND kind = $2`,
+		[]string{marianaDay3, thiago.EventID}, advisory.KindQueda)
+	if err != nil {
+		t.Fatalf("query quedas: %v", err)
+	}
+	quedas, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatalf("scan quedas: %v", err)
+	}
+	if len(quedas) != 1 || quedas[0] != sim.CustomerMariana {
+		t.Fatalf("queda alerts = %v, want one for Mariana", quedas)
+	}
+
+	reader := advisory.NewBookReader(pool)
+	c, err := reader.GetCustomer(ctx, sim.CustomerMariana)
+	if err != nil || c.AUM != 209_780 || c.Segment != "Singular" {
+		t.Fatalf("book mariana = %+v, %v, want aum 209780 Singular", c, err)
+	}
+	mb, err := reader.MomentBook(ctx, sim.CustomerMariana, time.Now().Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("MomentBook(mariana): %v", err)
+	}
+	want := advisory.Revaluation{
+		Epoch: epoch, SimDay: 3, AmountCents: -3_852_000, BeforeCents: 24_830_000,
+		ProductID: "cobalto", ProductChangeBP: -5350, SourceEventID: marianaDay3,
+	}
+	if mb.Revaluation == nil || *mb.Revaluation != want {
+		t.Fatalf("MomentBook(mariana).Revaluation = %+v, want %+v", mb.Revaluation, want)
+	}
+
+	facts := func(day int) *advisoryv1.MomentFacts {
+		t.Helper()
+		balances := fakeBalances{balances: map[string]advisory.Balance{
+			sim.CustomerMariana: {PatrimonyCents: 20_978_000, CashCents: 6_000_000, SimDay: day},
+		}}
+		conn := dialBufconn(t, func(s *grpc.Server) {
+			advisoryv1.RegisterAdvisoryServiceServer(s, advisory.NewGRPCServer(reader, advisory.WithAccountReader(balances)))
+		})
+		res, err := advisoryv1.NewAdvisoryServiceClient(conn).GetMomentFacts(ctx, &advisoryv1.GetMomentFactsRequest{CustomerId: sim.CustomerMariana})
+		if err != nil {
+			t.Fatalf("GetMomentFacts day %d: %v", day, err)
+		}
+		return res
+	}
+	if f := facts(3); !f.GetPortfolioDrop() || f.GetDropBp() != 1551 || f.GetDropProductId() != "cobalto" ||
+		f.GetDropProductBp() != -5350 || f.GetDropDay() != 3 {
+		t.Fatalf("facts on day 3 = %v, want portfolio_drop 1551 cobalto -5350 day 3", f)
+	}
+	if f := facts(4); f.GetPortfolioDrop() {
+		t.Fatalf("facts on day 4 = %v, want no portfolio_drop", f)
+	}
+
+	flat := revaluation("01a0e3a4-9a44-7000-8000-00000000e203", sim.CustomerMariana, 4, 0, 20_978_000, "", 0)
+	if err := advisory.Apply(ctx, store, flat); err != nil {
+		t.Fatalf("Apply day 4: %v", err)
+	}
+	mb, err = reader.MomentBook(ctx, sim.CustomerMariana, time.Now().Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("MomentBook(mariana) day 4: %v", err)
+	}
+	if mb.Revaluation == nil || mb.Revaluation.SimDay != 4 || mb.Revaluation.AmountCents != 0 || mb.Revaluation.ProductID != "" {
+		t.Fatalf("latest revaluation after day 4 = %+v", mb.Revaluation)
+	}
+	if f := facts(4); f.GetPortfolioDrop() {
+		t.Fatalf("facts after the flat day 4 = %v, want no portfolio_drop", f)
+	}
+
+	latest := func() advisory.Revaluation {
+		t.Helper()
+		mb, err := reader.MomentBook(ctx, sim.CustomerMariana, time.Now().Add(-24*time.Hour))
+		if err != nil || mb.Revaluation == nil {
+			t.Fatalf("MomentBook(mariana) = %+v, %v", mb.Revaluation, err)
+		}
+		return *mb.Revaluation
+	}
+	late := revaluation("01a0e3a4-9a44-7000-8000-00000000e204", sim.CustomerMariana, 3, -3_852_000, 24_830_000, "cobalto", -5350)
+	if err := advisory.Apply(ctx, store, late); err != nil {
+		t.Fatalf("Apply a late day 3: %v", err)
+	}
+	if got := latest(); got.SimDay != 4 || got.SourceEventID != flat.EventID {
+		t.Fatalf("latest after a late day 3 = %+v, want day 4 kept", got)
+	}
+	const nextEpoch = "0b0a7f1c-3a3e-4c1d-9a55-2f1d6c0e8b11"
+	reseeded := revaluation("01a0e3a4-9a44-7000-8000-00000000e205", sim.CustomerMariana, 1, 0, 24_830_000, "", 0)
+	payload := reseeded.Payload.(sim.AccountPayload)
+	payload.Epoch = nextEpoch
+	reseeded.Payload = payload
+	if err := advisory.Apply(ctx, store, reseeded); err != nil {
+		t.Fatalf("Apply day 1 of a new epoch: %v", err)
+	}
+	if got := latest(); got.SimDay != 1 || got.Epoch != nextEpoch {
+		t.Fatalf("latest after a reseed = %+v, want day 1 of %s", got, nextEpoch)
 	}
 }

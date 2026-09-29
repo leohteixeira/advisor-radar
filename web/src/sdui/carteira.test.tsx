@@ -72,6 +72,32 @@ describe('portfolio_summary', () => {
     renderSdui(<PortfolioSummary variant="default" props={props} />);
     expect(screen.getByRole('button', { name: 'Esconder valores' })).toHaveAttribute('aria-pressed', 'false');
   });
+
+  it('renders no day-change pill without day_change', () => {
+    const { container } = renderSdui(<PortfolioSummary variant="default" props={props} />);
+    expect(container.querySelector('.sdui-pill')).toBeNull();
+  });
+
+  it.each([
+    ['neg', '−US$ 38.520,00 (−15,5%) no dia 3', 'sdui-tone--neg'],
+    ['pos', '+US$ 1.200,00 (+1,8%) no dia 4', 'sdui-tone--pos'],
+    ['neutral', 'US$ 0,00 (0,0%) no dia 5', 'sdui-tone--neutral'],
+    ['gold', 'US$ 0,00 (0,0%) no dia 6', 'sdui-tone--neutral'],
+  ])('renders with_day_change in tone %s', (tone, change, cls) => {
+    renderSdui(<PortfolioSummary variant="with_day_change" props={{ ...props, day_change: change, day_change_tone: tone }} />);
+    const card = screen.getByRole('region', { name: 'Patrimônio total' });
+    expect(within(card).getByText(change)).toHaveClass('sdui-pill', cls);
+  });
+
+  it('masks the day-change pill with the other money', () => {
+    renderSdui(
+      <PortfolioSummary variant="with_day_change" props={{ ...props, day_change: '−US$ 38.520,00 (−15,5%) no dia 3', day_change_tone: 'neg' }} />,
+      { masked: true },
+    );
+    const card = screen.getByRole('region', { name: 'Patrimônio total' });
+    expect(within(card).getAllByText(MASK)).toHaveLength(5);
+    expect(within(card).queryByText(/no dia 3/)).not.toBeInTheDocument();
+  });
 });
 
 describe('allocation_breakdown', () => {
