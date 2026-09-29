@@ -18,7 +18,23 @@ const (
 	SourceAccount  Source = "account-sim"
 	SourceAdvisory Source = "advisory"
 	SourceTimeline Source = "timeline"
+	// SourceMoments is the advisory moment facts.
+	SourceMoments Source = "moments"
+	// SourceProfile is the advisory investor profile.
+	SourceProfile Source = "profile"
+	// SourceCases is the customer's open cases.
+	SourceCases Source = "cases"
 )
+
+// allSources is every Snapshot source in fetch and failure-report order.
+var allSources = []Source{
+	SourceAccount,
+	SourceAdvisory,
+	SourceTimeline,
+	SourceMoments,
+	SourceProfile,
+	SourceCases,
+}
 
 // ErrPanic marks a failure that was a recovered panic, in a source adapter
 // or a variant.
@@ -68,6 +84,38 @@ type Activity struct {
 	Age        time.Duration
 }
 
+// MomentFacts are the home moment conditions advisory evaluated for the
+// customer. The engine only orders them; it compares no threshold. Money is
+// integer USD cents.
+type MomentFacts struct {
+	SegmentUpgraded    bool
+	UpgradedSegment    string
+	SegmentUpgradeNear bool
+	UpgradeGapCents    int64
+	IdleCash           bool
+	CashCents          int64
+	PatrimonyCents     int64
+	PortfolioReview    bool
+	PortfolioDrop      bool
+}
+
+// InvestorProfile is the customer's suitability profile from advisory:
+// Profile is "conservador", "moderado", or "arrojado", and MaxRisk the
+// highest product risk it accepts.
+type InvestorProfile struct {
+	Profile    string
+	MaxRisk    int
+	AssessedOn time.Time
+}
+
+// OpenCase is one of the customer's cases that is not resolved. Age is how
+// long ago it was opened.
+type OpenCase struct {
+	ID    string
+	State string
+	Age   time.Duration
+}
+
 // AccountSource reads one account from account-sim. An unknown customer
 // wraps ErrUnknownCustomer. Implementations must return when ctx is done.
 type AccountSource interface {
@@ -86,11 +134,38 @@ type ActivitySource interface {
 	Activity(ctx context.Context, customerID string) ([]Activity, error)
 }
 
+// MomentSource reads the advisory moment facts of one customer.
+// Implementations must return when ctx is done.
+type MomentSource interface {
+	Moments(ctx context.Context, customerID string) (MomentFacts, error)
+}
+
+// ProfileSource reads the advisory investor profile of one customer.
+// Implementations must return when ctx is done.
+type ProfileSource interface {
+	Profile(ctx context.Context, customerID string) (InvestorProfile, error)
+}
+
+// CaseSource reads the customer's cases that are not resolved, in any
+// order. Implementations must return when ctx is done.
+type CaseSource interface {
+	OpenCases(ctx context.Context, customerID string) ([]OpenCase, error)
+}
+
 // Sources are the ports the engine reads a Snapshot from.
 type Sources struct {
 	Accounts  AccountSource
 	Customers CustomerSource
 	Activity  ActivitySource
+	Moments   MomentSource
+	Profiles  ProfileSource
+	Cases     CaseSource
+}
+
+// complete reports whether every source is set.
+func (s Sources) complete() bool {
+	return s.Accounts != nil && s.Customers != nil && s.Activity != nil &&
+		s.Moments != nil && s.Profiles != nil && s.Cases != nil
 }
 
 // Fetched is one source result. Err is set when the source failed or ran past
@@ -111,6 +186,9 @@ type Snapshot struct {
 	Account    Fetched[Account]
 	Customer   Fetched[Customer]
 	Activity   Fetched[[]Activity]
+	Moments    Fetched[MomentFacts]
+	Profile    Fetched[InvestorProfile]
+	Cases      Fetched[[]OpenCase]
 }
 
 // failed returns the error of src, or nil when it answered.
@@ -122,6 +200,12 @@ func (s Snapshot) failed(src Source) error {
 		return s.Customer.Err
 	case SourceTimeline:
 		return s.Activity.Err
+	case SourceMoments:
+		return s.Moments.Err
+	case SourceProfile:
+		return s.Profile.Err
+	case SourceCases:
+		return s.Cases.Err
 	default:
 		return fmt.Errorf("screen: unknown source %q", src)
 	}
@@ -137,7 +221,7 @@ func fetchSnapshot(ctx context.Context, src Sources, customerID string, now time
 
 	snap := Snapshot{CustomerID: customerID, Now: now}
 	var g errgroup.Group
-	g.SetLimit(3)
+	g.SetLimit(len(allSources))
 	g.Go(func() error {
 		snap.Account = fetch(ctx, SourceAccount, func(ctx context.Context) (Account, error) {
 			return src.Accounts.Account(ctx, customerID)
@@ -153,6 +237,24 @@ func fetchSnapshot(ctx context.Context, src Sources, customerID string, now time
 	g.Go(func() error {
 		snap.Activity = fetch(ctx, SourceTimeline, func(ctx context.Context) ([]Activity, error) {
 			return src.Activity.Activity(ctx, customerID)
+		})
+		return nil
+	})
+	g.Go(func() error {
+		snap.Moments = fetch(ctx, SourceMoments, func(ctx context.Context) (MomentFacts, error) {
+			return src.Moments.Moments(ctx, customerID)
+		})
+		return nil
+	})
+	g.Go(func() error {
+		snap.Profile = fetch(ctx, SourceProfile, func(ctx context.Context) (InvestorProfile, error) {
+			return src.Profiles.Profile(ctx, customerID)
+		})
+		return nil
+	})
+	g.Go(func() error {
+		snap.Cases = fetch(ctx, SourceCases, func(ctx context.Context) ([]OpenCase, error) {
+			return src.Cases.OpenCases(ctx, customerID)
 		})
 		return nil
 	})

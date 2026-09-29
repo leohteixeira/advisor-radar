@@ -22,12 +22,16 @@ import (
 var errPOVDisabled = errors.New("bff: account-sim is not configured")
 
 // newScreenEngine composes screens from the handler's own account-sim,
-// advisory, and timeline clients, measuring relative times against now.
-func newScreenEngine(pov POVSource, queue QueueSource, tl TimelineClient, now func() time.Time) *screen.Engine {
+// advisory, cases, and timeline clients, measuring relative times against
+// now.
+func newScreenEngine(pov POVSource, queue QueueSource, cases CaseSource, tl TimelineClient, now func() time.Time) *screen.Engine {
 	return screen.MustNew(screen.Sources{
 		Accounts:  screenAccounts{pov: pov},
 		Customers: screenCustomers{queue: queue},
 		Activity:  screenActivity{timeline: tl},
+		Moments:   screenMoments{queue: queue},
+		Profiles:  screenProfiles{queue: queue},
+		Cases:     screenCases{cases: cases},
 	}, screen.WithClock(now))
 }
 
@@ -109,6 +113,78 @@ func (a screenActivity) Activity(ctx context.Context, customerID string) ([]scre
 			Source:     row.Source,
 			OccurredAt: row.OccurredAt,
 			Age:        time.Duration(max(row.Ago, 0)) * time.Minute,
+		})
+	}
+	return out, nil
+}
+
+// screenMoments reads the advisory moment facts.
+type screenMoments struct {
+	queue QueueSource
+}
+
+// Moments implements screen.MomentSource.
+func (m screenMoments) Moments(ctx context.Context, customerID string) (screen.MomentFacts, error) {
+	f, err := m.queue.MomentFacts(ctx, customerID)
+	if err != nil {
+		return screen.MomentFacts{}, fmt.Errorf("bff: screen moments: %w", err)
+	}
+	return screen.MomentFacts{
+		SegmentUpgraded:    f.SegmentUpgraded,
+		UpgradedSegment:    f.UpgradedSegment,
+		SegmentUpgradeNear: f.SegmentUpgradeNear,
+		UpgradeGapCents:    f.UpgradeGapCents,
+		IdleCash:           f.IdleCash,
+		CashCents:          f.CashCents,
+		PatrimonyCents:     f.PatrimonyCents,
+		PortfolioReview:    f.PortfolioReview,
+		PortfolioDrop:      f.PortfolioDrop,
+	}, nil
+}
+
+// screenProfiles reads the advisory investor profile.
+type screenProfiles struct {
+	queue QueueSource
+}
+
+// Profile implements screen.ProfileSource.
+func (p screenProfiles) Profile(ctx context.Context, customerID string) (screen.InvestorProfile, error) {
+	ip, err := p.queue.InvestorProfile(ctx, customerID)
+	if err != nil {
+		return screen.InvestorProfile{}, fmt.Errorf("bff: screen profile: %w", err)
+	}
+	return screen.InvestorProfile{Profile: ip.Profile, MaxRisk: ip.MaxRisk, AssessedOn: ip.AssessedOn}, nil
+}
+
+// caseResolved is the state label of a closed case.
+const caseResolved = "Resolvido"
+
+// screenCases reads the customer's cases through the cases filter and keeps
+// the ones that are not resolved. OpenedAgo is in minutes.
+type screenCases struct {
+	cases CaseSource
+}
+
+// OpenCases implements screen.CaseSource. A case whose state index has no
+// label counts as open, so an unknown state never hides a case.
+func (c screenCases) OpenCases(ctx context.Context, customerID string) ([]screen.OpenCase, error) {
+	items, states, err := c.cases.CustomerCases(ctx, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("bff: screen cases: %w", err)
+	}
+	out := make([]screen.OpenCase, 0, len(items))
+	for _, it := range items {
+		state := ""
+		if it.State >= 0 && it.State < len(states) {
+			state = states[it.State]
+		}
+		if state == caseResolved {
+			continue
+		}
+		out = append(out, screen.OpenCase{
+			ID:    it.ID,
+			State: state,
+			Age:   time.Duration(max(it.OpenedAgo, 0)) * time.Minute,
 		})
 	}
 	return out, nil

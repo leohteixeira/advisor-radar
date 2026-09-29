@@ -20,6 +20,8 @@ type QueueSource interface {
 	GetCustomer(ctx context.Context, id string) (Customer, error)
 	ListOperators(ctx context.Context) ([]Operator, error)
 	ContactMetrics(ctx context.Context) (avgToday, avgYesterday int, err error)
+	MomentFacts(ctx context.Context, customerID string) (MomentFacts, error)
+	InvestorProfile(ctx context.Context, customerID string) (InvestorProfile, error)
 }
 
 // ReviewSource loads and corrects triage review rows.
@@ -35,6 +37,9 @@ type CaseSource interface {
 	Advance(ctx context.Context, id string) (Case, error)
 	ListAtRisk(ctx context.Context) ([]ManagerAtRisk, error)
 	Backlog(ctx context.Context) ([]ManagerBacklog, error)
+	// CustomerCases lists one customer's cases, of every state, with the
+	// state labels their State indexes.
+	CustomerCases(ctx context.Context, customerID string) ([]Case, []string, error)
 }
 
 // Customer is the GET /v1/customers/{id} JSON shape.
@@ -45,6 +50,27 @@ type Customer struct {
 	AUM     float64 `json:"aum"`
 	Advisor string  `json:"advisor"`
 	Since   string  `json:"since"`
+}
+
+// MomentFacts are the home moment conditions advisory evaluated for one
+// customer. Money is integer USD cents.
+type MomentFacts struct {
+	SegmentUpgraded    bool
+	UpgradedSegment    string
+	SegmentUpgradeNear bool
+	UpgradeGapCents    int64
+	IdleCash           bool
+	CashCents          int64
+	PatrimonyCents     int64
+	PortfolioReview    bool
+	PortfolioDrop      bool
+}
+
+// InvestorProfile is one customer's advisory investor profile.
+type InvestorProfile struct {
+	Profile    string
+	MaxRisk    int
+	AssessedOn time.Time
 }
 
 // Operator is one advisory operator.
@@ -62,6 +88,12 @@ func (EmptyQueue) GetCustomer(context.Context, string) (Customer, error) {
 }
 func (EmptyQueue) ListOperators(context.Context) ([]Operator, error) { return nil, nil }
 func (EmptyQueue) ContactMetrics(context.Context) (int, int, error)  { return 0, 0, nil }
+func (EmptyQueue) MomentFacts(context.Context, string) (MomentFacts, error) {
+	return MomentFacts{}, ErrCustomerNotFound
+}
+func (EmptyQueue) InvestorProfile(context.Context, string) (InvestorProfile, error) {
+	return InvestorProfile{}, ErrCustomerNotFound
+}
 
 // EmptyReview is a no-op ReviewSource.
 type EmptyReview struct{}
@@ -85,6 +117,9 @@ func (EmptyCases) Advance(context.Context, string) (Case, error) {
 }
 func (EmptyCases) ListAtRisk(context.Context) ([]ManagerAtRisk, error) { return nil, nil }
 func (EmptyCases) Backlog(context.Context) ([]ManagerBacklog, error)   { return nil, nil }
+func (EmptyCases) CustomerCases(context.Context, string) ([]Case, []string, error) {
+	return nil, CaseStates, nil
+}
 
 // GRPCQueue talks to advisory.
 type GRPCQueue struct {
@@ -153,6 +188,46 @@ func (g *GRPCQueue) ContactMetrics(ctx context.Context) (int, int, error) {
 		return 0, 0, fmt.Errorf("bff: contact metrics: %w", err)
 	}
 	return int(res.GetAvgFirstContactMin()), int(res.GetAvgFirstContactYesterday()), nil
+}
+
+// MomentFacts reads the advisory moment facts of one customer.
+func (g *GRPCQueue) MomentFacts(ctx context.Context, customerID string) (MomentFacts, error) {
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := g.client.GetMomentFacts(callCtx, &advisoryv1.GetMomentFactsRequest{CustomerId: customerID})
+	if err != nil {
+		return MomentFacts{}, fmt.Errorf("bff: moment facts: %w", err)
+	}
+	return MomentFacts{
+		SegmentUpgraded:    res.GetSegmentUpgraded(),
+		UpgradedSegment:    res.GetUpgradedSegment(),
+		SegmentUpgradeNear: res.GetSegmentUpgradeNear(),
+		UpgradeGapCents:    res.GetUpgradeGapCents(),
+		IdleCash:           res.GetIdleCash(),
+		CashCents:          res.GetCashCents(),
+		PatrimonyCents:     res.GetPatrimonyCents(),
+		PortfolioReview:    res.GetPortfolioReview(),
+		PortfolioDrop:      res.GetPortfolioDrop(),
+	}, nil
+}
+
+// InvestorProfile reads the advisory investor profile of one customer.
+func (g *GRPCQueue) InvestorProfile(ctx context.Context, customerID string) (InvestorProfile, error) {
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := g.client.GetInvestorProfile(callCtx, &advisoryv1.GetInvestorProfileRequest{CustomerId: customerID})
+	if err != nil {
+		return InvestorProfile{}, fmt.Errorf("bff: investor profile: %w", err)
+	}
+	assessed, err := time.Parse(time.DateOnly, res.GetAssessedOn())
+	if err != nil {
+		return InvestorProfile{}, fmt.Errorf("bff: investor profile assessed_on: %w", err)
+	}
+	return InvestorProfile{
+		Profile:    res.GetProfile(),
+		MaxRisk:    int(res.GetMaxRisk()),
+		AssessedOn: assessed,
+	}, nil
 }
 
 // GRPCReview talks to triage.
@@ -229,6 +304,21 @@ func (g *GRPCCases) ListCases(ctx context.Context) ([]Case, []string, error) {
 	res, err := g.client.ListCases(callCtx, &casesv1.ListCasesRequest{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("bff: list cases: %w", err)
+	}
+	out := make([]Case, 0, len(res.GetItems()))
+	for _, it := range res.GetItems() {
+		out = append(out, protoCase(it))
+	}
+	return out, res.GetStates(), nil
+}
+
+// CustomerCases lists one customer's cases through the ListCases filter.
+func (g *GRPCCases) CustomerCases(ctx context.Context, customerID string) ([]Case, []string, error) {
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := g.client.ListCases(callCtx, &casesv1.ListCasesRequest{CustomerId: customerID})
+	if err != nil {
+		return nil, nil, fmt.Errorf("bff: list customer cases: %w", err)
 	}
 	out := make([]Case, 0, len(res.GetItems()))
 	for _, it := range res.GetItems() {

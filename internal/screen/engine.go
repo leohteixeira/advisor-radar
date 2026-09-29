@@ -132,7 +132,7 @@ func New(src Sources, opts ...Option) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newEngine(src, cat, builtinVariants(), opts...)
+	return newEngine(src, cat, builtinVariants(cat), opts...)
 }
 
 // MustNew is New for wiring code whose sources are never nil. It panics on
@@ -146,7 +146,7 @@ func MustNew(src Sources, opts ...Option) *Engine {
 }
 
 func newEngine(src Sources, cat Catalog, variants map[variantKey]registered, opts ...Option) (*Engine, error) {
-	if src.Accounts == nil || src.Customers == nil || src.Activity == nil {
+	if !src.complete() {
 		return nil, errors.New("screen: every source is required")
 	}
 	e := &Engine{
@@ -207,7 +207,7 @@ func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, er
 	}
 
 	var res Result
-	for _, src := range []Source{SourceAccount, SourceAdvisory, SourceTimeline} {
+	for _, src := range allSources {
 		if err := snap.failed(src); err != nil {
 			res.Failures = append(res.Failures, Failure{Source: src, Err: err})
 		}

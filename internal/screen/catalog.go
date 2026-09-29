@@ -26,6 +26,22 @@ type Fields struct {
 	Segment     string
 	Since       string
 	SLA         string
+	// Gap is the money missing to reach the next segment.
+	Gap string
+	// Threshold is the patrimony where Advance starts, as money.
+	Threshold string
+	// Cash is the cash balance as money.
+	Cash string
+	// CashShare is the percentage of patrimony held in cash.
+	CashShare string
+	// IdleDays is a day count such as "1 dia" or "4 dias".
+	IdleDays string
+	// Profile is the lowercase investor profile.
+	Profile string
+	// Protocol is the display protocol of a case.
+	Protocol string
+	// Age is a relative time such as "há 3 min".
+	Age string
 }
 
 // Catalog is the parsed, read-only screen catalog. It is safe for concurrent

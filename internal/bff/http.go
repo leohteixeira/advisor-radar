@@ -107,7 +107,7 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	if h.pov == nil {
 		h.pov = emptyPOV{}
 	}
-	h.screens = newScreenEngine(h.pov, h.queue, h.timeline, h.now)
+	h.screens = newScreenEngine(h.pov, h.queue, h.cases, h.timeline, h.now)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/queue", h.queueHandler)
 	mux.HandleFunc("GET /v1/queue/stream", h.stream)

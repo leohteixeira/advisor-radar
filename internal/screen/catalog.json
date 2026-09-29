@@ -8,7 +8,11 @@
           "title": "Olá{{if .FirstName}}, {{.FirstName}}{{end}}",
           "subtitle": "Cliente {{.Segment}}{{if .Since}} desde {{.Since}}{{end}}",
           "sections": [
-            { "id": "moment", "type": "moment_card", "variants": ["welcome"] },
+            {
+              "id": "moment",
+              "type": "moment_card",
+              "variants": ["case_open", "segment_upgraded", "segment_upgrade_near", "idle_cash", "portfolio_review", "welcome"]
+            },
             { "id": "wealth", "type": "wealth_summary", "variants": ["default"] },
             { "id": "actions", "type": "action_grid", "variants": ["default"] },
             { "id": "advisor", "type": "advisor_card", "variants": ["dedicated", "default"] },
@@ -20,6 +24,38 @@
   },
   "copy": {
     "moment_card": {
+      "case_open": {
+        "kicker": "Atendimento em andamento",
+        "title": "Sua reclamação está com a {{.AdvisorName}}",
+        "body": "Como cliente {{.Segment}}, você recebe resposta em até {{.SLA}}.",
+        "meta": "Protocolo {{.Protocol}} · aberto {{.Age}}",
+        "action": "Ver conversa"
+      },
+      "segment_upgraded": {
+        "kicker": "Novo segmento",
+        "title": "{{if .FirstName}}{{.FirstName}}, você{{else}}Você{{end}} agora é cliente {{.Segment}}",
+        "body": "Sua assessoria passa a responder em até {{.SLA}}.",
+        "action": "Ver produtos"
+      },
+      "segment_upgrade_near": {
+        "kicker": "Perto do Advance",
+        "title": "{{if .FirstName}}{{.FirstName}}, faltam{{else}}Faltam{{end}} {{.Gap}} para o Advance",
+        "body": "A partir de {{.Threshold}} você vira cliente Advance, com resposta da assessoria em até {{.SLA}}.",
+        "action": "Depositar"
+      },
+      "idle_cash": {
+        "kicker": "Caixa parado",
+        "title": "{{if .FirstName}}{{.FirstName}}, {{end}}{{.CashShare}} do seu patrimônio está em caixa",
+        "body": "{{.Cash}} parados há {{.IdleDays}}. Veja produtos para o seu perfil {{.Profile}}.",
+        "body_undated": "{{.Cash}} parados em caixa. Veja produtos para o seu perfil {{.Profile}}.",
+        "action": "Ver produtos"
+      },
+      "portfolio_review": {
+        "kicker": "Sua assessora",
+        "title": "{{if .FirstName}}{{.FirstName}}, sua{{else}}Sua{{end}} revisão de carteira está disponível",
+        "body": "A {{.AdvisorName}} separou 30 minutos nesta semana para revisar a carteira com você.",
+        "action": "Conversar"
+      },
       "welcome": {
         "kicker": "Tudo em dia",
         "title": "Olá{{if .FirstName}}, {{.FirstName}}{{end}}. Sua conta está em dia.",

@@ -29,6 +29,9 @@ const (
 	PanelWithdraw  = "withdraw"
 	PanelMessage   = "message"
 	PanelComplaint = "complaint"
+
+	// ScreenInvestir is the navigate target of the Investir screen.
+	ScreenInvestir = "investir"
 )
 
 // ReasonBuildError is the omitted reason for a section whose variant failed to

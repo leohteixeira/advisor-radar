@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -28,9 +29,9 @@ const activityLimit = 5
 // builtinVariants maps every (type, variant) the catalog may name to its
 // implementation and the sources its Build reads. The sources of a section's
 // default variant decide whether the section is omitted when one fails.
-func builtinVariants() map[variantKey]registered {
-	return map[variantKey]registered{
-		{typeMomentCard, "welcome"}:    {variant: welcomeMoment{}},
+// Some variants match only when cat has the copy data they show.
+func builtinVariants(cat Catalog) map[variantKey]registered {
+	variants := map[variantKey]registered{
 		{typeWealthSummary, "default"}: {variant: defaultWealth{}, needs: []Source{SourceAccount}},
 		{typeActionGrid, "default"}:    {variant: defaultActions{}},
 		{typeAdvisorCard, "dedicated"}: {variant: advisorCard{name: "dedicated", singularOnly: true}, needs: []Source{SourceAdvisory}},
@@ -38,6 +39,8 @@ func builtinVariants() map[variantKey]registered {
 		{typeActivityList, "recent"}:   {variant: recentActivity{}, needs: []Source{SourceTimeline}},
 		{typeActivityList, "empty"}:    {variant: emptyActivity{}, needs: []Source{SourceTimeline}},
 	}
+	maps.Copy(variants, momentVariants(cat))
+	return variants
 }
 
 // customerFields are the template fields that come from advisory. They are
@@ -61,7 +64,7 @@ type welcomeMoment struct{}
 func (welcomeMoment) Matches(Snapshot) bool { return true }
 
 func (welcomeMoment) Build(s Snapshot, c Catalog) (Component, error) {
-	cp := copier{cat: c, typ: typeMomentCard, variant: "welcome", fields: customerFields(s)}
+	cp := copier{cat: c, typ: typeMomentCard, variant: momentWelcome, fields: customerFields(s)}
 	props := MomentCard{
 		Kicker: cp.text("kicker"),
 		Title:  cp.text("title"),
@@ -72,7 +75,7 @@ func (welcomeMoment) Build(s Snapshot, c Catalog) (Component, error) {
 	if cp.err != nil {
 		return Component{}, cp.err
 	}
-	return Component{Type: typeMomentCard, Variant: "welcome", Props: props}, nil
+	return Component{Type: typeMomentCard, Variant: momentWelcome, Props: props}, nil
 }
 
 // classCents is one allocation class and its value in cents. Class is the

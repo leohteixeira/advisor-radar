@@ -139,6 +139,27 @@ func RelativeTime(age time.Duration) string {
 	}
 }
 
+// Days formats a whole day count: "1 dia", else "4 dias".
+func Days(n int) string {
+	if n == 1 {
+		return "1 dia"
+	}
+	return strconv.Itoa(n) + " dias"
+}
+
+// protocolLength is how many leading characters of a case id make its
+// display protocol: the first two UUID groups and their hyphen.
+const protocolLength = 13
+
+// Protocol is the display protocol of a case: the first two groups of its
+// id, uppercased, as in "01A0E3A5-2F4C". A shorter id is used whole.
+func Protocol(id string) string {
+	if len(id) > protocolLength {
+		id = id[:protocolLength]
+	}
+	return strings.ToUpper(id)
+}
+
 // FirstName is the first word of a display name.
 func FirstName(name string) string {
 	for word := range strings.FieldsSeq(name) {
