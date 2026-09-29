@@ -51,7 +51,9 @@ Services read their settings from environment variables, loaded from the local r
 | `ACCOUNT_SIM_GRPC_ADDR` | `0.0.0.0:8460` | account-sim gRPC listen address. The server starts only when `ACCOUNT_SIM_DATABASE_URL` is also set. |
 | `ACCOUNT_SIM_GRPC_TARGET` | `127.0.0.1:8460` | account-sim target the BFF dials. The BFF requires it for the client POV; unset, the POV home is `404` and POV commands are `502`. |
 
-`ACCOUNT_SIM_TEST_DATABASE_URL` points the gated `internal/sim` PostgreSQL tests at a database; each test migrates and drops its own schema. Unset, those tests skip.
+`ACCOUNT_SIM_TEST_DATABASE_URL` points the gated `internal/sim` PostgreSQL tests at a database; each test migrates and drops its own schema. Unset, those tests skip. `CASES_TEST_DATABASE_URL` does the same for the gated `internal/cases` tests.
+
+cases consumes `message.triaged` on `cases.message.triaged` (dead letters go to `cases.message.triaged.dlq`) when both `CASES_BROKER_URL` and `ADVISORY_GRPC_TARGET` are set; with the broker set and no advisory target it logs a warning and runs without intake. Only messages sent from the client app open or join cases: account-sim marks POV messages and complaints with `origin: "client_app"` on `message.received`, triage copies it into `message.triaged`, and seeded or burst messages (no `origin`) are claimed and ignored. A client-app complaint, closing request, or churn risk of 0.5 or more opens one case per customer, with the segment and advisor read from advisory `GetCustomer`; a later qualifying message while that case is open is added to its history. Run `go run ./cmd/db migrate` to apply `cases/003_one_open_case.sql`.
 
 After `go run ./cmd/db migrate` applies `account_sim/004_pov_positions.sql`, run `go run ./cmd/db seed` (reseed): 004 drops the per-class balance columns and leaves the product catalog, positions, and registration tables empty until the seed loads them.
 

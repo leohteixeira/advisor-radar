@@ -21,7 +21,10 @@ before an event is durable on the broker.
 - `schema_version` 1 stays whole USD dollars. On `account.event.recorded`,
   `schema_version` 2 carries integer USD cents plus optional origin or
   destination; consumers convert by version before a rule runs. Message payloads
-  stay channel and text.
+  carry channel and text. A message or complaint sent from the client app also
+  carries `origin: "client_app"`; seeded and burst messages omit `origin`.
+  triage copies `origin` into the `message.triaged` payload, and cases opens or
+  joins a case only for a `client_app` message (story 7).
 
 - This extends ADR 0001. The phase-1 query path is unchanged. The write enters
   through gRPC into the state owner, then becomes an asynchronous event via the

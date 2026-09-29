@@ -38,7 +38,7 @@ Money fields are integer USD cents. Every POST requires `Idempotency-Key`. A mis
 
 `202` has `event_id` and no protocol field. The UI formats the protocol as the first two UUID groups, uppercased.
 
-Deposit and withdrawal become `account.event.recorded` at schema version 2. Message and complaint become `message.received`. The BFF does not publish. account-sim writes state and the outbox row in one transaction.
+Deposit and withdrawal become `account.event.recorded` at schema version 2. Message and complaint become `message.received` with `origin: "client_app"` in the payload (seeded and burst messages omit `origin`); triage copies it into `message.triaged`. The BFF does not publish. account-sim writes state and the outbox row in one transaction.
 
 ## Screens (phase 3)
 
