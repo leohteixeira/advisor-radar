@@ -14,7 +14,7 @@ context:
 warnings: []
 deferred:
   - summary: >-
-      timeline-indexer fails at startup once any case.sla.breached row exists in the cases outbox.
+      timeline-indexer fails at startup once any case.sla.breached row exists in the cases outbox. (Resolved after story 19: the startup replay indexes only the routing keys the live consumer binds, shared as timeline.RoutingKeys, and cases no longer escalates or publishes a breach for a case already Resolvido.)
     evidence: |-
       The startup replay reads every cases outbox row. internal/timeline/index.go:309 returns
       `timeline: unsupported event "case.sla.breached"` and the process exits.
@@ -28,7 +28,7 @@ deferred:
       internal/timeline/index.go:309
     severity: medium
   - summary: >-
-      The reseed does not reset app-opened cases, so Mariana's home stays on case_open instead of portfolio_review after a reseed.
+      The reseed does not reset app-opened cases, so Mariana's home stays on case_open instead of portfolio_review after a reseed. (Resolved after story 19: seeds/cases/001_cast.sql first resolves every non-cast open case; this also fixes a reseed that failed on cases_one_open_per_customer_idx when a cast customer held an app-opened case.)
     evidence: |-
       cmd/db seed only upserts seed rows. A case opened from the app in an earlier walk stays open,
       and case_open ranks above portfolio_review, so a reseed does not restore Mariana's seed moment

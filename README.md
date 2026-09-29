@@ -71,7 +71,7 @@ The addresses in the table are the ones this script was checked with. Other port
 | advisory | `ADVISORY_DATABASE_URL`, `ADVISORY_BROKER_URL`, `ADVISORY_GRPC_ADDR` (`0.0.0.0:8430`), `ADVISORY_HTTP_ADDR` (`0.0.0.0:8410`), `ACCOUNT_SIM_GRPC_TARGET` |
 | triage | `TRIAGE_DATABASE_URL`, `TRIAGE_BROKER_URL`, `TRIAGE_GRPC_ADDR` (`0.0.0.0:8440`), `AI_GATEWAY_API_KEY` (optional: without it, or when the model does not answer, classification falls back to the heuristic and is marked degraded) |
 | cases | `CASES_DATABASE_URL`, `CASES_BROKER_URL`, `CASES_GRPC_ADDR` (`0.0.0.0:8450`), `ADVISORY_GRPC_TARGET` |
-| timeline-indexer | `ELASTICSEARCH_URL` (`http://127.0.0.1:9201`), `TIMELINE_BROKER_URL`, `TIMELINE_GRPC_ADDR` (`0.0.0.0:8420`). At startup it also replays the outboxes behind `ACCOUNT_SIM_DATABASE_URL`, `ADVISORY_DATABASE_URL`, and `CASES_DATABASE_URL`. |
+| timeline-indexer | `ELASTICSEARCH_URL` (`http://127.0.0.1:9201`), `TIMELINE_BROKER_URL`, `TIMELINE_GRPC_ADDR` (`0.0.0.0:8420`). At startup it also replays the outboxes behind `ACCOUNT_SIM_DATABASE_URL`, `ADVISORY_DATABASE_URL`, and `CASES_DATABASE_URL`, indexing only the events its live consumer binds (a `case.sla.breached` row is skipped). |
 | bff | `BFF_HTTP_ADDR` (`0.0.0.0:8400`, where Vite proxies `/advisor-radar/v1`), `BFF_BROKER_URL`, `ACCOUNT_SIM_GRPC_TARGET`, `ADVISORY_GRPC_TARGET`, `ADVISORY_HTTP_URL` (`http://127.0.0.1:8410`), `TRIAGE_GRPC_TARGET`, `CASES_GRPC_TARGET`, `TIMELINE_GRPC_TARGET` |
 | every service | `OTEL_EXPORTER_OTLP_ENDPOINT` (`http://127.0.0.1:4418`), optional, for the Grafana step |
 
@@ -95,11 +95,7 @@ go run ./cmd/bff
 pnpm --dir web dev   # http://127.0.0.1:3400/advisor-radar/
 ```
 
-**Reseed before each walk.** `go run ./cmd/db seed` returns the simulated day to 0 and resets balances, positions, preferences (beta off), and investor profiles. It only upserts seed rows, so what an earlier walk added stays:
-
-- A case opened from the app stays open, and Mariana's home then opens on `case_open` instead of `portfolio_review`. Close it in `/advisor-radar/fila` first: press "Iniciar atendimento →", "Aguardar cliente →", and "Marcar resolvido →" on her case.
-- The team queue, "Atividade recente", and "Movimentações" keep the events of earlier walks.
-- Known issue: once a case opened from the app passes its SLA, timeline-indexer no longer starts. cases writes a `case.sla.breached` row to its outbox whatever the case state, so closing the case does not prevent it. For the step-4 case, that happens 30 minutes after step 4. The timeline-indexer outbox replay then stops on that row (`timeline: unsupported event "case.sla.breached"`), and reseeding does not clear it. On a cases database with no earlier breach, walk step 7 within 30 minutes of step 4. After a breach, every later start of timeline-indexer needs this workaround until the bug is fixed: `CASES_DATABASE_URL= go run ./cmd/timeline-indexer`. With the empty value, it skips the cases replay, and cases reach the customer 360 only live.
+**Reseed before each walk.** `go run ./cmd/db seed` returns the simulated day to 0 and resets balances, positions, preferences (beta off), and investor profiles. It also resolves every case opened from the app, so Mariana's home is back on `portfolio_review` and the seed cases return to their cast states. Events are history, so the team queue, "Atividade recente", and "Movimentações" keep what earlier walks recorded.
 
 ### Script
 
@@ -128,7 +124,7 @@ pnpm --dir web dev   # http://127.0.0.1:3400/advisor-radar/
    - As Mariana, open Perfil and turn on "Programa beta". It reads "Ligado. Você recebe a revision v2 do início antes dos outros clientes." Início then reports "revision v2 · schema 1 · 6 seções", with `highlights · product_rail · profile_moderado` right after the moment. Turning it off brings back `v1`.
    - Optionally, with `OTEL_EXPORTER_OTLP_ENDPOINT` set, open Grafana on <http://127.0.0.1:3410> (the local login and `OTEL_METRIC_EXPORT_INTERVAL` are under [Observability](#observability); metrics export every 60 s by default, so counters can lag), go to Explore, choose Tempo, and run `{ name = "sdui.screen" }`. Each trace is the BFF route span with one `sdui.screen` span (`sdui.slug`, `sdui.revision`), one `sdui.snapshot.<source>` child per source, and one `sdui.section` span per section with `sdui.variant`, continuing into account-sim, advisory, cases, and timeline-indexer. In Prometheus, `sdui_variant_served_total` counts each variant served, and `sdui_component_dropped_total{reason="timeline"}` counts the failure above. `pov_purchases_total` and `advisory_suitability_alerts_total` count the step-5 purchases and the `perfil` alert.
 
-To finish, close Mariana's case in the queue as described under "Reseed before each walk", then run `go run ./cmd/db seed` to put the day, balances, positions, and preferences back.
+To finish, run `go run ./cmd/db seed` to put the day, balances, positions, preferences, and cases back.
 
 ### Decisions and contract
 
@@ -153,7 +149,7 @@ Services read their settings from environment variables, loaded from the local r
 
 `ACCOUNT_SIM_TEST_DATABASE_URL` points the gated `internal/sim` PostgreSQL tests at a database; each test migrates and drops its own schema. Unset, those tests skip. `CASES_TEST_DATABASE_URL` and `ADVISORY_TEST_DATABASE_URL` do the same for the gated `internal/cases` and `internal/advisory` tests.
 
-cases consumes `message.triaged` on `cases.message.triaged` (dead letters go to `cases.message.triaged.dlq`) when both `CASES_BROKER_URL` and `ADVISORY_GRPC_TARGET` are set; with the broker set and no advisory target it logs a warning and runs without intake. Only messages sent from the client app open or join cases: account-sim marks POV messages and complaints with `origin: "client_app"` on `message.received`, triage copies it into `message.triaged`, and seeded or burst messages (no `origin`) are claimed and ignored. A client-app complaint, closing request, or churn risk of 0.5 or more opens one case per customer, with the segment and advisor read from advisory `GetCustomer`; a later qualifying message while that case is open is added to its history. Run `go run ./cmd/db migrate` to apply `cases/003_one_open_case.sql`.
+cases consumes `message.triaged` on `cases.message.triaged` (dead letters go to `cases.message.triaged.dlq`) when both `CASES_BROKER_URL` and `ADVISORY_GRPC_TARGET` are set; with the broker set and no advisory target it logs a warning and runs without intake. Only messages sent from the client app open or join cases: account-sim marks POV messages and complaints with `origin: "client_app"` on `message.received`, triage copies it into `message.triaged`, and seeded or burst messages (no `origin`) are claimed and ignored. A client-app complaint, closing request, or churn risk of 0.5 or more opens one case per customer, with the segment and advisor read from advisory `GetCustomer`; a later qualifying message while that case is open is added to its history. The SLA delay escalates only a case that is still open: when it dead-letters for a case already `Resolvido`, nothing is escalated and no `case.sla.breached` is published. Run `go run ./cmd/db migrate` to apply `cases/003_one_open_case.sql`.
 
 After `go run ./cmd/db migrate` applies `account_sim/004_pov_positions.sql`, run `go run ./cmd/db seed` (reseed): 004 drops the per-class balance columns and leaves the product catalog, positions, and registration tables empty until the seed loads them.
 
