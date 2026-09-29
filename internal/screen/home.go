@@ -40,6 +40,7 @@ func builtinVariants(cat Catalog) map[variantKey]registered {
 		{typeActivityList, "empty"}:    {variant: emptyActivity{}, needs: []Source{SourceTimeline}},
 	}
 	maps.Copy(variants, momentVariants(cat))
+	maps.Copy(variants, investirVariants())
 	return variants
 }
 

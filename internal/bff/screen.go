@@ -32,7 +32,35 @@ func newScreenEngine(pov POVSource, queue QueueSource, cases CaseSource, tl Time
 		Moments:   screenMoments{queue: queue},
 		Profiles:  screenProfiles{queue: queue},
 		Cases:     screenCases{cases: cases},
+		Products:  screenProducts{pov: pov},
 	}, screen.WithClock(now))
+}
+
+// screenProducts reads the product catalog over account/v1 through the POV
+// source.
+type screenProducts struct {
+	pov POVSource
+}
+
+// Products implements screen.ProductSource. Without account-sim configured
+// the catalog is a failed source.
+func (p screenProducts) Products(ctx context.Context) ([]screen.Product, error) {
+	products, err := p.pov.Products(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("bff: screen catalog: %w", err)
+	}
+	out := make([]screen.Product, 0, len(products))
+	for _, product := range products {
+		out = append(out, screen.Product{
+			ID:           product.ID,
+			Name:         product.Name,
+			AssetClass:   product.AssetClass,
+			Risk:         product.Risk,
+			ReturnLabel:  product.ReturnLabel,
+			MinimumCents: product.MinimumCents,
+		})
+	}
+	return out, nil
 }
 
 // screenAccounts reads the account over account/v1 through the POV source.

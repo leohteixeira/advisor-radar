@@ -39,6 +39,15 @@ func Money(cents int64) string {
 	return b.String()
 }
 
+// CompactMoney is Money without the cents of a whole-dollar amount, as a
+// product minimum reads: "US$ 1.000", but "US$ 12,50".
+func CompactMoney(cents int64) string {
+	if cents%100 != 0 {
+		return Money(cents)
+	}
+	return strings.TrimSuffix(Money(cents), ",00")
+}
+
 // groupThousands writes n with "." between groups of three digits.
 func groupThousands(n uint64) string {
 	digits := strconv.FormatUint(n, 10)

@@ -63,12 +63,6 @@ type ProductCatalog interface {
 	Products(ctx context.Context) ([]POVProduct, error)
 }
 
-// POVProduct is one fictional catalog product, by id and display name.
-type POVProduct struct {
-	ID   string
-	Name string
-}
-
 // describePurchases writes the reason of every perfil card that has none:
 // what was bought, its risk, and the profile's limit. The catalog is read at
 // most once per call, and only when such a card is present.

@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 	"text/template"
+	"text/template/parse"
 )
 
 // catalogJSON is the screen catalog: per screen and revision the ordered
@@ -42,6 +43,12 @@ type Fields struct {
 	Protocol string
 	// Age is a relative time such as "há 3 min".
 	Age string
+	// Risk is a product risk level, "1" to "5".
+	Risk string
+	// MaxRisk is the highest risk level the investor profile accepts.
+	MaxRisk string
+	// Minimum is a product's minimum purchase as compact money.
+	Minimum string
 }
 
 // Catalog is the parsed, read-only screen catalog. It is safe for concurrent
@@ -53,12 +60,14 @@ type Catalog struct {
 	sla     map[string]string
 }
 
-// screenDef is the served revision of one screen.
+// screenDef is the served revision of one screen. staticSubtitle is set when
+// the subtitle template is plain text, so it needs no advisory field.
 type screenDef struct {
-	revision string
-	title    *template.Template
-	subtitle *template.Template
-	sections []sectionDef
+	revision       string
+	title          *template.Template
+	subtitle       *template.Template
+	staticSubtitle bool
+	sections       []sectionDef
 }
 
 // sectionDef is one catalog section: its component type and its variants in
@@ -193,10 +202,11 @@ func parseRevision(slug, rev string, rf revisionFile) (screenDef, error) {
 		return screenDef{}, err
 	}
 	def := screenDef{
-		revision: rev,
-		title:    title,
-		subtitle: subtitle,
-		sections: make([]sectionDef, 0, len(rf.Sections)),
+		revision:       rev,
+		title:          title,
+		subtitle:       subtitle,
+		staticSubtitle: isPlainText(subtitle),
+		sections:       make([]sectionDef, 0, len(rf.Sections)),
 	}
 	seen := make(map[string]struct{}, len(rf.Sections))
 	for _, s := range rf.Sections {
@@ -224,6 +234,17 @@ func parseTemplate(name, text string) (*template.Template, error) {
 		return nil, fmt.Errorf("%w: %s: %w", errCatalog, name, err)
 	}
 	return tmpl, nil
+}
+
+// isPlainText reports whether tmpl holds only text and no action, so it
+// renders the same whatever the fields.
+func isPlainText(tmpl *template.Template) bool {
+	for _, node := range tmpl.Root.Nodes {
+		if node.Type() != parse.NodeText {
+			return false
+		}
+	}
+	return true
 }
 
 // Version is the catalog file version.

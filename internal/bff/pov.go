@@ -46,6 +46,17 @@ type POVPosition struct {
 	ValueCents   int64
 }
 
+// POVProduct is one entry of the account-sim product catalog. AssetClass is
+// "acoes", "etfs", or "renda_fixa"; MinimumCents is integer USD cents.
+type POVProduct struct {
+	ID           string
+	Name         string
+	AssetClass   string
+	Risk         int
+	ReturnLabel  string
+	MinimumCents int64
+}
+
 // assets is the sum of the four classes.
 func (a POVAccount) assets() int64 {
 	return a.Acoes + a.ETFs + a.RendaFixa + a.Caixa
@@ -129,6 +140,8 @@ type POVSource interface {
 	List(ctx context.Context) ([]POVAccount, error)
 	Get(ctx context.Context, customerID string) (POVAccount, error)
 	Apply(ctx context.Context, cmd POVCommand) (POVResult, error)
+	// Products returns the fictional product catalog.
+	Products(ctx context.Context) ([]POVProduct, error)
 }
 
 type povMeta struct {
@@ -154,6 +167,9 @@ func (emptyPOV) Get(context.Context, string) (POVAccount, error) {
 }
 func (emptyPOV) Apply(context.Context, POVCommand) (POVResult, error) {
 	return POVResult{}, errors.New("bff: pov source is not configured")
+}
+func (emptyPOV) Products(context.Context) ([]POVProduct, error) {
+	return nil, errPOVDisabled
 }
 
 type povLimiter struct {

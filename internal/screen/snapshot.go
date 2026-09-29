@@ -26,6 +26,8 @@ const (
 	SourceProfile Source = "profile"
 	// SourceCases is the customer's open cases.
 	SourceCases Source = "cases"
+	// SourceCatalog is the account-sim product catalog.
+	SourceCatalog Source = "catalog"
 )
 
 // allSources is every Snapshot source in fetch and failure-report order.
@@ -36,7 +38,12 @@ var allSources = []Source{
 	SourceMoments,
 	SourceProfile,
 	SourceCases,
+	SourceCatalog,
 }
+
+// errNotFetched is the error of a source the screen's plan does not read:
+// the engine never calls it, and no section of that screen depends on it.
+var errNotFetched = errors.New("screen: source not fetched for this screen")
 
 // ErrPanic marks a failure that was a recovered panic, in a source adapter
 // or a variant.
@@ -118,6 +125,18 @@ type OpenCase struct {
 	Age   time.Duration
 }
 
+// Product is one entry of the account-sim product catalog. AssetClass is
+// "acoes", "etfs", or "renda_fixa"; Risk runs from 1 to 5; ReturnLabel is
+// account-sim display text; MinimumCents is integer USD cents.
+type Product struct {
+	ID           string
+	Name         string
+	AssetClass   string
+	Risk         int
+	ReturnLabel  string
+	MinimumCents int64
+}
+
 // AccountSource reads one account from account-sim. An unknown customer
 // wraps ErrUnknownCustomer. Implementations must return when ctx is done.
 type AccountSource interface {
@@ -154,6 +173,12 @@ type CaseSource interface {
 	OpenCases(ctx context.Context, customerID string) ([]OpenCase, error)
 }
 
+// ProductSource reads the account-sim product catalog, in any order.
+// Implementations must return when ctx is done.
+type ProductSource interface {
+	Products(ctx context.Context) ([]Product, error)
+}
+
 // Sources are the ports the engine reads a Snapshot from.
 type Sources struct {
 	Accounts  AccountSource
@@ -162,12 +187,13 @@ type Sources struct {
 	Moments   MomentSource
 	Profiles  ProfileSource
 	Cases     CaseSource
+	Products  ProductSource
 }
 
 // complete reports whether every source is set.
 func (s Sources) complete() bool {
 	return s.Accounts != nil && s.Customers != nil && s.Activity != nil &&
-		s.Moments != nil && s.Profiles != nil && s.Cases != nil
+		s.Moments != nil && s.Profiles != nil && s.Cases != nil && s.Products != nil
 }
 
 // Fetched is one source result. Err is set when the source failed or ran past
@@ -191,6 +217,7 @@ type Snapshot struct {
 	Moments    Fetched[MomentFacts]
 	Profile    Fetched[InvestorProfile]
 	Cases      Fetched[[]OpenCase]
+	Products   Fetched[[]Product]
 }
 
 // failed returns the error of src, or nil when it answered.
@@ -208,58 +235,88 @@ func (s Snapshot) failed(src Source) error {
 		return s.Profile.Err
 	case SourceCases:
 		return s.Cases.Err
+	case SourceCatalog:
+		return s.Products.Err
 	default:
 		return fmt.Errorf("screen: unknown source %q", src)
 	}
 }
 
-// fetchSnapshot calls every source in parallel under one deadline, each in
-// its own child span of ctx's span. The group has no shared context, so one
+// fetchSnapshot calls the sources in want in parallel under one deadline,
+// each in its own child span of ctx's span. A source outside want is not
+// called and carries errNotFetched. The group has no shared context, so one
 // source failing never cancels the others; each goroutine writes only its own
 // field, and Wait orders those writes before the return.
-func fetchSnapshot(ctx context.Context, tracer trace.Tracer, src Sources, customerID string, now time.Time, deadline time.Duration) Snapshot {
+func fetchSnapshot(ctx context.Context, tracer trace.Tracer, src Sources, want []Source, customerID string, now time.Time, deadline time.Duration) Snapshot {
 	ctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 
-	snap := Snapshot{CustomerID: customerID, Now: now}
+	snap := Snapshot{
+		CustomerID: customerID,
+		Now:        now,
+		Account:    Fetched[Account]{Err: errNotFetched},
+		Customer:   Fetched[Customer]{Err: errNotFetched},
+		Activity:   Fetched[[]Activity]{Err: errNotFetched},
+		Moments:    Fetched[MomentFacts]{Err: errNotFetched},
+		Profile:    Fetched[InvestorProfile]{Err: errNotFetched},
+		Cases:      Fetched[[]OpenCase]{Err: errNotFetched},
+		Products:   Fetched[[]Product]{Err: errNotFetched},
+	}
 	var g errgroup.Group
 	g.SetLimit(len(allSources))
-	g.Go(func() error {
-		snap.Account = fetch(ctx, tracer, SourceAccount, func(ctx context.Context) (Account, error) {
-			return src.Accounts.Account(ctx, customerID)
-		})
-		return nil
-	})
-	g.Go(func() error {
-		snap.Customer = fetch(ctx, tracer, SourceAdvisory, func(ctx context.Context) (Customer, error) {
-			return src.Customers.Customer(ctx, customerID)
-		})
-		return nil
-	})
-	g.Go(func() error {
-		snap.Activity = fetch(ctx, tracer, SourceTimeline, func(ctx context.Context) ([]Activity, error) {
-			return src.Activity.Activity(ctx, customerID)
-		})
-		return nil
-	})
-	g.Go(func() error {
-		snap.Moments = fetch(ctx, tracer, SourceMoments, func(ctx context.Context) (MomentFacts, error) {
-			return src.Moments.Moments(ctx, customerID)
-		})
-		return nil
-	})
-	g.Go(func() error {
-		snap.Profile = fetch(ctx, tracer, SourceProfile, func(ctx context.Context) (InvestorProfile, error) {
-			return src.Profiles.Profile(ctx, customerID)
-		})
-		return nil
-	})
-	g.Go(func() error {
-		snap.Cases = fetch(ctx, tracer, SourceCases, func(ctx context.Context) ([]OpenCase, error) {
-			return src.Cases.OpenCases(ctx, customerID)
-		})
-		return nil
-	})
+	for _, source := range want {
+		switch source {
+		case SourceAccount:
+			g.Go(func() error {
+				snap.Account = fetch(ctx, tracer, SourceAccount, func(ctx context.Context) (Account, error) {
+					return src.Accounts.Account(ctx, customerID)
+				})
+				return nil
+			})
+		case SourceAdvisory:
+			g.Go(func() error {
+				snap.Customer = fetch(ctx, tracer, SourceAdvisory, func(ctx context.Context) (Customer, error) {
+					return src.Customers.Customer(ctx, customerID)
+				})
+				return nil
+			})
+		case SourceTimeline:
+			g.Go(func() error {
+				snap.Activity = fetch(ctx, tracer, SourceTimeline, func(ctx context.Context) ([]Activity, error) {
+					return src.Activity.Activity(ctx, customerID)
+				})
+				return nil
+			})
+		case SourceMoments:
+			g.Go(func() error {
+				snap.Moments = fetch(ctx, tracer, SourceMoments, func(ctx context.Context) (MomentFacts, error) {
+					return src.Moments.Moments(ctx, customerID)
+				})
+				return nil
+			})
+		case SourceProfile:
+			g.Go(func() error {
+				snap.Profile = fetch(ctx, tracer, SourceProfile, func(ctx context.Context) (InvestorProfile, error) {
+					return src.Profiles.Profile(ctx, customerID)
+				})
+				return nil
+			})
+		case SourceCases:
+			g.Go(func() error {
+				snap.Cases = fetch(ctx, tracer, SourceCases, func(ctx context.Context) ([]OpenCase, error) {
+					return src.Cases.OpenCases(ctx, customerID)
+				})
+				return nil
+			})
+		case SourceCatalog:
+			g.Go(func() error {
+				snap.Products = fetch(ctx, tracer, SourceCatalog, func(ctx context.Context) ([]Product, error) {
+					return src.Products.Products(ctx)
+				})
+				return nil
+			})
+		}
+	}
 	_ = g.Wait() // every goroutine returns nil; errors live in the Snapshot
 	return snap
 }

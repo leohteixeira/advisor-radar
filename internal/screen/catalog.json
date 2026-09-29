@@ -20,6 +20,26 @@
           ]
         }
       }
+    },
+    "investir": {
+      "revision": "v1",
+      "revisions": {
+        "v1": {
+          "title": "Investir",
+          "subtitle": "Produtos fictícios · preço fixo da simulação",
+          "sections": [
+            { "id": "cash", "type": "invest_summary", "variants": ["default"] },
+            {
+              "id": "highlights",
+              "type": "product_rail",
+              "variants": ["profile_conservador", "profile_moderado", "profile_arrojado"]
+            },
+            { "id": "fixed_income", "type": "product_list", "variants": ["fixed_income"] },
+            { "id": "etfs", "type": "product_list", "variants": ["etf"] },
+            { "id": "stocks", "type": "product_list", "variants": ["stocks"] }
+          ]
+        }
+      }
     }
   },
   "copy": {
@@ -99,6 +119,43 @@
       "empty": {
         "title": "Atividade recente",
         "empty_text": "Suas movimentações aparecem aqui assim que acontecerem."
+      }
+    },
+    "invest_summary": {
+      "default": {
+        "cash_label": "Disponível para investir",
+        "profile_chip": "Perfil {{.Profile}}"
+      }
+    },
+    "product_rail": {
+      "profile_conservador": {
+        "title": "Para o seu perfil {{.Profile}}",
+        "subtitle": "Escolhidos pelo backend a partir do seu perfil de investidor."
+      },
+      "profile_moderado": {
+        "title": "Para o seu perfil {{.Profile}}",
+        "subtitle": "Escolhidos pelo backend a partir do seu perfil de investidor."
+      },
+      "profile_arrojado": {
+        "title": "Para o seu perfil {{.Profile}}",
+        "subtitle": "Escolhidos pelo backend a partir do seu perfil de investidor."
+      }
+    },
+    "product_list": {
+      "fixed_income": { "title": "Renda fixa" },
+      "etf": { "title": "ETFs" },
+      "stocks": { "title": "Ações" }
+    },
+    "product": {
+      "default": {
+        "class_renda_fixa": "Renda fixa",
+        "class_etfs": "ETF",
+        "class_acoes": "Ação",
+        "risk_label": "Risco {{.Risk}} de 5",
+        "minimum": "Mínimo {{.Minimum}}",
+        "badge": "Acima do seu perfil",
+        "warning": "Este produto tem risco {{.Risk}}. Seu perfil é {{.Profile}}, que vai até risco {{.MaxRisk}}. Você pode investir mesmo assim, e a sua assessora será avisada.",
+        "action": "Investir"
       }
     }
   },

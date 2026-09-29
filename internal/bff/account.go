@@ -151,7 +151,7 @@ func (p *grpcPOV) Get(ctx context.Context, customerID string) (POVAccount, error
 	return povFromProto(account), nil
 }
 
-// Products reads the fictional catalog from account-sim.
+// Products returns the account-sim product catalog.
 func (p *grpcPOV) Products(ctx context.Context) ([]POVProduct, error) {
 	res, err := p.client.ListProducts(ctx, &accountv1.ListProductsRequest{})
 	if err != nil {
@@ -159,7 +159,14 @@ func (p *grpcPOV) Products(ctx context.Context) ([]POVProduct, error) {
 	}
 	out := make([]POVProduct, 0, len(res.GetProducts()))
 	for _, product := range res.GetProducts() {
-		out = append(out, POVProduct{ID: product.GetId(), Name: product.GetName()})
+		out = append(out, POVProduct{
+			ID:           product.GetId(),
+			Name:         product.GetName(),
+			AssetClass:   product.GetAssetClass(),
+			Risk:         int(product.GetRisk()),
+			ReturnLabel:  product.GetReturnLabel(),
+			MinimumCents: product.GetMinimumCents(),
+		})
 	}
 	return out, nil
 }

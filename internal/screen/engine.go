@@ -89,9 +89,11 @@ type Engine struct {
 }
 
 // plan is the served revision of one screen with its variants resolved.
+// sources is what a Build of the screen fetches, in allSources order.
 type plan struct {
 	def      screenDef
 	sections []plannedSection
+	sources  []Source
 }
 
 type plannedSection struct {
@@ -230,7 +232,32 @@ func resolve(slug string, def screenDef, variants map[variantKey]registered) (pl
 		}
 		p.sections = append(p.sections, ps)
 	}
+	p.sources = planSources(def, p.sections)
 	return p, nil
+}
+
+// planSources is the union of the sources a screen reads: the account
+// always, since it is what answers an unknown customer with 404; advisory
+// when the heading has customer fields; and every source any variant needs.
+func planSources(def screenDef, sections []plannedSection) []Source {
+	used := map[Source]bool{SourceAccount: true}
+	if !isPlainText(def.title) || !def.staticSubtitle {
+		used[SourceAdvisory] = true
+	}
+	for _, sec := range sections {
+		for _, v := range sec.variants {
+			for _, src := range v.needs {
+				used[src] = true
+			}
+		}
+	}
+	out := make([]Source, 0, len(used))
+	for _, src := range allSources {
+		if used[src] {
+			out = append(out, src)
+		}
+	}
+	return out
 }
 
 // Build composes one screen for a customer. It fails only for an unknown
@@ -256,7 +283,7 @@ func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, er
 		e.tel.buildSeconds.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(labelSlug.String(slug)))
 	}()
 
-	snap := fetchSnapshot(ctx, e.tel.tracer, e.sources, customerID, e.now(), e.deadline)
+	snap := fetchSnapshot(ctx, e.tel.tracer, e.sources, p.sources, customerID, e.now(), e.deadline)
 	if err := ctx.Err(); err != nil {
 		span.SetStatus(codes.Error, failureClass(err))
 		return Result{}, err
@@ -267,7 +294,7 @@ func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, er
 	}
 
 	var res Result
-	for _, src := range allSources {
+	for _, src := range p.sources {
 		if err := snap.failed(src); err != nil {
 			res.Failures = append(res.Failures, Failure{Source: src, Err: err})
 		}
@@ -305,15 +332,16 @@ func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, er
 	return res, nil
 }
 
-// heading renders the screen title and, when advisory answered, the subtitle.
-// Without advisory the title template falls back to its plain greeting.
+// heading renders the screen title and, when advisory answered or the
+// subtitle is plain text, the subtitle. Without advisory the title template
+// falls back to its plain greeting.
 func heading(def screenDef, snap Snapshot) (title, subtitle string, err error) {
 	f := customerFields(snap)
 	title, err = execute(def.title, f)
 	if err != nil {
 		return "", "", err
 	}
-	if !snap.Customer.OK() {
+	if !snap.Customer.OK() && !def.staticSubtitle {
 		return title, "", nil
 	}
 	subtitle, err = execute(def.subtitle, f)

@@ -29,6 +29,8 @@ const (
 	PanelWithdraw  = "withdraw"
 	PanelMessage   = "message"
 	PanelComplaint = "complaint"
+	// PanelPurchase opens the coded purchase form for Action.ProductID.
+	PanelPurchase = "purchase"
 
 	// ScreenInvestir is the navigate target of the Investir screen.
 	ScreenInvestir = "investir"
@@ -150,4 +152,47 @@ type ActivityItem struct {
 	Meta  string `json:"meta"`
 	Value string `json:"value,omitempty"`
 	Tone  string `json:"tone,omitempty"`
+}
+
+// InvestSummary is the invest_summary props. CashCents is the cash the
+// purchase form caps its amount at. ProfileChip is absent when the investor
+// profile is unavailable.
+type InvestSummary struct {
+	CashLabel   string `json:"cash_label"`
+	Cash        string `json:"cash"`
+	CashCents   int64  `json:"cash_cents"`
+	ProfileChip string `json:"profile_chip,omitempty"`
+}
+
+// ProductRail is the product_rail props: the products picked for the
+// customer's investor profile, in pick order.
+type ProductRail struct {
+	Title    string        `json:"title"`
+	Subtitle string        `json:"subtitle"`
+	Products []ProductItem `json:"products"`
+}
+
+// ProductList is the product_list props: every catalog product of one asset
+// class, by risk and then id.
+type ProductList struct {
+	Title    string        `json:"title"`
+	Products []ProductItem `json:"products"`
+}
+
+// ProductItem is one product as the Investir screen and the purchase form
+// show it. Risk is 1–5 for the bars. Badge and Warning are set only when
+// AboveProfile is true. Action is a purchase panel for ProductID.
+type ProductItem struct {
+	ProductID    string `json:"product_id"`
+	Name         string `json:"name"`
+	ClassLabel   string `json:"class_label"`
+	Risk         int    `json:"risk"`
+	RiskLabel    string `json:"risk_label"`
+	ReturnLabel  string `json:"return_label"`
+	Minimum      string `json:"minimum"`
+	MinimumCents int64  `json:"minimum_cents"`
+	AboveProfile bool   `json:"above_profile"`
+	Badge        string `json:"badge,omitempty"`
+	Warning      string `json:"warning,omitempty"`
+	Action       Action `json:"action"`
 }
