@@ -300,7 +300,9 @@ func ApplyBreachDelivery(ctx context.Context, store Store, body []byte) error {
 }
 
 // HandleBreach marks a case escalated after the SLA delay dead-letters.
-// The state is unchanged. A second delivery writes no outbox row.
+// The state is unchanged. A second delivery writes no outbox row. A case
+// already Resolvido when its delay expires has no SLA left to breach: the
+// delivery is claimed and nothing is escalated or published.
 func HandleBreach(ctx context.Context, store Store, caseID string, occurredAt time.Time) error {
 	if store == nil {
 		return fmt.Errorf("cases: store is required")
@@ -326,6 +328,9 @@ func HandleBreach(ctx context.Context, store Store, caseID string, occurredAt ti
 		}
 		if !ok {
 			return fmt.Errorf("cases: case %s not found", caseID)
+		}
+		if row.State == StateResolvido {
+			return nil
 		}
 		row.Escalated = true
 		if err := tx.UpdateCase(ctx, row); err != nil {
