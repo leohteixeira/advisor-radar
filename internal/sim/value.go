@@ -30,3 +30,21 @@ func Value(productID string, unitsCents int64, day int) int64 {
 	}
 	return (scaled + half) / f.den
 }
+
+// Units is how many day-0 cents amountCents buys of productID on the
+// simulated day: amountCents divided by the product's factor for that day,
+// rounded half up. With a flat factor it equals amountCents. A non-positive
+// amount buys nothing.
+func Units(productID string, amountCents int64, day int) int64 {
+	return priceFactor(productID, day).units(amountCents)
+}
+
+// units divides amountCents by the factor, num/den, rounding half up: the
+// exact quotient is amountCents·den/num.
+func (f factor) units(amountCents int64) int64 {
+	if amountCents <= 0 || f.num <= 0 {
+		return 0
+	}
+	scaled := amountCents * f.den
+	return (scaled + f.num/2) / f.num
+}

@@ -25,6 +25,7 @@ const (
 
 var contaKinds = map[string]struct{}{
 	"saque": {}, "aporte": {}, "queda": {}, "segmento": {}, "contato": {},
+	"aplicacao": {}, "reavaliacao": {}, "perfil": {},
 }
 
 // Entry is one timeline row shown in the customer 360.
@@ -112,8 +113,11 @@ func (idx *Index) ApplyDelivery(ctx context.Context, routingKey string, body []b
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return false, Entry{}, fmt.Errorf("timeline: decode delivery: %w", err)
 	}
-	if raw.EventID == "" || raw.CustomerID == "" || raw.OccurredAt.IsZero() || raw.SchemaVersion < 1 {
+	if raw.EventID == "" || raw.CustomerID == "" || raw.OccurredAt.IsZero() {
 		return false, Entry{}, fmt.Errorf("timeline: invalid envelope")
+	}
+	if !event.KnownSchemaVersion(raw.SchemaVersion) {
+		return false, Entry{}, fmt.Errorf("timeline: unsupported schema_version %d", raw.SchemaVersion)
 	}
 
 	idx.mu.Lock()
@@ -287,6 +291,12 @@ func kindTitle(kind string) string {
 		return "Segmento"
 	case "contato":
 		return "Contato"
+	case "aplicacao":
+		return "Aplicação"
+	case "reavaliacao":
+		return "Reavaliação"
+	case "perfil":
+		return "Compra acima do perfil"
 	default:
 		return kind
 	}

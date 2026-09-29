@@ -112,6 +112,8 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
+var _ ProductCatalog = (*grpcPOV)(nil)
+
 // grpcPOV is the POVSource over account/v1. It maps account-sim statuses back
 // to the sim sentinels that the POV handlers translate to HTTP.
 type grpcPOV struct {
@@ -144,6 +146,19 @@ func (p *grpcPOV) Get(ctx context.Context, customerID string) (POVAccount, error
 		return POVAccount{}, accountSimError("get account", err)
 	}
 	return povFromProto(account), nil
+}
+
+// Products reads the fictional catalog from account-sim.
+func (p *grpcPOV) Products(ctx context.Context) ([]POVProduct, error) {
+	res, err := p.client.ListProducts(ctx, &accountv1.ListProductsRequest{})
+	if err != nil {
+		return nil, accountSimError("list products", err)
+	}
+	out := make([]POVProduct, 0, len(res.GetProducts()))
+	for _, product := range res.GetProducts() {
+		out = append(out, POVProduct{ID: product.GetId(), Name: product.GetName()})
+	}
+	return out, nil
 }
 
 // Apply sends one client command to account-sim, which writes the account
@@ -183,6 +198,14 @@ func (p *grpcPOV) Apply(ctx context.Context, cmd POVCommand) (POVResult, error) 
 			CustomerId:     cmd.CustomerID,
 			IdempotencyKey: cmd.IdempotencyKey,
 			Text:           cmd.Text,
+		})
+	case sim.CmdPurchase:
+		reply, err = p.client.Purchase(ctx, &accountv1.PurchaseRequest{
+			CustomerId:     cmd.CustomerID,
+			IdempotencyKey: cmd.IdempotencyKey,
+			ProductId:      cmd.ProductID,
+			AmountCents:    cmd.Amount,
+			CommandId:      cmd.CommandID,
 		})
 	default:
 		// A kind the handlers never send is a BFF bug, not a client refusal.

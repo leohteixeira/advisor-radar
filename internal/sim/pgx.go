@@ -116,6 +116,22 @@ WHERE customer_id = $1`
 	return nil
 }
 
+// AddPosition adds delta's units and applied cents to the customer's
+// position in delta.ProductID, inserting the row when absent. The customer
+// lock is already held: Apply reads the key and the account first.
+func (t *pgxTx) AddPosition(ctx context.Context, customerID string, delta Position) error {
+	const q = `
+INSERT INTO pov_position (customer_id, product_id, units_cents, applied_cents)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (customer_id, product_id) DO UPDATE SET
+  units_cents = pov_position.units_cents + EXCLUDED.units_cents,
+  applied_cents = pov_position.applied_cents + EXCLUDED.applied_cents`
+	if _, err := t.tx.Exec(ctx, q, customerID, delta.ProductID, delta.UnitsCents, delta.AppliedCents); err != nil {
+		return fmt.Errorf("sim pgx: add position: %w", err)
+	}
+	return nil
+}
+
 // listPositions returns the customer's positions valued at the current day.
 func (t *pgxTx) listPositions(ctx context.Context, customerID string) ([]Position, error) {
 	const q = `

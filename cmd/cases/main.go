@@ -311,7 +311,13 @@ func dialAMQP(ctx context.Context, url string) (*amqpSession, func(), error) {
 	return &amqpSession{conn: conn, exchange: exchange}, cleanup, nil
 }
 
-func declareSLATopology(ch *amqp.Channel, exchange string) error {
+// topologyChannel is the part of *amqp.Channel the topology declarations use.
+type topologyChannel interface {
+	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
+	QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error
+}
+
+func declareSLATopology(ch topologyChannel, exchange string) error {
 	const delayQueue = "cases.sla.delay"
 	const breachQueue = "cases.sla.breached"
 
@@ -426,8 +432,9 @@ func runBreachConsumer(ctx context.Context, store *cases.PGXStore, ch *amqp.Chan
 }
 
 // declareTriagedTopology declares the intake queue bound to message.triaged
-// and its own dead-letter queue through the default exchange.
-func declareTriagedTopology(ch *amqp.Channel, exchange string) error {
+// and its own dead-letter queue through the default exchange. It never binds
+// alert.raised: alerts (perfil included) do not open cases.
+func declareTriagedTopology(ch topologyChannel, exchange string) error {
 	if _, err := ch.QueueDeclare(triagedDLQ, true, false, false, false, nil); err != nil {
 		return fmt.Errorf("cases: declare triaged dlq: %w", err)
 	}

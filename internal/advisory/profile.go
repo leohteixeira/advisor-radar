@@ -17,6 +17,9 @@ const (
 // in the book.
 var ErrUnknownCustomer = errors.New("advisory: unknown customer")
 
+// ErrUnknownProfile is returned by MaxRisk for a profile outside the table.
+var ErrUnknownProfile = errors.New("advisory: unknown investor profile")
+
 // maxRisk is the highest product risk (1–5) each investor profile accepts. It
 // is the only place this mapping lives: the BFF badge, the purchase warning,
 // and the suitability rule all read it through advisory.
@@ -31,7 +34,7 @@ var maxRisk = map[string]int{
 func MaxRisk(profile string) (int, error) {
 	risk, ok := maxRisk[profile]
 	if !ok {
-		return 0, fmt.Errorf("advisory: unknown investor profile %q", profile)
+		return 0, fmt.Errorf("%w %q", ErrUnknownProfile, profile)
 	}
 	return risk, nil
 }

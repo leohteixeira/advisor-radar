@@ -34,6 +34,7 @@ type Handler struct {
 	counts     *povCounts
 	bastidores *bastidoresHub
 	logger     *slog.Logger
+	products   productNameCache
 }
 
 // NewHandler returns an HTTP handler. Nil sources are treated as empty.
@@ -127,6 +128,7 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/withdrawals", h.postPOVWithdrawal)
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/messages", h.postPOVMessage)
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/complaints", h.postPOVComplaint)
+	mux.HandleFunc("POST /v1/client-pov/customers/{id}/purchases", h.postPOVPurchase)
 	mux.HandleFunc("GET /v1/client-pov/counters", h.povCounters)
 	mux.HandleFunc("GET /v1/client-pov/customers/{id}/stream", h.povStream)
 	mux.HandleFunc("GET /v1/client-pov/customers/{id}/screens/{slug}", h.getScreen)

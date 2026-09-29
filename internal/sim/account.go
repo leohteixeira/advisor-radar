@@ -27,18 +27,25 @@ const (
 	CmdWithdrawal = "withdrawal"
 	CmdMessage    = "message"
 	CmdComplaint  = "complaint"
+	CmdPurchase   = "purchase"
 )
 
-// MaxAmountCents caps one deposit or withdrawal at USD 1 billion, which keeps
-// balances in int64 cents far from overflow. A larger amount is ErrAmount.
+// KindAplicacao is the account.event.recorded kind of a purchase: cash moved
+// into a product position (schema version 3).
+const KindAplicacao = "aplicacao"
+
+// MaxAmountCents caps one deposit, withdrawal, or purchase at USD 1 billion,
+// which keeps balances in int64 cents far from overflow. A larger amount is
+// ErrAmount.
 const MaxAmountCents int64 = 100_000_000_000
 
 var (
 	ErrUnknownCustomer = errors.New("sim: unknown customer")
-	ErrInsufficient    = errors.New("sim: withdrawal exceeds caixa")
+	ErrInsufficient    = errors.New("sim: amount exceeds caixa")
 	ErrAmount          = errors.New("sim: amount must be between 1 and 100000000000 cents")
 	ErrKey             = errors.New("sim: idempotency key is required")
 	ErrCommand         = errors.New("sim: command is not accepted")
+	ErrProduct         = errors.New("sim: unknown product")
 )
 
 // Asset classes of the fictional catalog. Cash is not a product; it is the
@@ -275,12 +282,16 @@ func classRank(class string) int {
 	}
 }
 
-// Command is one client action applied by account-sim.
+// Command is one client action applied by account-sim. ProductID is set
+// only for a purchase. CommandID is the caller's correlation id; it never
+// takes part in idempotency, which the key alone decides.
 type Command struct {
 	CustomerID     string
 	IdempotencyKey string
+	CommandID      string
 	Kind           string
 	Amount         int64
+	ProductID      string
 	Origin         string
 	Destination    string
 	Channel        string
@@ -298,10 +309,13 @@ type Result struct {
 //
 // GetAccount returns cash, the positions valued at the current day, and their
 // class aggregates. PutAccount writes only the cash (Caixa); positions are
-// untouched. ResetPOV restores the catalog, cash, positions, and registration of seed.
+// untouched. AddPosition adds delta's UnitsCents and AppliedCents to the
+// customer's position in delta.ProductID, creating it when absent. ResetPOV
+// restores the catalog, cash, positions, and registration of seed.
 type Tx interface {
 	GetAccount(ctx context.Context, customerID string) (Account, bool, error)
 	PutAccount(ctx context.Context, account Account) error
+	AddPosition(ctx context.Context, customerID string, delta Position) error
 	ListProducts(ctx context.Context) ([]Product, error)
 	GetRegistration(ctx context.Context, customerID string) (Registration, bool, error)
 	LookupKey(ctx context.Context, customerID, key string) (eventID string, ok bool, err error)
@@ -348,7 +362,13 @@ func Apply(ctx context.Context, store Store, cmd Command) (Result, error) {
 			return ErrUnknownCustomer
 		}
 
-		body, routing, next, err := build(account, cmd)
+		var products []Product
+		if cmd.Kind == CmdPurchase {
+			if products, err = tx.ListProducts(ctx); err != nil {
+				return err
+			}
+		}
+		plan, err := build(account, products, cmd)
 		if err != nil {
 			return err
 		}
@@ -361,25 +381,30 @@ func Apply(ctx context.Context, store Store, cmd Command) (Result, error) {
 			occurred = time.Now().UTC()
 		}
 		env := event.Envelope{
-			Name:          routing,
+			Name:          plan.routing,
 			EventID:       eventID,
 			OccurredAt:    occurred.UTC(),
 			CustomerID:    cmd.CustomerID,
-			SchemaVersion: schemaVersion(routing),
-			Payload:       body,
+			SchemaVersion: plan.schemaVersion,
+			Payload:       plan.body,
 		}
 		raw, err := env.MarshalBody()
 		if err != nil {
 			return fmt.Errorf("sim: marshal event: %w", err)
 		}
-		if routing == event.NameAccountEventRecorded {
-			if err := tx.PutAccount(ctx, next); err != nil {
+		if plan.routing == event.NameAccountEventRecorded {
+			if err := tx.PutAccount(ctx, plan.next); err != nil {
+				return err
+			}
+		}
+		if plan.position != nil {
+			if err := tx.AddPosition(ctx, cmd.CustomerID, *plan.position); err != nil {
 				return err
 			}
 		}
 		if err := tx.InsertOutbox(ctx, outbox.Row{
 			EventID:    eventID,
-			RoutingKey: routing,
+			RoutingKey: plan.routing,
 			Payload:    raw,
 		}); err != nil {
 			return err
@@ -407,68 +432,130 @@ func Reseed(ctx context.Context, store Store) error {
 	})
 }
 
-func schemaVersion(routing string) int {
-	if routing == event.NameAccountEventRecorded {
-		return event.SchemaVersionCents
-	}
-	return event.SchemaVersionMVP
+// plan is what one accepted command writes: the event body and routing key
+// with its schema version, the account whose cash PutAccount stores, and the
+// position delta of a purchase.
+type plan struct {
+	body          any
+	routing       string
+	schemaVersion int
+	next          Account
+	position      *Position
 }
 
-func build(account Account, cmd Command) (any, string, Account, error) {
+func build(account Account, products []Product, cmd Command) (plan, error) {
 	switch cmd.Kind {
 	case CmdDeposit:
-		if cmd.Amount <= 0 || cmd.Amount > MaxAmountCents {
-			return nil, "", Account{}, ErrAmount
+		if err := checkAmount(cmd.Amount); err != nil {
+			return plan{}, err
 		}
 		if cmd.Origin == "" {
-			return nil, "", Account{}, fmt.Errorf("%w: origin is required", ErrCommand)
+			return plan{}, fmt.Errorf("%w: origin is required", ErrCommand)
 		}
 		before := account.Assets()
 		next := account
 		next.Caixa += cmd.Amount
-		return AccountPayload{
+		return accountPlan(AccountPayload{
 			Kind:   "aporte",
 			Amount: float64(cmd.Amount),
 			Before: float64(before),
 			After:  float64(next.Assets()),
 			Origin: cmd.Origin,
-		}, event.NameAccountEventRecorded, next, nil
+		}, event.SchemaVersionCents, next), nil
 	case CmdWithdrawal:
-		if cmd.Amount <= 0 || cmd.Amount > MaxAmountCents {
-			return nil, "", Account{}, ErrAmount
+		if err := checkAmount(cmd.Amount); err != nil {
+			return plan{}, err
 		}
 		if cmd.Destination == "" {
-			return nil, "", Account{}, fmt.Errorf("%w: destination is required", ErrCommand)
+			return plan{}, fmt.Errorf("%w: destination is required", ErrCommand)
 		}
 		if cmd.Amount > account.Caixa {
-			return nil, "", Account{}, ErrInsufficient
+			return plan{}, ErrInsufficient
 		}
 		before := account.Assets()
 		next := account
 		next.Caixa -= cmd.Amount
-		return AccountPayload{
+		return accountPlan(AccountPayload{
 			Kind:        "saque",
 			Amount:      float64(cmd.Amount),
 			Before:      float64(before),
 			After:       float64(next.Assets()),
 			Destination: cmd.Destination,
-		}, event.NameAccountEventRecorded, next, nil
+		}, event.SchemaVersionCents, next), nil
+	case CmdPurchase:
+		return buildPurchase(account, products, cmd)
 	case CmdMessage:
 		if cmd.Text == "" || (cmd.Channel != "chat" && cmd.Channel != "e-mail") {
-			return nil, "", Account{}, fmt.Errorf("%w: message needs chat or e-mail and text", ErrCommand)
+			return plan{}, fmt.Errorf("%w: message needs chat or e-mail and text", ErrCommand)
 		}
-		return MessagePayload{Channel: cmd.Channel, Text: cmd.Text, Origin: OriginClientApp}, event.NameMessageReceived, account, nil
+		return messagePlan(MessagePayload{Channel: cmd.Channel, Text: cmd.Text, Origin: OriginClientApp}, account), nil
 	case CmdComplaint:
 		if cmd.Text == "" {
-			return nil, "", Account{}, fmt.Errorf("%w: complaint needs text", ErrCommand)
+			return plan{}, fmt.Errorf("%w: complaint needs text", ErrCommand)
 		}
-		return MessagePayload{Channel: "chat", Text: cmd.Text, Origin: OriginClientApp}, event.NameMessageReceived, account, nil
+		return messagePlan(MessagePayload{Channel: "chat", Text: cmd.Text, Origin: OriginClientApp}, account), nil
 	default:
-		return nil, "", Account{}, ErrCommand
+		return plan{}, ErrCommand
 	}
 }
 
-// DecodeOutboxAccount reads a schema version 2 account event body.
+// buildPurchase validates a purchase in the contract order: an unknown
+// product, then the amount (1 to MaxAmountCents and at least the product
+// minimum), then the cash. It moves the amount from cash into units of the
+// product at the current day's price, so patrimony is unchanged: before and
+// after are both the patrimony before the purchase.
+func buildPurchase(account Account, products []Product, cmd Command) (plan, error) {
+	i := slices.IndexFunc(products, func(p Product) bool { return p.ID == cmd.ProductID })
+	if cmd.ProductID == "" || i < 0 {
+		return plan{}, ErrProduct
+	}
+	product := products[i]
+	if err := checkAmount(cmd.Amount); err != nil {
+		return plan{}, err
+	}
+	if cmd.Amount < product.MinimumCents {
+		return plan{}, fmt.Errorf("%w: below the product minimum of %d cents", ErrAmount, product.MinimumCents)
+	}
+	if cmd.Amount > account.Caixa {
+		return plan{}, ErrInsufficient
+	}
+	patrimony := account.Assets()
+	next := account
+	next.Caixa -= cmd.Amount
+	p := accountPlan(AccountPayload{
+		Kind:       KindAplicacao,
+		Amount:     float64(cmd.Amount),
+		Before:     float64(patrimony),
+		After:      float64(patrimony),
+		ProductID:  product.ID,
+		AssetClass: product.AssetClass,
+		Risk:       product.Risk,
+	}, event.SchemaVersionPositions, next)
+	p.position = &Position{
+		ProductID:    product.ID,
+		AssetClass:   product.AssetClass,
+		UnitsCents:   Units(product.ID, cmd.Amount, SeedDay),
+		AppliedCents: cmd.Amount,
+	}
+	return p, nil
+}
+
+func checkAmount(cents int64) error {
+	if cents <= 0 || cents > MaxAmountCents {
+		return ErrAmount
+	}
+	return nil
+}
+
+func accountPlan(body AccountPayload, schemaVersion int, next Account) plan {
+	return plan{body: body, routing: event.NameAccountEventRecorded, schemaVersion: schemaVersion, next: next}
+}
+
+func messagePlan(body MessagePayload, account Account) plan {
+	return plan{body: body, routing: event.NameMessageReceived, schemaVersion: event.SchemaVersionMVP, next: account}
+}
+
+// DecodeOutboxAccount reads a schema version 2 or 3 account event body.
 func DecodeOutboxAccount(raw []byte) (event.Envelope, AccountPayload, error) {
 	var env event.Envelope
 	if err := json.Unmarshal(raw, &env); err != nil {

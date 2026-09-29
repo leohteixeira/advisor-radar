@@ -18,11 +18,20 @@ const (
 	NameCaseSLABreached      = "case.sla.breached"
 )
 
-// Schema versions accepted on the shared envelope.
+// Schema versions accepted on the shared envelope. Version 3 keeps the
+// integer USD cents of version 2 and adds the per-product fields of the
+// positions model (ADR 0010).
 const (
-	SchemaVersionMVP   = 1 // whole USD dollars
-	SchemaVersionCents = 2 // integer USD cents
+	SchemaVersionMVP       = 1 // whole USD dollars
+	SchemaVersionCents     = 2 // integer USD cents
+	SchemaVersionPositions = 3 // integer USD cents plus product fields
 )
+
+// KnownSchemaVersion reports whether v is a schema version consumers accept.
+// A version outside 1–3 is rejected, never scaled.
+func KnownSchemaVersion(v int) bool {
+	return v >= SchemaVersionMVP && v <= SchemaVersionPositions
+}
 
 var knownNames = map[string]struct{}{
 	NameAccountEventRecorded: {},
@@ -59,7 +68,7 @@ func (e Envelope) Validate() error {
 	if e.OccurredAt.IsZero() {
 		return fmt.Errorf("event: occurred_at is required")
 	}
-	if e.SchemaVersion != SchemaVersionMVP && e.SchemaVersion != SchemaVersionCents {
+	if !KnownSchemaVersion(e.SchemaVersion) {
 		return fmt.Errorf("event: unsupported schema_version %d", e.SchemaVersion)
 	}
 	return nil

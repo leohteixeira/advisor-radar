@@ -3,6 +3,7 @@ package sim
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -125,6 +126,35 @@ func (t *memoryTx) PutAccount(ctx context.Context, account Account) error {
 		return err
 	}
 	t.store.cash[account.CustomerID] = account.Caixa
+	return nil
+}
+
+// AddPosition adds delta to the customer's position in delta.ProductID, or
+// appends it. It writes a new slice, so the WithTx snapshot stays intact.
+func (t *memoryTx) AddPosition(ctx context.Context, customerID string, delta Position) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, ok := t.store.cash[customerID]; !ok {
+		return fmt.Errorf("sim memory: add position: %w", ErrUnknownCustomer)
+	}
+	if !slices.ContainsFunc(t.store.products, func(p Product) bool { return p.ID == delta.ProductID }) {
+		return fmt.Errorf("sim memory: add position: %w", ErrProduct)
+	}
+	positions := slices.Clone(t.store.positions[customerID])
+	i := slices.IndexFunc(positions, func(p Position) bool { return p.ProductID == delta.ProductID })
+	if i < 0 {
+		positions = append(positions, Position{
+			ProductID:    delta.ProductID,
+			AssetClass:   delta.AssetClass,
+			UnitsCents:   delta.UnitsCents,
+			AppliedCents: delta.AppliedCents,
+		})
+	} else {
+		positions[i].UnitsCents += delta.UnitsCents
+		positions[i].AppliedCents += delta.AppliedCents
+	}
+	t.store.positions[customerID] = positions
 	return nil
 }
 

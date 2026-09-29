@@ -13,6 +13,12 @@ service AccountService {
   rpc Withdraw(WithdrawRequest) returns (CommandReply);
   rpc SendMessage(SendMessageRequest) returns (CommandReply);
   rpc FileComplaint(FileComplaintRequest) returns (CommandReply);
+  // Purchase moves amount_cents of cash into the product's position at the
+  // fixed catalog price and publishes account.event.recorded kind aplicacao
+  // at schema_version 3. An unknown product, an amount outside 1 to
+  // 100000000000 cents, or one below the product minimum is InvalidArgument;
+  // an amount above the cash is FailedPrecondition.
+  rpc Purchase(PurchaseRequest) returns (CommandReply);
   rpc GetAccount(GetAccountRequest) returns (Account);
   rpc ListAccounts(ListAccountsRequest) returns (ListAccountsResponse);
   rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
@@ -45,6 +51,17 @@ message FileComplaintRequest {
   string customer_id = 1;
   string idempotency_key = 2;
   string text = 3;
+}
+
+message PurchaseRequest {
+  string customer_id = 1;
+  string idempotency_key = 2;
+  // product_id is a catalog product id, e.g. "acoesg".
+  string product_id = 3;
+  int64 amount_cents = 4;
+  // command_id is an optional caller correlation id. account-sim only logs
+  // it; idempotency is decided by idempotency_key alone.
+  string command_id = 5;
 }
 
 message CommandReply {

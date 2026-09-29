@@ -2,6 +2,7 @@ package advisory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -53,6 +54,24 @@ ON CONFLICT (event_id) DO NOTHING`
 	return tag.RowsAffected() == 1, nil
 }
 
+// InvestorProfile reads the customer's book profile inside the transaction.
+// A customer outside the book wraps ErrUnknownCustomer.
+func (t *pgxTx) InvestorProfile(ctx context.Context, customerID string) (string, error) {
+	const q = `
+SELECT investor_profile
+FROM book
+WHERE customer_id = $1::uuid`
+	var profile string
+	err := t.tx.QueryRow(ctx, q, customerID).Scan(&profile)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("advisory pgx: investor profile: %w: %w", ErrUnknownCustomer, err)
+	}
+	if err != nil {
+		return "", fmt.Errorf("advisory pgx: investor profile: %w", err)
+	}
+	return profile, nil
+}
+
 // UpdateBook sets aum and segment for one customer. aum is whole USD dollars.
 func (t *pgxTx) UpdateBook(ctx context.Context, customerID string, aum float64, segment string) error {
 	const q = `
@@ -63,8 +82,8 @@ WHERE customer_id = $1::uuid`
 	if err != nil {
 		return fmt.Errorf("advisory pgx: update book: %w", err)
 	}
-	if tag.RowsAffected() != 1 {
-		return fmt.Errorf("advisory pgx: book row missing for %s", customerID)
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("advisory pgx: update book %s: %w", customerID, ErrUnknownCustomer)
 	}
 	return nil
 }

@@ -97,12 +97,16 @@ type povAllocation struct {
 	RendaFixa int64 `json:"renda_fixa"`
 }
 
-// POVCommand is one client action. Amount is integer cents.
+// POVCommand is one client action. Amount is integer cents. ProductID is set
+// only for a purchase; CommandID is a per-request correlation id that
+// account-sim logs and never uses for idempotency.
 type POVCommand struct {
 	CustomerID     string
 	IdempotencyKey string
+	CommandID      string
 	Kind           string
 	Amount         int64
+	ProductID      string
 	Origin         string
 	Destination    string
 	Channel        string
@@ -337,15 +341,57 @@ func (h *Handler) postPOVComplaint(w http.ResponseWriter, r *http.Request) {
 	h.postPOV(w, r, sim.CmdComplaint)
 }
 
-func (h *Handler) postPOV(w http.ResponseWriter, r *http.Request, kind string) {
+// postPOVPurchase accepts {product_id, amount_cents}. A body that does not
+// decode is 422 invalid before any budget is spent; every other refusal comes
+// from account-sim, as for the other commands.
+func (h *Handler) postPOVPurchase(w http.ResponseWriter, r *http.Request) {
+	id, key, ok := povTarget(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		ProductID   string `json:"product_id"`
+		AmountCents int64  `json:"amount_cents"`
+	}
+	if r.Body == nil || json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body) != nil {
+		h.counts.addRefusal("invalid")
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid"})
+		return
+	}
+	commandID, err := identity.NewV7()
+	if err != nil {
+		// The command id only correlates logs; the purchase goes without one.
+		commandID = ""
+	}
+	h.runPOV(w, r, POVCommand{
+		CustomerID:     id,
+		IdempotencyKey: key,
+		CommandID:      commandID,
+		Kind:           sim.CmdPurchase,
+		Amount:         body.AmountCents,
+		ProductID:      body.ProductID,
+	})
+}
+
+// povTarget reads the customer id and the Idempotency-Key of a POV command.
+// A bad id or a missing key answers 400 and reports false.
+func povTarget(w http.ResponseWriter, r *http.Request) (id, key string, ok bool) {
 	id, err := identity.ParseV7(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
+		return "", "", false
 	}
-	key := r.Header.Get("Idempotency-Key")
+	key = r.Header.Get("Idempotency-Key")
 	if key == "" {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return "", "", false
+	}
+	return id, key, true
+}
+
+func (h *Handler) postPOV(w http.ResponseWriter, r *http.Request, kind string) {
+	id, key, ok := povTarget(w, r)
+	if !ok {
 		return
 	}
 	var body struct {
@@ -362,12 +408,7 @@ func (h *Handler) postPOV(w http.ResponseWriter, r *http.Request, kind string) {
 			return
 		}
 	}
-	ok, window, spend := h.limits.allow(id, key, h.now())
-	if !ok {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": window})
-		return
-	}
-	result, err := h.pov.Apply(r.Context(), POVCommand{
+	h.runPOV(w, r, POVCommand{
 		CustomerID:     id,
 		IdempotencyKey: key,
 		Kind:           kind,
@@ -377,9 +418,22 @@ func (h *Handler) postPOV(w http.ResponseWriter, r *http.Request, kind string) {
 		Channel:        body.Channel,
 		Text:           body.Text,
 	})
+}
+
+// runPOV spends the per-customer budget, sends cmd to account-sim, and maps
+// the outcome to the POV answers shared by every command.
+func (h *Handler) runPOV(w http.ResponseWriter, r *http.Request, cmd POVCommand) {
+	id, kind := cmd.CustomerID, cmd.Kind
+	allowed, window, spend := h.limits.allow(id, cmd.IdempotencyKey, h.now())
+	if !allowed {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": window})
+		return
+	}
+	result, err := h.pov.Apply(r.Context(), cmd)
 	if err != nil {
 		refused := errors.Is(err, sim.ErrInsufficient) || errors.Is(err, sim.ErrAmount) ||
-			errors.Is(err, sim.ErrCommand) || errors.Is(err, sim.ErrUnknownCustomer)
+			errors.Is(err, sim.ErrCommand) || errors.Is(err, sim.ErrUnknownCustomer) ||
+			errors.Is(err, sim.ErrProduct)
 		if spend != nil {
 			// A refusal spends the budget. So does any failure that may have
 			// committed in account-sim (deadline, cancel, internal). Only

@@ -1,44 +1,56 @@
 package advisory
 
 import (
+	"errors"
+	"fmt"
 	"math"
 
 	"github.com/leohteixeira/advisor-radar/internal/book"
 	"github.com/leohteixeira/advisor-radar/internal/sim"
 )
 
-// Card kinds and Portuguese rule strings from SIGNALS s11–s15.
+// Card kinds and Portuguese rule strings from SIGNALS s11–s15, plus the
+// phase-3 suitability rule.
 const (
 	KindSaque    = "saque"
 	KindQueda    = "queda"
 	KindAporte   = "aporte"
 	KindSegmento = "segmento"
 	KindContato  = "contato"
+	KindPerfil   = "perfil"
 
-	RuleKeyWithdrawal = "withdrawal"
-	RuleKeyDrop       = "drop"
-	RuleKeyDeposit    = "deposit"
-	RuleKeySegment    = "segment"
-	RuleKeySilence    = "silence"
+	RuleKeyWithdrawal  = "withdrawal"
+	RuleKeyDrop        = "drop"
+	RuleKeyDeposit     = "deposit"
+	RuleKeySegment     = "segment"
+	RuleKeySilence     = "silence"
+	RuleKeySuitability = "suitability"
 
-	RuleWithdrawal = "Saque acima de 20% do patrimônio em 24 horas"
-	RuleDrop       = "Queda acima de 15% em 5 dias úteis"
-	RuleDeposit    = "Aporte maior que o patrimônio anterior"
-	RuleSegment    = "Patrimônio cruzou a faixa de US$ 10 mil"
-	RuleSilence    = "Sem contato há mais de 90 dias"
+	RuleWithdrawal  = "Saque acima de 20% do patrimônio em 24 horas"
+	RuleDrop        = "Queda acima de 15% em 5 dias úteis"
+	RuleDeposit     = "Aporte maior que o patrimônio anterior"
+	RuleSegment     = "Patrimônio cruzou a faixa de US$ 10 mil"
+	RuleSilence     = "Sem contato há mais de 90 dias"
+	RuleSuitability = "Compra acima do perfil de investidor"
 )
 
-// Decision is one firing rule ready to become alert.raised.
+// Decision is one firing rule ready to become alert.raised. The product
+// fields are set only by the suitability rule.
 type Decision struct {
-	RuleKey string
-	Kind    string
-	Rule    string
-	Amount  float64
-	Before  float64
-	After   float64
-	From    string
-	To      string
-	Days    int
+	RuleKey    string
+	Kind       string
+	Rule       string
+	Amount     float64
+	Before     float64
+	After      float64
+	From       string
+	To         string
+	Days       int
+	ProductID  string
+	AssetClass string
+	Risk       int
+	Profile    string
+	MaxRisk    int
 }
 
 // EvaluateAccount applies the four account-fact rules. One fact may yield two decisions.
@@ -64,6 +76,49 @@ func EvaluateAccount(p sim.AccountPayload) []Decision {
 		out = append(out, d)
 	}
 	return out
+}
+
+// ErrInvalidPurchase marks an aplicacao that cannot be evaluated: no
+// product_id, a risk outside 1–5, or a schema_version below 3. Redelivery
+// cannot fix it.
+var ErrInvalidPurchase = errors.New("advisory: invalid purchase")
+
+// EvaluateSuitability is the suitability rule: an aplicacao (purchase) whose
+// product risk exceeds MaxRisk(profile) raises a perfil alert that names the
+// product and the amount. It only alerts; no case follows from it. Any other
+// kind never fires. A purchase without product_id or with a risk outside 1–5
+// wraps ErrInvalidPurchase; an unknown profile wraps ErrUnknownProfile. Neither
+// is ever a silent pass.
+func EvaluateSuitability(p sim.AccountPayload, profile string) (Decision, bool, error) {
+	if p.Kind != sim.KindAplicacao {
+		return Decision{}, false, nil
+	}
+	if p.ProductID == "" {
+		return Decision{}, false, fmt.Errorf("advisory: suitability: %w: product_id is required", ErrInvalidPurchase)
+	}
+	if p.Risk < 1 || p.Risk > 5 {
+		return Decision{}, false, fmt.Errorf("advisory: suitability: %w: risk %d outside 1-5", ErrInvalidPurchase, p.Risk)
+	}
+	limit, err := MaxRisk(profile)
+	if err != nil {
+		return Decision{}, false, fmt.Errorf("advisory: suitability: %w", err)
+	}
+	if p.Risk <= limit {
+		return Decision{}, false, nil
+	}
+	return Decision{
+		RuleKey:    RuleKeySuitability,
+		Kind:       KindPerfil,
+		Rule:       RuleSuitability,
+		Amount:     p.Amount,
+		Before:     p.Before,
+		After:      p.After,
+		ProductID:  p.ProductID,
+		AssetClass: p.AssetClass,
+		Risk:       p.Risk,
+		Profile:    profile,
+		MaxRisk:    limit,
+	}, true, nil
 }
 
 // EvaluateSilence fires when recorded days with no contact are greater than 90.

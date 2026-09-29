@@ -75,6 +75,19 @@ func (s *GRPCServer) FileComplaint(ctx context.Context, req *accountv1.FileCompl
 	})
 }
 
+// Purchase moves cash into a product position and publishes
+// account.event.recorded kind aplicacao at schema version 3.
+func (s *GRPCServer) Purchase(ctx context.Context, req *accountv1.PurchaseRequest) (*accountv1.CommandReply, error) {
+	return s.apply(ctx, "Purchase", Command{
+		CustomerID:     req.GetCustomerId(),
+		IdempotencyKey: req.GetIdempotencyKey(),
+		CommandID:      req.GetCommandId(),
+		Kind:           CmdPurchase,
+		Amount:         req.GetAmountCents(),
+		ProductID:      req.GetProductId(),
+	})
+}
+
 // GetAccount returns one POV account with its positions valued at the
 // current day.
 func (s *GRPCServer) GetAccount(ctx context.Context, req *accountv1.GetAccountRequest) (*accountv1.Account, error) {
@@ -192,23 +205,28 @@ func (s *GRPCServer) apply(ctx context.Context, method string, cmd Command) (*ac
 	cmd.CustomerID = customerID
 	result, err := Apply(ctx, s.store, cmd)
 	if err != nil {
-		return nil, s.statusOf(method, err)
+		var attrs []any
+		if cmd.CommandID != "" {
+			attrs = append(attrs, slog.String("command_id", cmd.CommandID))
+		}
+		return nil, s.statusOf(method, err, attrs...)
 	}
 	return &accountv1.CommandReply{EventId: result.EventID, Replay: result.Replay}, nil
 }
 
 // statusOf maps sim refusals to gRPC codes and context errors to Canceled or
 // DeadlineExceeded. Any other failure is Internal with a fixed message, so no
-// SQL or DSN text reaches the caller or the log.
-func (s *GRPCServer) statusOf(method string, err error) error {
+// SQL or DSN text reaches the caller or the log; attrs are added to that
+// failure log.
+func (s *GRPCServer) statusOf(method string, err error, attrs ...any) error {
 	switch {
 	case errors.Is(err, ErrInsufficient):
-		return status.Error(codes.FailedPrecondition, "withdrawal exceeds available cash")
+		return status.Error(codes.FailedPrecondition, "amount exceeds available cash")
 	case errors.Is(err, ErrUnknownCustomer):
 		return status.Error(codes.NotFound, "customer not found")
 	case errors.Is(err, identity.ErrInvalidID):
 		return errInvalidCustomer
-	case errors.Is(err, ErrAmount), errors.Is(err, ErrCommand), errors.Is(err, ErrKey):
+	case errors.Is(err, ErrAmount), errors.Is(err, ErrCommand), errors.Is(err, ErrKey), errors.Is(err, ErrProduct):
 		// These messages come from sim validation only, never from storage.
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, context.Canceled):
@@ -218,11 +236,11 @@ func (s *GRPCServer) statusOf(method string, err error) error {
 	case errors.Is(err, context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, "deadline exceeded")
 	}
-	s.logger.Error("account command failed",
+	s.logger.Error("account command failed", append([]any{
 		"service", "account-sim",
 		"method", method,
 		"cause", failureCause(err),
-	)
+	}, attrs...)...)
 	return status.Error(codes.Internal, "internal error")
 }
 

@@ -35,6 +35,7 @@ var alertLabels = map[string]string{
 	"aporte":   "Aporte grande",
 	"segmento": "Mudança de segmento",
 	"contato":  "Sem contato há muito tempo",
+	"perfil":   "Compra acima do perfil",
 	"risco":    "Mensagem com risco",
 }
 
@@ -372,8 +373,9 @@ func andamentoAllowsCase(f ListFilters, state int) bool {
 }
 
 func motivoOptionLabels() []string {
-	out := make([]string, 0, 5+len(intentOptions))
-	for _, k := range []string{"saque", "queda", "aporte", "segmento", "contato"} {
+	alertKinds := []string{"saque", "queda", "aporte", "segmento", "contato", "perfil"}
+	out := make([]string, 0, len(alertKinds)+len(intentOptions))
+	for _, k := range alertKinds {
 		if label, ok := alertLabels[k]; ok {
 			out = append(out, label)
 		}

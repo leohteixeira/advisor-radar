@@ -23,7 +23,9 @@ type MessagePayload struct {
 
 // AccountPayload is the outbox payload for a fictional account fact.
 // Schema version 1 stores amount, before, and after as whole USD dollars.
-// Schema version 2 stores those fields as integer USD cents.
+// Schema versions 2 and 3 store those fields as integer USD cents. Version 3
+// adds ProductID, AssetClass, and Risk, which an aplicacao (purchase) sets
+// from the catalog row of the product bought.
 type AccountPayload struct {
 	Kind        string  `json:"kind"`
 	Amount      float64 `json:"amount"`
@@ -31,15 +33,19 @@ type AccountPayload struct {
 	After       float64 `json:"after"`
 	Origin      string  `json:"origin,omitempty"`
 	Destination string  `json:"destination,omitempty"`
+	ProductID   string  `json:"product_id,omitempty"`
+	AssetClass  string  `json:"asset_class,omitempty"`
+	Risk        int     `json:"risk,omitempty"`
 }
 
 // Dollars returns a copy whose amount, before, and after are whole USD dollars.
-// Schema version 1 is unchanged. Schema version 2 divides integer cents by 100.
+// Schema version 1 is unchanged. Schema versions 2 and 3 divide integer cents
+// by 100. Any other version is ErrMoneyScale.
 func (p AccountPayload) Dollars(schemaVersion int) (AccountPayload, error) {
 	switch schemaVersion {
 	case 1:
 		return p, nil
-	case 2:
+	case 2, 3:
 		amount, err := centsToDollars(p.Amount, "amount")
 		if err != nil {
 			return AccountPayload{}, err

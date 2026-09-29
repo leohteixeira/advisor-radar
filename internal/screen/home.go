@@ -256,7 +256,8 @@ func activityIcon(kind string) string {
 	switch kind {
 	case "aporte":
 		return "in"
-	case "saque":
+	case "saque", "aplicacao":
+		// A purchase moves cash out of caixa into a position.
 		return "out"
 	case "mensagem":
 		return "msg"

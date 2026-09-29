@@ -23,6 +23,7 @@ const (
 	AccountService_Withdraw_FullMethodName        = "/account.v1.AccountService/Withdraw"
 	AccountService_SendMessage_FullMethodName     = "/account.v1.AccountService/SendMessage"
 	AccountService_FileComplaint_FullMethodName   = "/account.v1.AccountService/FileComplaint"
+	AccountService_Purchase_FullMethodName        = "/account.v1.AccountService/Purchase"
 	AccountService_GetAccount_FullMethodName      = "/account.v1.AccountService/GetAccount"
 	AccountService_ListAccounts_FullMethodName    = "/account.v1.AccountService/ListAccounts"
 	AccountService_ListProducts_FullMethodName    = "/account.v1.AccountService/ListProducts"
@@ -42,6 +43,12 @@ type AccountServiceClient interface {
 	Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*CommandReply, error)
 	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*CommandReply, error)
 	FileComplaint(ctx context.Context, in *FileComplaintRequest, opts ...grpc.CallOption) (*CommandReply, error)
+	// Purchase moves amount_cents of cash into the product's position at the
+	// fixed catalog price and publishes account.event.recorded kind aplicacao
+	// at schema_version 3. An unknown product, an amount outside 1 to
+	// 100000000000 cents, or one below the product minimum is InvalidArgument;
+	// an amount above the cash is FailedPrecondition.
+	Purchase(ctx context.Context, in *PurchaseRequest, opts ...grpc.CallOption) (*CommandReply, error)
 	GetAccount(ctx context.Context, in *GetAccountRequest, opts ...grpc.CallOption) (*Account, error)
 	ListAccounts(ctx context.Context, in *ListAccountsRequest, opts ...grpc.CallOption) (*ListAccountsResponse, error)
 	ListProducts(ctx context.Context, in *ListProductsRequest, opts ...grpc.CallOption) (*ListProductsResponse, error)
@@ -90,6 +97,16 @@ func (c *accountServiceClient) FileComplaint(ctx context.Context, in *FileCompla
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CommandReply)
 	err := c.cc.Invoke(ctx, AccountService_FileComplaint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accountServiceClient) Purchase(ctx context.Context, in *PurchaseRequest, opts ...grpc.CallOption) (*CommandReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommandReply)
+	err := c.cc.Invoke(ctx, AccountService_Purchase_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +166,12 @@ type AccountServiceServer interface {
 	Withdraw(context.Context, *WithdrawRequest) (*CommandReply, error)
 	SendMessage(context.Context, *SendMessageRequest) (*CommandReply, error)
 	FileComplaint(context.Context, *FileComplaintRequest) (*CommandReply, error)
+	// Purchase moves amount_cents of cash into the product's position at the
+	// fixed catalog price and publishes account.event.recorded kind aplicacao
+	// at schema_version 3. An unknown product, an amount outside 1 to
+	// 100000000000 cents, or one below the product minimum is InvalidArgument;
+	// an amount above the cash is FailedPrecondition.
+	Purchase(context.Context, *PurchaseRequest) (*CommandReply, error)
 	GetAccount(context.Context, *GetAccountRequest) (*Account, error)
 	ListAccounts(context.Context, *ListAccountsRequest) (*ListAccountsResponse, error)
 	ListProducts(context.Context, *ListProductsRequest) (*ListProductsResponse, error)
@@ -174,6 +197,9 @@ func (UnimplementedAccountServiceServer) SendMessage(context.Context, *SendMessa
 }
 func (UnimplementedAccountServiceServer) FileComplaint(context.Context, *FileComplaintRequest) (*CommandReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FileComplaint not implemented")
+}
+func (UnimplementedAccountServiceServer) Purchase(context.Context, *PurchaseRequest) (*CommandReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Purchase not implemented")
 }
 func (UnimplementedAccountServiceServer) GetAccount(context.Context, *GetAccountRequest) (*Account, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAccount not implemented")
@@ -280,6 +306,24 @@ func _AccountService_FileComplaint_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccountService_Purchase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PurchaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).Purchase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_Purchase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).Purchase(ctx, req.(*PurchaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AccountService_GetAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetAccountRequest)
 	if err := dec(in); err != nil {
@@ -374,6 +418,10 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FileComplaint",
 			Handler:    _AccountService_FileComplaint_Handler,
+		},
+		{
+			MethodName: "Purchase",
+			Handler:    _AccountService_Purchase_Handler,
 		},
 		{
 			MethodName: "GetAccount",

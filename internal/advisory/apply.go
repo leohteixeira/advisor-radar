@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/leohteixeira/advisor-radar/internal/book"
@@ -34,7 +35,9 @@ type AlertRow struct {
 	SourceSchemaVersion int
 }
 
-// AlertPayload is the domain payload on alert.raised.
+// AlertPayload is the domain payload on alert.raised. Money is whole USD
+// dollars on every kind. A perfil alert also names the product bought
+// (ProductID, AssetClass, Risk) and the profile it exceeds (Profile, MaxRisk).
 type AlertPayload struct {
 	Kind          string  `json:"kind"`
 	Rule          string  `json:"rule"`
@@ -45,11 +48,19 @@ type AlertPayload struct {
 	From          string  `json:"from,omitempty"`
 	To            string  `json:"to,omitempty"`
 	Days          int     `json:"days,omitempty"`
+	ProductID     string  `json:"product_id,omitempty"`
+	AssetClass    string  `json:"asset_class,omitempty"`
+	Risk          int     `json:"risk,omitempty"`
+	Profile       string  `json:"profile,omitempty"`
+	MaxRisk       int     `json:"max_risk,omitempty"`
 }
 
-// Tx is the write side of one Apply transaction.
+// Tx is the write side of one Apply transaction. InvestorProfile reads the
+// book profile the suitability rule compares against; a customer outside the
+// book wraps ErrUnknownCustomer.
 type Tx interface {
 	ClaimInbox(ctx context.Context, eventID string) (bool, error)
+	InvestorProfile(ctx context.Context, customerID string) (string, error)
 	InsertAlert(ctx context.Context, row AlertRow) error
 	InsertOutbox(ctx context.Context, row OutboxRow) error
 	UpdateBook(ctx context.Context, customerID string, aum float64, segment string) error
@@ -69,6 +80,12 @@ type Broker interface {
 
 // Apply evaluates one inbound envelope. Only account.event.recorded enters the
 // inbox. A second delivery of the same event_id is a no-op.
+//
+// Every schema version is scaled to dollars before a rule runs. From version
+// 2 on, the event is a live POV fact and the book follows it: AUM becomes
+// after, and the segment is derived from it, for every kind (aporte, saque,
+// aplicacao, reavaliacao). An aplicacao is also checked against the book's
+// investor profile, read in the same transaction.
 func Apply(ctx context.Context, store Store, env event.Envelope) error {
 	if store == nil {
 		return fmt.Errorf("advisory: store is required")
@@ -96,7 +113,13 @@ func Apply(ctx context.Context, store Store, env event.Envelope) error {
 		decisions:     decisions,
 		alertIDs:      nil,
 	}
-	if env.SchemaVersion == event.SchemaVersionCents {
+	if dollars.Kind == sim.KindAplicacao {
+		if env.SchemaVersion < event.SchemaVersionPositions {
+			return fmt.Errorf("advisory: apply %s: %w: aplicacao at schema_version %d", env.EventID, ErrInvalidPurchase, env.SchemaVersion)
+		}
+		in.purchase = &dollars
+	}
+	if env.SchemaVersion >= event.SchemaVersionCents {
 		in.updateBook = true
 		in.bookAUM = dollars.After
 		in.bookSegment = book.SegmentFromAssets(dollars.After)
@@ -201,23 +224,15 @@ type raiseInput struct {
 	updateBook    bool
 	bookAUM       float64
 	bookSegment   string
+	// purchase is the dollar-scaled aplicacao the suitability rule checks
+	// against the book profile inside the transaction; nil for other facts.
+	purchase *sim.AccountPayload
 }
 
+// raise claims the inbox, writes the book, and stages one alert and outbox row
+// per decision, all in one transaction. A quiet fact still claims the inbox,
+// so it is not re-evaluated forever.
 func raise(ctx context.Context, store Store, in raiseInput) error {
-	if len(in.decisions) == 0 {
-		// Still claim the inbox so a quiet fact is not re-evaluated forever.
-		return store.WithTx(ctx, func(tx Tx) error {
-			claimed, err := tx.ClaimInbox(ctx, in.sourceEventID)
-			if err != nil {
-				return fmt.Errorf("advisory: claim inbox: %w", err)
-			}
-			if !claimed {
-				return nil
-			}
-			return writeBook(ctx, tx, in)
-		})
-	}
-
 	err := store.WithTx(ctx, func(tx Tx) error {
 		claimed, err := tx.ClaimInbox(ctx, in.sourceEventID)
 		if err != nil {
@@ -229,8 +244,12 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 		if err := writeBook(ctx, tx, in); err != nil {
 			return err
 		}
+		decisions, err := withSuitability(ctx, tx, in)
+		if err != nil {
+			return err
+		}
 
-		for _, d := range in.decisions {
+		for _, d := range decisions {
 			alertID := ""
 			if in.alertIDs != nil {
 				if fixed, ok := in.alertIDs[d.RuleKey]; ok {
@@ -255,6 +274,11 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 				From:          d.From,
 				To:            d.To,
 				Days:          d.Days,
+				ProductID:     d.ProductID,
+				AssetClass:    d.AssetClass,
+				Risk:          d.Risk,
+				Profile:       d.Profile,
+				MaxRisk:       d.MaxRisk,
 			}
 			payloadBytes, err := json.Marshal(payload)
 			if err != nil {
@@ -300,6 +324,23 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 		return fmt.Errorf("advisory: raise: %w", err)
 	}
 	return nil
+}
+
+// withSuitability returns in.decisions plus the suitability decision of a
+// purchase, which needs the book profile read inside tx.
+func withSuitability(ctx context.Context, tx Tx, in raiseInput) ([]Decision, error) {
+	if in.purchase == nil {
+		return in.decisions, nil
+	}
+	profile, err := tx.InvestorProfile(ctx, in.customerID)
+	if err != nil {
+		return nil, fmt.Errorf("advisory: suitability profile: %w", err)
+	}
+	d, ok, err := EvaluateSuitability(*in.purchase, profile)
+	if err != nil || !ok {
+		return in.decisions, err
+	}
+	return append(slices.Clip(in.decisions), d), nil
 }
 
 func writeBook(ctx context.Context, tx Tx, in raiseInput) error {

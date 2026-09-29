@@ -11,6 +11,9 @@ import (
 
 const ringCapacity = 64
 
+// alertPerfil is the alert kind of a purchase above the investor profile.
+const alertPerfil = "perfil"
+
 // Signal is one queue card. Field names match the frontend contract.
 type Signal struct {
 	ID          string             `json:"id"`
@@ -37,6 +40,10 @@ type Signal struct {
 	Days        int                `json:"days,omitempty"`
 	Rule        string             `json:"rule,omitempty"`
 	Reason      string             `json:"reason,omitempty"`
+	ProductID   string             `json:"product_id,omitempty"`
+	Risk        int                `json:"risk,omitempty"`
+	Profile     string             `json:"profile,omitempty"`
+	MaxRisk     int                `json:"max_risk,omitempty"`
 	ContactedAt *time.Time         `json:"contacted_at,omitempty"`
 }
 
@@ -132,20 +139,24 @@ func (b *Board) applyAlert(ctx context.Context, eventID, customerID string, payl
 		return err
 	}
 	var p struct {
-		Kind   string  `json:"kind"`
-		Rule   string  `json:"rule"`
-		Amount float64 `json:"amount"`
-		Before float64 `json:"before"`
-		After  float64 `json:"after"`
-		From   string  `json:"from"`
-		To     string  `json:"to"`
-		Days   int     `json:"days"`
+		Kind      string  `json:"kind"`
+		Rule      string  `json:"rule"`
+		Amount    float64 `json:"amount"`
+		Before    float64 `json:"before"`
+		After     float64 `json:"after"`
+		From      string  `json:"from"`
+		To        string  `json:"to"`
+		Days      int     `json:"days"`
+		ProductID string  `json:"product_id"`
+		Risk      int     `json:"risk"`
+		Profile   string  `json:"profile"`
+		MaxRisk   int     `json:"max_risk"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return permanentError{err: fmt.Errorf("bff: decode alert payload: %w", err)}
 	}
 	switch p.Kind {
-	case "saque", "queda", "aporte", "segmento", "contato":
+	case "saque", "queda", "aporte", "segmento", "contato", alertPerfil:
 	default:
 		return permanentError{err: fmt.Errorf("bff: unknown alert kind %q", p.Kind)}
 	}
@@ -162,6 +173,11 @@ func (b *Board) applyAlert(ctx context.Context, eventID, customerID string, payl
 		To:     p.To,
 		Days:   p.Days,
 		Rule:   p.Rule,
+		// A perfil card names what was bought; enrichSignals writes its reason.
+		ProductID: p.ProductID,
+		Risk:      p.Risk,
+		Profile:   p.Profile,
+		MaxRisk:   p.MaxRisk,
 	}
 	return b.appendLive(sig)
 }
