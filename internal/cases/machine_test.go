@@ -625,6 +625,48 @@ func TestHandleBreach_Idempotent(t *testing.T) {
 	}
 }
 
+func TestHandleBreach_ResolvedCaseIsNotEscalated(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newMemStore()
+	at := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	if err := cases.Open(ctx, store, cases.OpenInput{
+		ID:         "k-resolved",
+		CustomerID: "c02",
+		AdvisorID:  identity.MustNewV7(),
+		Segment:    book.SegmentAdvance,
+		OccurredAt: at,
+	}); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	for _, to := range []string{cases.StateEmAtendimento, cases.StateAguardandoCliente, cases.StateResolvido} {
+		if err := cases.Advance(ctx, store, "k-resolved", to); err != nil {
+			t.Fatalf("Advance %s: %v", to, err)
+		}
+	}
+	before := store.outboxCount()
+
+	if err := cases.HandleBreach(ctx, store, "k-resolved", at); err != nil {
+		t.Fatalf("HandleBreach: %v", err)
+	}
+	row := store.mustCase(t, "k-resolved")
+	if row.Escalated {
+		t.Fatal("escalated = true, want false for a resolved case")
+	}
+	if row.State != cases.StateResolvido {
+		t.Fatalf("state = %q, want %q", row.State, cases.StateResolvido)
+	}
+	if got := store.outboxCount(); got != before {
+		t.Fatalf("outbox = %d, want %d: a resolved case publishes no breach", got, before)
+	}
+	for _, k := range store.routingKeys() {
+		if k == event.NameCaseSLABreached {
+			t.Fatalf("outbox holds %s for a resolved case", k)
+		}
+	}
+}
+
 func TestSLADelayArgs_Queue(t *testing.T) {
 	t.Parallel()
 

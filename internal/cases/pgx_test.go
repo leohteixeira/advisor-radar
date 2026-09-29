@@ -404,3 +404,55 @@ VALUES ($1, $2, $3, $4, 60, now())`
 		t.Fatalf("second open case err = %v, want unique violation", err)
 	}
 }
+
+// A reseed returns the cases to the seed cast. A case opened from the app
+// during a walk is resolved, so the client's home leaves case_open, and a
+// cast customer holding such a case does not break the one-open-case index
+// when the cast upsert reopens their seed case.
+func TestSeedCast_ReseedResolvesAppOpenedCases(t *testing.T) {
+	t.Parallel()
+	pool := newCasesPool(t)
+	ctx := t.Context()
+	seeds := filepath.Join("..", "..", "seeds", "cases")
+	applyCasesSQLDir(t, pool, seeds)
+
+	const (
+		mariana     = "01a0e3a4-9a44-7566-b5de-eb2e365799f8"
+		paulo       = "01a0e3a4-9a44-7571-9cd6-29d603ed75d1"
+		pauloCast   = "01a0e3a4-9a44-76e9-9644-aec5cdb8be90"
+		advisorAna  = "01a0e3a4-9a44-750d-9e38-ca5f92ecf52a"
+		insertOpen  = `INSERT INTO cases (id, customer_id, advisor_id, state, sla_total_minutes, opened_at) VALUES ($1, $2, $3, $4, 30, now())`
+		stateOfCase = `SELECT state FROM cases WHERE id = $1`
+	)
+	marianaCase := identity.MustNewV7()
+	if _, err := pool.Exec(ctx, insertOpen, marianaCase, mariana, advisorAna, cases.StateAberto); err != nil {
+		t.Fatalf("open Mariana's app case: %v", err)
+	}
+	// Paulo's cast case was resolved during the walk and a new one opened.
+	if _, err := pool.Exec(ctx, `UPDATE cases SET state = $1 WHERE id = $2`, cases.StateResolvido, pauloCast); err != nil {
+		t.Fatalf("resolve Paulo's cast case: %v", err)
+	}
+	pauloCase := identity.MustNewV7()
+	if _, err := pool.Exec(ctx, insertOpen, pauloCase, paulo, advisorAna, cases.StateEmAtendimento); err != nil {
+		t.Fatalf("open Paulo's app case: %v", err)
+	}
+
+	applyCasesSQLDir(t, pool, seeds)
+
+	for id, want := range map[string]string{
+		marianaCase: cases.StateResolvido,
+		pauloCase:   cases.StateResolvido,
+		pauloCast:   cases.StateEmAtendimento,
+	} {
+		var got string
+		if err := pool.QueryRow(ctx, stateOfCase, id).Scan(&got); err != nil {
+			t.Fatalf("state of %s: %v", id, err)
+		}
+		if got != want {
+			t.Errorf("case %s state = %q, want %q", id, got, want)
+		}
+	}
+	if got := countWhere(t, pool, `SELECT count(*) FROM cases WHERE customer_id = $1 AND state <> $2`, mariana, cases.StateResolvido); got != 0 {
+		t.Fatalf("Mariana open cases after reseed = %d, want 0", got)
+	}
+}
