@@ -1,0 +1,1128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Orla Invest (fictícia) — app do cliente server-driven</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Albert+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: {{frameW}}; height: {{frameH}}; box-sizing: border-box; background: {{p.bg}}; color: {{p.ink}}; font-family: 'Manrope', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden">
+
+  <sc-if value="{{chrome}}" hint-placeholder-val="{{true}}">
+    <div style="flex: none; background: #f5f3ec; color: #14191a; border-bottom: 1px solid #d9d6cc; font-family: 'Albert Sans', system-ui, sans-serif">
+      <div style="min-height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 4px 0 12px">
+        <span aria-hidden="true" style="width: 20px; height: 20px; flex: none; border-radius: 3px; background: #14191a; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 4px; box-sizing: border-box">
+          <span style="display: block; height: 2px; width: 11px; background: #6fbf8a"></span>
+          <span style="display: block; height: 2px; width: 7px; background: #f5f3ec"></span>
+          <span style="display: block; height: 2px; width: 4px; background: #f5f3ec"></span>
+        </span>
+        <span style="flex-grow: 1; min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><strong style="font-weight: 700">Simulação</strong> · vendo como {{c.name}}</span>
+        <sc-if value="{{isDesktop}}" hint-placeholder-val="{{false}}">
+          <span style="font: 500 12px/1 'JetBrains Mono', monospace; color: #3a4240">Dia simulado {{day}}</span>
+          <button type="button" onClick="{{advanceDay}}" aria-label="Avançar um dia no mercado simulado" style="min-height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid #d9d6cc; border-radius: 6px; background: #fbfaf6; color: #14191a; font: 600 12.5px/1 'Albert Sans', sans-serif; cursor: pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"></path></svg>
+            Avançar um dia
+          </button>
+          <button type="button" onClick="{{toggleXray}}" aria-pressed="{{xrayPressed}}" style="{{xrayBtn}}">Raio-X SDUI</button>
+        </sc-if>
+        <button type="button" onClick="{{switchClient}}" style="min-height: 44px; display: inline-flex; align-items: center; padding: 0 10px; border: none; background: none; font: 600 12.5px/1 'Albert Sans', sans-serif; color: #1d4d3a; cursor: pointer">Trocar cliente</button>
+      </div>
+      <sc-if value="{{isPhone}}" hint-placeholder-val="{{true}}">
+        <div style="min-height: 40px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 8px 6px 12px">
+          <span style="flex-grow: 1; font: 500 11.5px/1 'JetBrains Mono', monospace; color: #3a4240">Dia simulado {{day}}</span>
+          <button type="button" onClick="{{advanceDay}}" aria-label="Avançar um dia no mercado simulado" style="min-height: 34px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #d9d6cc; border-radius: 6px; background: #fbfaf6; color: #14191a; font: 600 12px/1 'Albert Sans', sans-serif; cursor: pointer">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"></path></svg>
+            +1 dia
+          </button>
+          <button type="button" onClick="{{toggleXray}}" aria-pressed="{{xrayPressed}}" style="{{xrayBtn}}">Raio-X</button>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <div style="flex: 1 1 0; min-height: 0; display: flex">
+
+    <sc-if value="{{showSidebar}}" hint-placeholder-val="{{false}}">
+      <aside style="width: 240px; flex: none; box-sizing: border-box; padding: 24px 16px; background: {{p.s1}}; border-right: 1px solid {{p.line}}; display: flex; flex-direction: column; gap: 6px">
+        <span style="font: 800 22px/1 'Manrope', sans-serif; letter-spacing: -0.03em; padding: 0 12px 20px">orla<span style="color: {{p.accText}}">.</span><span style="font-weight: 500; color: {{p.ink3}}; font-size: 15px"> invest</span></span>
+        <nav aria-label="Navegação principal" style="display: flex; flex-direction: column; gap: 4px">
+          <sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+            <button type="button" aria-current="{{t.current}}" onClick="{{t.go}}" style="{{t.side}}">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.icon}}"></path></svg>
+              {{t.label}}
+            </button>
+          </sc-for>
+        </nav>
+        <span style="flex-grow: 1"></span>
+        <button type="button" onClick="{{toggleTheme}}" style="min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: 1px solid {{p.line}}; border-radius: 10px; background: none; color: {{p.ink2}}; font: 600 13.5px/1 'Manrope', sans-serif; cursor: pointer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{themeIcon}}"></path></svg>
+          {{themeLabel}}
+        </button>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 14px 12px 0; margin-top: 10px; border-top: 1px solid {{p.line}}">
+          <span aria-hidden="true" style="width: 36px; height: 36px; flex: none; border-radius: 50%; background: {{p.s2}}; color: {{p.accText}}; display: flex; align-items: center; justify-content: center; font: 700 12.5px/1 'Manrope', sans-serif">{{c.initials}}</span>
+          <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+            <span style="font-size: 13.5px; font-weight: 700">{{c.name}}</span>
+            <span style="font-size: 12px; color: {{p.ink3}}">Cliente {{c.segment}}</span>
+          </div>
+        </div>
+      </aside>
+    </sc-if>
+
+    <div style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column">
+
+      <sc-if value="{{showPhoneHeader}}" hint-placeholder-val="{{true}}">
+        <div style="flex: none; min-height: 60px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 16px">
+          <span style="flex-grow: 1; font: 800 21px/1 'Manrope', sans-serif; letter-spacing: -0.03em">orla<span style="color: {{p.accText}}">.</span></span>
+          <button type="button" onClick="{{toggleTheme}}" aria-label="{{themeLabel}}" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 50%; background: none; color: {{p.ink2}}; cursor: pointer">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{themeIcon}}"></path></svg>
+          </button>
+          <span aria-hidden="true" style="width: 36px; height: 36px; flex: none; border-radius: 50%; background: {{p.s2}}; color: {{p.accText}}; display: flex; align-items: center; justify-content: center; font: 700 12.5px/1 'Manrope', sans-serif">{{c.initials}}</span>
+        </div>
+      </sc-if>
+
+      <main style="flex: 1 1 0; min-height: 0; overflow-y: auto; box-sizing: border-box; padding: {{mainPad}}; display: flex; flex-direction: column; gap: 16px">
+
+        <sc-if value="{{showTitle}}" hint-placeholder-val="{{true}}">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <h1 style="margin: 0; font: 800 {{titleSize}}/1.15 'Manrope', sans-serif; letter-spacing: -0.03em">{{title}}</h1>
+            <span style="font-size: 13.5px; color: {{p.ink3}}">{{subtitle}}</span>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{xrayBanner}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px dashed {{p.acc}}; border-radius: 10px; background: {{p.accSoft}}">
+            <span style="font: 500 11.5px/1.4 'JetBrains Mono', monospace; color: {{p.ink}}; word-break: break-all">GET /v1/client-pov/customers/{id}/screens/{{slug}}</span>
+            <span style="font: 500 11.5px/1.4 'JetBrains Mono', monospace; color: {{p.ink2}}">{{xrayMeta}}</span>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isSdui}}" hint-placeholder-val="{{true}}">
+          <div style="{{gridStyle}}">
+            <sc-for list="{{sections}}" as="s" hint-placeholder-count="5">
+              <div style="{{s.wrap}}">
+                <sc-if value="{{s.chip}}" hint-placeholder-val="{{false}}">
+                  <span style="{{chipStyle}}">{{s.label}}</span>
+                </sc-if>
+
+                <sc-if value="{{s.tMoment}}" hint-placeholder-val="{{false}}">
+                  <div style="{{s.cardStyle}}">
+                    <div style="display: flex; align-items: center; gap: 10px">
+                      <span aria-hidden="true" style="{{s.iconWrap}}">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="{{s.icon}}"></path></svg>
+                      </span>
+                      <span style="font: 700 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .07em; text-transform: uppercase; color: {{s.kickerColor}}">{{s.kicker}}</span>
+                    </div>
+                    <span style="font: 800 20px/1.25 'Manrope', sans-serif; letter-spacing: -0.02em">{{s.title}}</span>
+                    <span style="font-size: 14px; line-height: 1.5; color: {{p.ink2}}">{{s.body}}</span>
+                    <sc-if value="{{s.hasMeta}}" hint-placeholder-val="{{false}}">
+                      <span style="font: 500 12px/1.4 'JetBrains Mono', monospace; color: {{p.ink3}}">{{s.meta}}</span>
+                    </sc-if>
+                    <sc-if value="{{s.hasAction}}" hint-placeholder-val="{{true}}">
+                      <button type="button" onClick="{{s.act}}" style="{{primaryBtn}}">{{s.actionLabel}}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+                      </button>
+                    </sc-if>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tWealth}}" hint-placeholder-val="{{false}}">
+                  <div style="{{card}}">
+                    <div style="display: flex; align-items: center; justify-content: space-between">
+                      <span style="font-size: 13px; color: {{p.ink3}}">Patrimônio total</span>
+                      <button type="button" onClick="{{toggleHide}}" aria-label="{{hideLabel}}" style="width: 44px; height: 44px; margin: -10px -10px -10px 0; display: flex; align-items: center; justify-content: center; border: none; background: none; color: {{p.ink3}}; cursor: pointer">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6z"></path></svg>
+                      </button>
+                    </div>
+                    <span style="font: 800 32px/1 'Manrope', sans-serif; letter-spacing: -0.03em">{{s.total}}</span>
+                    <sc-if value="{{s.hasChange}}" hint-placeholder-val="{{false}}">
+                      <span style="{{s.changeStyle}}">{{s.change}}</span>
+                    </sc-if>
+                    <div style="display: flex; height: 8px; gap: 2px; border-radius: 4px; overflow: hidden">
+                      <sc-for list="{{s.alloc}}" as="a" hint-placeholder-count="4"><span style="{{a.bar}}"></span></sc-for>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px">
+                      <sc-for list="{{s.alloc}}" as="a" hint-placeholder-count="4">
+                        <div style="display: flex; align-items: center; gap: 8px">
+                          <span style="{{a.dot}}"></span>
+                          <span style="flex-grow: 1; font-size: 13px; color: {{p.ink2}}">{{a.label}}</span>
+                          <span style="font-size: 13px; font-weight: 700">{{a.pct}}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="border-top: 1px solid {{p.line}}; padding-top: 12px; display: flex; align-items: center; justify-content: space-between">
+                      <span style="font-size: 13px; color: {{p.ink3}}">Disponível para saque</span>
+                      <span style="font-size: 14.5px; font-weight: 700">{{s.cash}}</span>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tActions}}" hint-placeholder-val="{{false}}">
+                  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+                    <sc-for list="{{s.items}}" as="it" hint-placeholder-count="4">
+                      <button type="button" onClick="{{it.go}}" style="min-height: 84px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: none; background: none; color: {{p.ink}}; font: 600 12.5px/1.2 'Manrope', sans-serif; cursor: pointer">
+                        <span style="{{it.circle}}">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{it.icon}}"></path></svg>
+                        </span>
+                        {{it.label}}
+                      </button>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tAdvisor}}" hint-placeholder-val="{{false}}">
+                  <div style="{{rowCard}}">
+                    <span aria-hidden="true" style="width: 46px; height: 46px; flex: none; border-radius: 50%; background: {{p.accSoft}}; color: {{p.accText}}; display: flex; align-items: center; justify-content: center; font: 800 14px/1 'Manrope', sans-serif">AP</span>
+                    <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+                      <span style="font: 700 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .07em; text-transform: uppercase; color: {{p.ink3}}">{{s.kicker}}</span>
+                      <span style="font-size: 15px; font-weight: 700">Ana Paula Ribeiro</span>
+                      <span style="font-size: 12.5px; color: {{p.ink3}}">{{s.meta}}</span>
+                    </div>
+                    <button type="button" onClick="{{noop}}" style="{{secondaryBtn}}">Conversar</button>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tActivity}}" hint-placeholder-val="{{false}}">
+                  <div style="{{card}}">
+                    <span style="font-size: 15px; font-weight: 700">{{s.title}}</span>
+                    <sc-if value="{{s.empty}}" hint-placeholder-val="{{false}}">
+                      <span style="font-size: 13.5px; line-height: 1.5; color: {{p.ink3}}">{{s.emptyText}}</span>
+                    </sc-if>
+                    <sc-for list="{{s.items}}" as="it" hint-placeholder-count="2">
+                      <div style="display: flex; align-items: center; gap: 12px">
+                        <span style="{{it.circle}}">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{it.icon}}"></path></svg>
+                        </span>
+                        <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+                          <span style="font-size: 14px; font-weight: 600">{{it.title}}</span>
+                          <span style="font-size: 12px; color: {{p.ink3}}">{{it.meta}}</span>
+                        </div>
+                        <span style="{{it.valueStyle}}">{{it.value}}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tInvestSummary}}" hint-placeholder-val="{{false}}">
+                  <div style="{{rowCard}}">
+                    <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px">
+                      <span style="font-size: 12.5px; color: {{p.ink3}}">Disponível para investir</span>
+                      <span style="font: 800 24px/1 'Manrope', sans-serif; letter-spacing: -0.02em">{{s.cash}}</span>
+                    </div>
+                    <span style="font: 700 12px/1 'Manrope', sans-serif; padding: 8px 12px; border-radius: 999px; background: {{p.accSoft}}; color: {{p.accText}}">{{s.profileChip}}</span>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tRail}}" hint-placeholder-val="{{false}}">
+                  <div style="display: flex; flex-direction: column; gap: 12px">
+                    <div style="display: flex; flex-direction: column; gap: 3px">
+                      <span style="font-size: 16px; font-weight: 800">{{s.title}}</span>
+                      <span style="font-size: 12.5px; color: {{p.ink3}}">{{s.sub}}</span>
+                    </div>
+                    <div style="{{s.railGrid}}">
+                      <sc-for list="{{s.products}}" as="pr" hint-placeholder-count="2">
+                        <div style="{{card}}">
+                          <span style="font: 700 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .07em; text-transform: uppercase; color: {{p.ink3}}">{{pr.cls}}</span>
+                          <span style="font-size: 16px; font-weight: 800; line-height: 1.25">{{pr.name}}</span>
+                          <div style="display: flex; align-items: center; gap: 8px">
+                            <div style="display: flex; gap: 3px" aria-hidden="true">
+                              <sc-for list="{{pr.bars}}" as="b" hint-placeholder-count="5"><span style="{{b.style}}"></span></sc-for>
+                            </div>
+                            <span style="font-size: 12px; color: {{p.ink3}}">Risco {{pr.risk}} de 5</span>
+                          </div>
+                          <span style="font-size: 13.5px; font-weight: 700; color: {{p.pos}}">{{pr.ret}}</span>
+                          <span style="font-size: 12px; color: {{p.ink3}}">{{pr.min}}</span>
+                          <sc-if value="{{pr.over}}" hint-placeholder-val="{{false}}">
+                            <span style="{{warnPill}}">Acima do seu perfil</span>
+                          </sc-if>
+                          <button type="button" onClick="{{pr.buy}}" style="{{primaryBtn}}">Investir</button>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tList}}" hint-placeholder-val="{{false}}">
+                  <div style="{{card}}">
+                    <span style="font-size: 15px; font-weight: 700">{{s.title}}</span>
+                    <sc-for list="{{s.products}}" as="pr" hint-placeholder-count="2">
+                      <button type="button" onClick="{{pr.buy}}" style="{{listRow}}">
+                        <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; text-align: left">
+                          <span style="font-size: 14px; font-weight: 700">{{pr.name}}</span>
+                          <span style="display: flex; align-items: center; gap: 8px">
+                            <span style="display: flex; gap: 3px" aria-hidden="true">
+                              <sc-for list="{{pr.bars}}" as="b" hint-placeholder-count="5"><span style="{{b.style}}"></span></sc-for>
+                            </span>
+                            <span style="font-size: 12px; color: {{p.ink3}}">Risco {{pr.risk}} · {{pr.ret}}</span>
+                          </span>
+                          <sc-if value="{{pr.over}}" hint-placeholder-val="{{false}}">
+                            <span style="{{warnPill}}">Acima do seu perfil</span>
+                          </sc-if>
+                        </span>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+                      </button>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tPortfolio}}" hint-placeholder-val="{{false}}">
+                  <div style="{{card}}">
+                    <span style="font-size: 13px; color: {{p.ink3}}">Patrimônio · valor de mercado</span>
+                    <span style="font: 800 32px/1 'Manrope', sans-serif; letter-spacing: -0.03em">{{s.total}}</span>
+                    <sc-if value="{{s.hasChange}}" hint-placeholder-val="{{false}}">
+                      <span style="{{s.changeStyle}}">{{s.change}}</span>
+                    </sc-if>
+                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; border-top: 1px solid {{p.line}}; padding-top: 12px">
+                      <sc-for list="{{s.stats}}" as="st" hint-placeholder-count="4">
+                        <div style="display: flex; flex-direction: column; gap: 3px">
+                          <span style="font-size: 12px; color: {{p.ink3}}">{{st.label}}</span>
+                          <span style="{{st.style}}">{{st.value}}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tAllocation}}" hint-placeholder-val="{{false}}">
+                  <div style="{{card}}">
+                    <span style="font-size: 15px; font-weight: 700">Alocação</span>
+                    <sc-for list="{{s.alloc}}" as="a" hint-placeholder-count="4">
+                      <div style="display: flex; flex-direction: column; gap: 6px">
+                        <div style="display: flex; align-items: center; gap: 8px">
+                          <span style="{{a.dot}}"></span>
+                          <span style="flex-grow: 1; font-size: 14px; font-weight: 600">{{a.label}}</span>
+                          <span style="font-size: 14px; font-weight: 700">{{a.value}}</span>
+                          <span style="width: 52px; text-align: right; font-size: 13px; color: {{p.ink3}}">{{a.pct}}</span>
+                        </div>
+                        <div style="height: 6px; border-radius: 3px; background: {{p.s2}}; overflow: hidden"><span style="{{a.fill}}"></span></div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tPositions}}" hint-placeholder-val="{{false}}">
+                  <div style="{{card}}">
+                    <div style="display: flex; align-items: baseline; justify-content: space-between">
+                      <span style="font-size: 15px; font-weight: 700">{{s.title}}</span>
+                      <span style="font-size: 13.5px; font-weight: 700">{{s.subtotal}}</span>
+                    </div>
+                    <sc-for list="{{s.items}}" as="it" hint-placeholder-count="2">
+                      <div style="display: flex; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid {{p.line}}">
+                        <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+                          <span style="font-size: 14px; font-weight: 700">{{it.name}}</span>
+                          <span style="font-size: 12px; color: {{p.ink3}}">Aplicado {{it.applied}}</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px">
+                          <span style="font-size: 14px; font-weight: 700">{{it.value}}</span>
+                          <span style="{{it.retStyle}}">{{it.ret}}</span>
+                        </div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tProfileHeader}}" hint-placeholder-val="{{false}}">
+                  <div style="{{rowCard}}">
+                    <span aria-hidden="true" style="width: 56px; height: 56px; flex: none; border-radius: 50%; background: {{p.accSoft}}; color: {{p.accText}}; display: flex; align-items: center; justify-content: center; font: 800 18px/1 'Manrope', sans-serif">{{c.initials}}</span>
+                    <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+                      <span style="font-size: 18px; font-weight: 800">{{c.name}}</span>
+                      <span style="font-size: 13px; color: {{p.ink2}}">Cliente {{c.segment}} desde {{c.since}}</span>
+                      <span style="font: 500 12px/1.3 'JetBrains Mono', monospace; color: {{p.ink3}}">{{c.account}}</span>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tScale}}" hint-placeholder-val="{{false}}">
+                  <div style="{{card}}">
+                    <div style="display: flex; flex-direction: column; gap: 3px">
+                      <span style="font-size: 16px; font-weight: 800">Perfil de investidor</span>
+                      <span style="font-size: 12.5px; color: {{p.ink3}}">{{s.sub}}</span>
+                    </div>
+                    <div style="{{s.levelsGrid}}">
+                      <sc-for list="{{s.levels}}" as="lv" hint-placeholder-count="3">
+                        <div style="{{lv.style}}">
+                          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+                            <span style="font-size: 16px; font-weight: 800">{{lv.label}}</span>
+                            <sc-if value="{{lv.mine}}" hint-placeholder-val="{{false}}">
+                              <span style="font: 700 11.5px/1 'Manrope', sans-serif; padding: 6px 10px; border-radius: 999px; background: {{p.acc}}; color: {{p.accInk}}">Seu perfil</span>
+                            </sc-if>
+                          </div>
+                          <div style="display: flex; gap: 3px" aria-hidden="true">
+                            <sc-for list="{{lv.bars}}" as="b" hint-placeholder-count="5"><span style="{{b.style}}"></span></sc-for>
+                          </div>
+                          <span style="font-size: 13px; line-height: 1.5; color: {{p.ink2}}">{{lv.desc}}</span>
+                          <span style="font: 500 11.5px/1.3 'JetBrains Mono', monospace; color: {{p.ink3}}">{{lv.limit}}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <span style="font-size: 12.5px; line-height: 1.5; color: {{p.ink3}}">{{s.foot}}</span>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tFields}}" hint-placeholder-val="{{false}}">
+                  <div style="{{card}}">
+                    <span style="font-size: 15px; font-weight: 700">Dados cadastrais</span>
+                    <sc-for list="{{s.fields}}" as="f" hint-placeholder-count="6">
+                      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-top: 10px; border-top: 1px solid {{p.line}}">
+                        <span style="font-size: 13px; color: {{p.ink3}}">{{f.label}}</span>
+                        <span style="font-size: 14px; font-weight: 600; text-align: right">{{f.value}}</span>
+                      </div>
+                    </sc-for>
+                    <span style="font-size: 12px; color: {{p.ink3}}">Dados fictícios. Alterar cadastro fica fora da simulação.</span>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tPrefs}}" hint-placeholder-val="{{false}}">
+                  <div style="{{card}}">
+                    <span style="font-size: 15px; font-weight: 700">Preferências</span>
+                    <div style="display: flex; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid {{p.line}}">
+                      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+                        <span style="font-size: 14px; font-weight: 600">Tema</span>
+                        <span style="font-size: 12px; color: {{p.ink3}}">Fica salvo só neste navegador</span>
+                      </div>
+                      <button type="button" onClick="{{toggleTheme}}" style="{{secondaryBtn}}">{{themeName}}</button>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 10px; padding-top: 10px; border-top: 1px solid {{p.line}}">
+                      <div style="display: flex; flex-direction: column; gap: 2px">
+                        <span style="font-size: 14px; font-weight: 600">Canal preferido</span>
+                        <span style="font-size: 12px; color: {{p.ink3}}">Por onde a assessoria fala com você</span>
+                      </div>
+                      <div role="group" aria-label="Canal preferido" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: {{p.s2}}">
+                        <sc-for list="{{channels}}" as="ch" hint-placeholder-count="2">
+                          <button type="button" aria-pressed="{{ch.pressed}}" onClick="{{ch.pick}}" style="{{ch.style}}">{{ch.label}}</button>
+                        </sc-for>
+                      </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid {{p.line}}">
+                      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+                        <span style="font-size: 14px; font-weight: 600">Programa beta</span>
+                        <span style="font-size: 12px; line-height: 1.45; color: {{p.ink3}}">{{betaText}}</span>
+                      </div>
+                      <button type="button" aria-pressed="{{betaPressed}}" aria-label="Programa beta" onClick="{{toggleBeta}}" style="{{switchStyle}}"><span style="{{knobStyle}}"></span></button>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{s.tOmitted}}" hint-placeholder-val="{{false}}">
+                  <div style="box-sizing: border-box; min-height: 96px; padding: 16px; border: 2px dashed {{p.neg}}; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; gap: 6px; color: {{p.ink3}}">
+                    <span style="font: 500 12px/1.4 'JetBrains Mono', monospace; color: {{p.neg}}">{{s.title}}</span>
+                    <span style="font-size: 12.5px; line-height: 1.5">{{s.body}}</span>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isCompra}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; flex-direction: column; gap: 16px; max-width: 560px">
+            <button type="button" onClick="{{goInvest}}" style="align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center; gap: 6px; padding: 0; border: none; background: none; color: {{p.accText}}; font: 700 14px/1 'Manrope', sans-serif; cursor: pointer">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+              Investir
+            </button>
+            <h1 style="margin: 0; font: 800 24px/1.2 'Manrope', sans-serif; letter-spacing: -0.02em">Investir em {{buy.name}}</h1>
+            <div style="{{card}}">
+              <span style="font: 700 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .07em; text-transform: uppercase; color: {{p.ink3}}">{{buy.cls}}</span>
+              <div style="display: flex; align-items: center; gap: 8px">
+                <div style="display: flex; gap: 3px" aria-hidden="true">
+                  <sc-for list="{{buy.bars}}" as="b" hint-placeholder-count="5"><span style="{{b.style}}"></span></sc-for>
+                </div>
+                <span style="font-size: 13px; color: {{p.ink2}}">Risco {{buy.risk}} de 5</span>
+              </div>
+              <span style="font-size: 14px; font-weight: 700; color: {{p.pos}}">{{buy.ret}}</span>
+              <span style="font-size: 12.5px; color: {{p.ink3}}">Preço fixo da simulação, sem cotação. Rentabilidade fictícia.</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <label for="valor-compra" style="font-size: 13px; color: {{p.ink3}}">Quanto investir</label>
+              <input id="valor-compra" inputmode="decimal" defaultValue="{{buy.amount}}" style="min-height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid {{p.line}}; border-radius: 12px; background: {{p.s1}}; color: {{p.ink}}; font: 800 24px/1 'Manrope', sans-serif">
+              <div style="display: flex; gap: 8px">
+                <sc-for list="{{buy.chips}}" as="ch" hint-placeholder-count="3">
+                  <button type="button" aria-pressed="{{ch.pressed}}" onClick="{{noop}}" style="{{ch.style}}">{{ch.label}}</button>
+                </sc-for>
+              </div>
+              <span style="font-size: 12.5px; color: {{p.ink3}}">Disponível no caixa: {{buy.cash}}</span>
+            </div>
+            <sc-if value="{{buy.over}}" hint-placeholder-val="{{false}}">
+              <div role="note" style="display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid {{p.warn}}; border-radius: 14px; background: {{p.warnSoft}}">
+                <div style="display: flex; align-items: center; gap: 10px; color: {{p.warnText}}">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2zM12 10v5M12 18v.5"></path></svg>
+                  <span style="font-size: 15px; font-weight: 800">Acima do seu perfil</span>
+                </div>
+                <span style="font-size: 13.5px; line-height: 1.5; color: {{p.ink2}}">{{buy.warn}}</span>
+              </div>
+            </sc-if>
+            <button type="button" onClick="{{confirm}}" style="{{primaryFull}}">Confirmar compra de {{buy.amount}}</button>
+            <button type="button" onClick="{{goInvest}}" style="{{ghostFull}}">Cancelar</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isCompraOk}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; flex-direction: column; gap: 16px; max-width: 560px">
+            <span aria-hidden="true" style="width: 56px; height: 56px; border-radius: 50%; background: {{p.posSoft}}; color: {{p.pos}}; display: flex; align-items: center; justify-content: center">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"></path></svg>
+            </span>
+            <h1 style="margin: 0; font: 800 26px/1.2 'Manrope', sans-serif; letter-spacing: -0.02em">Compra enviada</h1>
+            <span style="font-size: 14.5px; line-height: 1.5; color: {{p.ink2}}">{{ok.lead}}</span>
+            <div style="{{card}}">
+              <div style="display: flex; align-items: center; justify-content: space-between">
+                <span style="font-size: 13px; color: {{p.ink3}}">Protocolo</span>
+                <span style="font: 500 15px/1 'JetBrains Mono', monospace">{{ok.protocol}}</span>
+              </div>
+              <div style="border-top: 1px solid {{p.line}}; padding-top: 12px; display: flex; flex-direction: column; gap: 6px">
+                <span style="font-size: 15px; font-weight: 700">Bastidores</span>
+                <span style="font: 500 12px/1.4 'JetBrains Mono', monospace; color: {{p.ink2}}">{{ok.routing}}</span>
+                <span style="font: 500 12px/1.4 'JetBrains Mono', monospace; color: {{p.ink3}}; word-break: break-all">event_id {{ok.eventId}}</span>
+              </div>
+              <sc-for list="{{ok.steps}}" as="st" hint-placeholder-count="4">
+                <div style="display: flex; align-items: center; gap: 12px">
+                  <span style="{{st.dot}}"></span>
+                  <span style="flex-grow: 1; font-size: 13.5px">{{st.label}}</span>
+                  <span style="{{st.stateStyle}}">{{st.state}}</span>
+                </div>
+              </sc-for>
+            </div>
+            <a href="https://leohts.tech/advisor-radar/fila" style="{{secondaryFull}}">Ver na fila do time</a>
+            <button type="button" onClick="{{goHome}}" style="{{primaryFull}}">Voltar ao início</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isLoading}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; flex-direction: column; gap: 16px">
+            <span role="status" style="font: 500 12px/1.4 'JetBrains Mono', monospace; color: {{p.ink3}}">Montando sua tela…</span>
+            <span style="height: 26px; width: 55%; border-radius: 8px; background: {{p.s2}}"></span>
+            <span style="height: 176px; border-radius: 16px; background: {{p.s2}}"></span>
+            <span style="height: 250px; border-radius: 16px; background: {{p.s2}}"></span>
+            <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 0 12px">
+              <span style="height: 52px; border-radius: 50%; background: {{p.s2}}"></span>
+              <span style="height: 52px; border-radius: 50%; background: {{p.s2}}"></span>
+              <span style="height: 52px; border-radius: 50%; background: {{p.s2}}"></span>
+              <span style="height: 52px; border-radius: 50%; background: {{p.s2}}"></span>
+            </div>
+            <span style="height: 80px; border-radius: 16px; background: {{p.s2}}"></span>
+            <span style="font-size: 12.5px; line-height: 1.5; color: {{p.ink3}}">Uma requisição só. Se passar do tempo, a tela mostra o que já chegou e cada seção atrasada cai na variante padrão.</span>
+          </div>
+        </sc-if>
+      </main>
+
+      <sc-if value="{{showTabbar}}" hint-placeholder-val="{{true}}">
+        <nav aria-label="Navegação principal" style="flex: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px 8px 10px; background: {{p.nav}}; border-top: 1px solid {{p.line}}">
+          <sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+            <button type="button" aria-current="{{t.current}}" onClick="{{t.go}}" style="{{t.bottom}}">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.icon}}"></path></svg>
+              {{t.label}}
+            </button>
+          </sc-for>
+        </nav>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"client":{"editor":"enum","options":["fernanda","thiago","mariana"],"default":"thiago"},"screen":{"editor":"enum","options":["home","investir","compra","compraOk","carteira","perfil","loading","catalog"],"default":"home"},"layout":{"editor":"enum","options":["phone","desktop"],"default":"phone"},"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"xray":{"editor":"boolean","default":false},"day":{"editor":"int","default":0,"min":0,"max":30},"caseOpen":{"editor":"boolean","default":false},"fallback":{"editor":"boolean","default":false},"product":{"editor":null},"frameH":{"editor":null},"$preview":{"width":390,"height":1240}}'>
+class Component extends DCLogic {
+  state = {};
+
+  on(v) {
+    return v === true || v === 'on' || v === 'true' || v === 1 || v === '1';
+  }
+
+  palette(theme) {
+    if (theme === 'light') {
+      return { bg: '#f4f6fa', s1: '#ffffff', s2: '#eaeef5', line: '#d6dce8', ink: '#0e1626', ink2: '#414c64', ink3: '#5c677d', acc: '#f2b544', accInk: '#1b1403', accText: '#7f5600', accSoft: 'rgba(242,181,68,.22)', pos: '#1b7f56', posSoft: 'rgba(27,127,86,.12)', neg: '#b8352a', negSoft: 'rgba(184,53,42,.09)', info: '#2f5fb8', infoSoft: 'rgba(77,127,219,.10)', warn: '#b9821c', warnSoft: 'rgba(242,181,68,.16)', warnText: '#7f5600', dash: '#aeb8ca', nav: '#ffffff', alloc: ['#e0a12e', '#4d7fdb', '#2fa37a', '#9aa3b5'] };
+    }
+    return { bg: '#0b1220', s1: '#131c2e', s2: '#1b2640', line: '#26324d', ink: '#eef2f8', ink2: '#b9c2d3', ink3: '#8e98ad', acc: '#f2b544', accInk: '#1b1403', accText: '#f2b544', accSoft: 'rgba(242,181,68,.14)', pos: '#57d3a2', posSoft: 'rgba(87,211,162,.14)', neg: '#ff8f85', negSoft: 'rgba(255,143,133,.10)', info: '#8ab4ff', infoSoft: 'rgba(138,180,255,.10)', warn: '#f2b544', warnSoft: 'rgba(242,181,68,.12)', warnText: '#f2b544', dash: '#3a4a6d', nav: '#0e1627', alloc: ['#f2b544', '#8ab4ff', '#57d3a2', '#5b6780'] };
+  }
+
+  icons() {
+    return {
+      home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
+      invest: 'M3 17l6-6 4 4 8-8M14 7h7v7',
+      wallet: 'M21 12A9 9 0 1 1 12 3v9zM15 3.5A9 9 0 0 1 20.5 9H15z',
+      user: 'M12 4a4 4 0 1 0 0 8 4 4 0 1 0 0-8zM4 21a8 8 0 0 1 16 0',
+      plus: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18zM12 8v8M8 12h8',
+      bank: 'M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18',
+      msg: 'M4 5h16v11H8l-4 4z',
+      alert: 'M12 3l10 18H2zM12 10v5M12 18v.5',
+      in: 'M12 4v12M6 10l6 6 6-6M4 20h16',
+      out: 'M12 20V8M6 14l6-6 6 6M4 4h16',
+      seg: 'M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z',
+      drop: 'M3 7l6 6 4-4 8 8M14 17h7v-7',
+      calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+      inbox: 'M4 13l2-8h12l2 8v6H4zM4 13h5l1 2h4l1-2h5',
+      spark: 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6',
+      cash: 'M3 7h18v10H3zM12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 1 0 0-5zM6 12h.5M17.5 12h.5',
+      moon: 'M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z',
+      sun: 'M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+      buy: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18zM8 12l3 3 5-6',
+    };
+  }
+
+  money(n) {
+    return 'US$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  signed(n) {
+    return (n < 0 ? '− ' : '+ ') + this.money(Math.abs(n));
+  }
+
+  pct(x, digits) {
+    const d = digits ?? 1;
+    return x.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d }) + '%';
+  }
+
+  signedPct(x) {
+    return (x < 0 ? '−' : '+') + this.pct(Math.abs(x));
+  }
+
+  products() {
+    return {
+      tbill: { id: 'tbill', name: 'Orla T-Bill 6 meses', cls: 'Renda fixa', risk: 1, ret: '4,9% a.a. indicativa', min: 'Mínimo US$ 100' },
+      corp: { id: 'corp', name: 'Orla Corporate IG 2029', cls: 'Renda fixa', risk: 2, ret: '5,6% a.a. indicativa', min: 'Mínimo US$ 1.000' },
+      renda: { id: 'renda', name: 'Maré Renda Global ETF', cls: 'ETF', risk: 2, ret: '+3,8% em 12 meses', min: 'Mínimo US$ 50' },
+      acoesg: { id: 'acoesg', name: 'Maré Ações Globais ETF', cls: 'ETF', risk: 3, ret: '+11,2% em 12 meses', min: 'Mínimo US$ 50' },
+      farol: { id: 'farol', name: 'Farol Saúde', cls: 'Ação', risk: 4, ret: '+9,4% em 12 meses', min: 'Mínimo US$ 10' },
+      cobalto: { id: 'cobalto', name: 'Cobalto Semicondutores', cls: 'Ação', risk: 5, ret: '+27,1% em 12 meses', min: 'Mínimo US$ 10' },
+    };
+  }
+
+  profiles() {
+    return {
+      conservador: { label: 'Conservador', max: 2, desc: 'Prioriza preservar o patrimônio. Aceita pouca oscilação.' },
+      moderado: { label: 'Moderado', max: 3, desc: 'Aceita oscilação moderada em busca de mais retorno.' },
+      arrojado: { label: 'Arrojado', max: 5, desc: 'Aceita oscilação alta no curto prazo para buscar retorno maior.' },
+    };
+  }
+
+  clients() {
+    return {
+      fernanda: {
+        id: 'fernanda', name: 'Fernanda Lima', first: 'Fernanda', initials: 'FL', segment: 'Essencial', since: '2024', sla: '24 h',
+        profile: 'conservador', assessed: '12/03/2026', email: 'fernanda.lima@example.com', phone: '+55 (19) •••••-4471', city: 'Campinas, SP · Brasil', account: 'Conta 3301-7 · Orla Invest', cash: 1148,
+        pos: [
+          { p: 'farol', cls: 'acoes', applied: 1590, v0: 1640 },
+          { p: 'renda', cls: 'etf', applied: 1660, v0: 1690 },
+          { p: 'acoesg', cls: 'etf', applied: 1900, v0: 2000 },
+          { p: 'tbill', cls: 'rf', applied: 1690, v0: 1722 },
+        ],
+        activity: [],
+      },
+      thiago: {
+        id: 'thiago', name: 'Thiago Azevedo', first: 'Thiago', initials: 'TA', segment: 'Advance', since: '2024', sla: '4 h',
+        profile: 'arrojado', assessed: '04/08/2026', email: 'thiago.azevedo@example.com', phone: '+55 (48) •••••-2093', city: 'Florianópolis, SC · Brasil', account: 'Conta 2847-1 · Orla Invest', cash: 60520,
+        pos: [
+          { p: 'cobalto', cls: 'acoes', applied: 1900, v0: 2040 },
+          { p: 'acoesg', cls: 'etf', applied: 5200, v0: 5440 },
+        ],
+        activity: [
+          { icon: 'seg', title: 'Você agora é cliente Advance', meta: 'há 4 dias', value: '', tone: '' },
+          { icon: 'in', title: 'Depósito via câmbio', meta: 'há 4 dias · do Brasil', value: '+ US$ 60.000,00', tone: 'pos' },
+        ],
+      },
+      mariana: {
+        id: 'mariana', name: 'Mariana Costa', first: 'Mariana', initials: 'MC', segment: 'Singular', since: '2021', sla: '1 h',
+        profile: 'moderado', assessed: '20/01/2026', email: 'mariana.costa@example.com', phone: '+55 (11) •••••-7810', city: 'São Paulo, SP · Brasil', account: 'Conta 1190-4 · Orla Invest', cash: 60000,
+        pos: [
+          { p: 'cobalto', cls: 'acoes', applied: 60000, v0: 72000 },
+          { p: 'farol', cls: 'acoes', applied: 17500, v0: 18900 },
+          { p: 'acoesg', cls: 'etf', applied: 36000, v0: 40600 },
+          { p: 'renda', cls: 'etf', applied: 19400, v0: 20000 },
+          { p: 'corp', cls: 'rf', applied: 36000, v0: 36800 },
+        ],
+        activity: [
+          { icon: 'msg', title: 'Mensagem para a assessoria', meta: 'ontem · e-mail', value: '', tone: '' },
+          { icon: 'out', title: 'Saque para conta nos EUA', meta: 'há 3 dias · final 4821', value: '− US$ 20.000,00', tone: 'neg' },
+        ],
+      },
+    };
+  }
+
+  value(pos, day) {
+    if (pos.p === 'cobalto' && day >= 12) {
+      return Math.round(pos.v0 * 0.465);
+    }
+    return pos.v0;
+  }
+
+  total(c, day) {
+    return c.pos.reduce((sum, x) => sum + this.value(x, day), 0) + c.cash;
+  }
+
+  classes() {
+    return [
+      { key: 'acoes', label: 'Ações' },
+      { key: 'etf', label: 'ETFs' },
+      { key: 'rf', label: 'Renda fixa' },
+      { key: 'caixa', label: 'Caixa' },
+    ];
+  }
+
+  classValue(c, key, day) {
+    if (key === 'caixa') {
+      return c.cash;
+    }
+    return c.pos.filter((x) => x.cls === key).reduce((sum, x) => sum + this.value(x, day), 0);
+  }
+
+  bars(p, n, color) {
+    const out = [];
+    for (let i = 0; i < 5; i += 1) {
+      out.push({ style: 'display: block; width: 6px; height: 12px; border-radius: 2px; background: ' + (i < n ? color : p.line) + ';' });
+    }
+    return out;
+  }
+
+  moment(c, day, caseOpen, fallback) {
+    const I = this.icons();
+    const total = this.total(c, day);
+    const prev = day > 0 ? this.total(c, day - 1) : total;
+    const drop = prev > 0 ? (prev - total) / prev : 0;
+    const prof = this.profiles()[c.profile];
+    if (fallback) {
+      return { variant: 'welcome', fallback: true, tone: 'neutral', kicker: 'Tudo em dia', icon: I.spark, title: 'Olá, ' + c.first + '. Sua conta está em dia.', body: 'Quando algo mudar na sua carteira, você vê aqui primeiro.', meta: '', action: null };
+    }
+    if (drop > 0.15) {
+      return { variant: 'portfolio_drop', tone: 'neg', kicker: 'Sua carteira hoje', icon: I.drop, title: c.first + ', sua carteira caiu ' + this.pct(drop * 100) + ' hoje', body: 'Cobalto Semicondutores recuou 53,5% no dia simulado ' + day + '. A Ana Paula já foi avisada e vai falar com você.', meta: '', action: { label: 'Ver carteira', to: 'carteira' } };
+    }
+    if (caseOpen) {
+      return { variant: 'case_open', tone: 'info', kicker: 'Atendimento em andamento', icon: I.inbox, title: 'Sua reclamação está com a Ana Paula', body: 'Como cliente ' + c.segment + ', você recebe resposta em até ' + c.sla + '.', meta: 'Protocolo 01A0E3A5-2F4C · aberto há 3 min', action: { label: 'Ver conversa', to: null } };
+    }
+    if (total >= 7500 && total < 10000) {
+      return { variant: 'segment_upgrade_near', tone: 'gold', kicker: 'Perto do Advance', icon: I.seg, title: c.first + ', faltam ' + this.money(10000 - total) + ' para o Advance', body: 'A partir de US$ 10 mil você vira cliente Advance, com resposta da assessoria em até 4 h.', meta: '', action: { label: 'Depositar', to: null } };
+    }
+    if (c.cash / total >= 0.5) {
+      return { variant: 'idle_cash', tone: 'info', kicker: 'Caixa parado', icon: I.cash, title: c.first + ', ' + Math.round((c.cash / total) * 100) + '% do seu patrimônio está em caixa', body: this.money(c.cash) + ' parados há 4 dias. Veja produtos para o seu perfil ' + prof.label.toLowerCase() + '.', meta: '', action: { label: 'Ver produtos', to: 'investir' } };
+    }
+    if (c.segment === 'Singular') {
+      return { variant: 'portfolio_review', tone: 'neutral', kicker: 'Sua assessora', icon: I.calendar, title: c.first + ', sua revisão de carteira está disponível', body: 'A Ana Paula separou 30 minutos nesta semana para revisar a carteira com você.', meta: '', action: { label: 'Conversar', to: null } };
+    }
+    return { variant: 'welcome', tone: 'neutral', kicker: 'Tudo em dia', icon: I.spark, title: 'Olá, ' + c.first + '. Sua conta está em dia.', body: 'Quando algo mudar na sua carteira, você vê aqui primeiro.', meta: '', action: null };
+  }
+
+  toneStyle(p, tone) {
+    const map = {
+      gold: [p.accSoft, p.acc, p.accText],
+      info: [p.infoSoft, p.info, p.info],
+      neg: [p.negSoft, p.neg, p.neg],
+      neutral: [p.s1, p.line, p.pos],
+    };
+    return map[tone] || map.neutral;
+  }
+
+  momentSection(p, c, m) {
+    const t = this.toneStyle(p, m.tone);
+    return {
+      id: 'moment', type: 'moment_card', variant: m.variant + (m.fallback ? ' (padrão)' : ''), span: 2,
+      tMoment: true,
+      cardStyle: 'box-sizing: border-box; border-radius: 16px; padding: 18px 16px; display: flex; flex-direction: column; gap: 10px; background: ' + t[0] + '; border: 1px solid ' + t[1] + ';',
+      iconWrap: 'width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: ' + p.s2 + '; color: ' + t[2] + ';',
+      kickerColor: t[2],
+      kicker: m.kicker, icon: m.icon, title: m.title, body: m.body,
+      hasMeta: !!m.meta, meta: m.meta,
+      hasAction: !!m.action,
+      actionLabel: m.action ? m.action.label : '',
+      act: () => { if (m.action && m.action.to) { this.setState({ screen: m.action.to }); } },
+    };
+  }
+
+  activityItems(p, c, day, caseOpen) {
+    const I = this.icons();
+    const items = [];
+    const delta = day >= 12 ? this.total(c, 12) - this.total(c, 11) : 0;
+    if (delta !== 0) {
+      items.push({ icon: 'drop', title: 'Reavaliação diária', meta: 'dia simulado 12 · Cobalto −53,5%', value: this.signed(delta), tone: 'neg' });
+    }
+    if (caseOpen) {
+      items.push({ icon: 'alert', title: 'Reclamação registrada', meta: 'há 3 min · protocolo 01A0E3A5-2F4C', value: '', tone: '' });
+    }
+    c.activity.forEach((a) => items.push(a));
+    return items.map((a) => ({
+      title: a.title, meta: a.meta, value: a.value, icon: I[a.icon],
+      circle: 'width: 38px; height: 38px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: ' + p.s2 + '; color: ' + (a.tone === 'neg' ? p.neg : (a.tone === 'pos' ? p.pos : p.ink2)) + ';',
+      valueStyle: 'font-size: 13.5px; font-weight: 700; white-space: nowrap; color: ' + (a.tone === 'neg' ? p.neg : (a.tone === 'pos' ? p.pos : p.ink)) + ';',
+    }));
+  }
+
+  homeSections(p, c, day, caseOpen, fallback, xray, hide) {
+    const I = this.icons();
+    const m = this.moment(c, day, caseOpen, fallback);
+    const total = this.total(c, day);
+    const delta = day > 0 ? total - this.total(c, day - 1) : 0;
+    const alloc = this.classes()
+      .map((k, j) => ({ label: k.label, v: this.classValue(c, k.key, day), color: p.alloc[j] }))
+      .filter((a) => a.v > 0)
+      .map((a) => ({
+        label: a.label,
+        pct: Math.round((a.v / total) * 100) + '%',
+        bar: 'display: block; height: 8px; flex: ' + a.v + ' 1 0; background: ' + a.color + ';',
+        dot: 'width: 9px; height: 9px; flex: none; border-radius: 50%; background: ' + a.color + ';',
+      }));
+    const act = [
+      { label: 'Depositar', icon: I.plus },
+      { label: 'Sacar', icon: I.bank },
+      { label: 'Mensagem', icon: I.msg },
+      { label: 'Reclamar', icon: I.alert },
+    ].map((a) => ({
+      label: a.label, icon: a.icon, go: () => {},
+      circle: 'width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: ' + p.s2 + '; color: ' + p.accText + ';',
+    }));
+    const items = this.activityItems(p, c, day, caseOpen);
+    const out = [
+      this.momentSection(p, c, m),
+      {
+        id: 'wealth', type: 'wealth_summary', variant: delta !== 0 ? 'with_day_change' : 'default', span: 1, tWealth: true,
+        total: hide ? 'US$ ••••••' : this.money(total),
+        cash: hide ? 'US$ ••••' : this.money(c.cash),
+        hasChange: delta !== 0,
+        change: this.signed(delta) + ' (' + this.signedPct((delta / (total - delta)) * 100) + ') no dia ' + day,
+        changeStyle: 'align-self: flex-start; font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 999px; background: ' + (delta < 0 ? p.negSoft : p.posSoft) + '; color: ' + (delta < 0 ? p.neg : p.pos) + ';',
+        alloc,
+      },
+      { id: 'actions', type: 'action_grid', variant: 'default', span: 1, tActions: true, items: act },
+      {
+        id: 'advisor', type: 'advisor_card', variant: c.segment === 'Singular' ? 'dedicated' : 'default', span: 1, tAdvisor: true,
+        kicker: c.segment === 'Singular' ? 'Sua assessora dedicada' : 'Sua assessora',
+        meta: 'Resposta em até ' + c.sla + ' · cliente ' + c.segment,
+      },
+    ];
+    if (fallback) {
+      if (xray) {
+        out.push({ id: 'activity', type: 'activity_list', variant: 'omitido', span: 1, tOmitted: true, title: 'activity · activity_list · omitido', body: 'O timeline-indexer não respondeu dentro do deadline. O bff tirou a seção e o resto da tela seguiu. No app real, nada aparece aqui.' });
+      }
+    } else {
+      out.push({
+        id: 'activity', type: 'activity_list', variant: items.length ? 'recent' : 'empty', span: 1, tActivity: true,
+        title: 'Atividade recente', items, empty: items.length === 0, emptyText: 'Suas movimentações aparecem aqui assim que acontecerem.',
+      });
+    }
+    return out;
+  }
+
+  productView(p, prodId, profileKey) {
+    const pr = this.products()[prodId];
+    const max = this.profiles()[profileKey].max;
+    return {
+      id: pr.id, name: pr.name, cls: pr.cls, risk: pr.risk, ret: pr.ret, min: pr.min,
+      over: pr.risk > max,
+      bars: this.bars(p, pr.risk, pr.risk > max ? p.warn : p.accText),
+      buy: () => this.setState({ screen: 'compra', product: pr.id }),
+    };
+  }
+
+  investSections(p, c, desktop) {
+    const prof = this.profiles()[c.profile];
+    const picks = { conservador: ['tbill', 'corp'], moderado: ['acoesg', 'corp'], arrojado: ['cobalto', 'acoesg'] }[c.profile];
+    const list = (ids) => ids.map((id) => this.productView(p, id, c.profile));
+    return [
+      { id: 'cash', type: 'invest_summary', variant: 'default', span: 2, tInvestSummary: true, cash: this.money(c.cash), profileChip: 'Perfil ' + prof.label.toLowerCase() },
+      {
+        id: 'highlights', type: 'product_rail', variant: 'profile_' + c.profile, span: 2, tRail: true,
+        title: 'Para o seu perfil ' + prof.label.toLowerCase(),
+        sub: 'Escolhidos pelo backend a partir do seu perfil de investidor.',
+        railGrid: 'display: grid; grid-template-columns: repeat(' + (desktop ? 2 : 1) + ', minmax(0, 1fr)); gap: 12px;',
+        products: list(picks),
+      },
+      { id: 'fixed_income', type: 'product_list', variant: 'fixed_income', span: 1, tList: true, title: 'Renda fixa', products: list(['tbill', 'corp']) },
+      { id: 'etfs', type: 'product_list', variant: 'etf', span: 1, tList: true, title: 'ETFs', products: list(['renda', 'acoesg']) },
+      { id: 'stocks', type: 'product_list', variant: 'stocks', span: 1, tList: true, title: 'Ações', products: list(['farol', 'cobalto']) },
+    ];
+  }
+
+  walletSections(p, c, day) {
+    const prods = this.products();
+    const total = this.total(c, day);
+    const delta = day > 0 ? total - this.total(c, day - 1) : 0;
+    const applied = c.pos.reduce((sum, x) => sum + x.applied, 0);
+    const invested = c.pos.reduce((sum, x) => sum + this.value(x, day), 0);
+    const gain = invested - applied;
+    const alloc = this.classes().map((k, j) => {
+      const v = this.classValue(c, k.key, day);
+      const share = total > 0 ? (v / total) * 100 : 0;
+      return {
+        label: k.label, value: this.money(v), pct: this.pct(share),
+        dot: 'width: 10px; height: 10px; flex: none; border-radius: 50%; background: ' + p.alloc[j] + ';',
+        fill: 'display: block; height: 6px; width: ' + share.toFixed(1) + '%; background: ' + p.alloc[j] + ';',
+      };
+    });
+    const out = [
+      {
+        id: 'summary', type: 'portfolio_summary', variant: delta !== 0 ? 'with_day_change' : 'default', span: 1, tPortfolio: true,
+        total: this.money(total),
+        hasChange: delta !== 0,
+        change: this.signed(delta) + ' (' + this.signedPct((delta / (total - delta)) * 100) + ') no dia ' + day,
+        changeStyle: 'align-self: flex-start; font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 999px; background: ' + (delta < 0 ? p.negSoft : p.posSoft) + '; color: ' + (delta < 0 ? p.neg : p.pos) + ';',
+        stats: [
+          { label: 'Valor aplicado', value: this.money(applied), style: 'font-size: 14.5px; font-weight: 700;' },
+          { label: 'Rentabilidade', value: this.signed(gain) + ' (' + this.signedPct((gain / applied) * 100) + ')', style: 'font-size: 14.5px; font-weight: 700; color: ' + (gain < 0 ? p.neg : p.pos) + ';' },
+          { label: 'Caixa', value: this.money(c.cash), style: 'font-size: 14.5px; font-weight: 700;' },
+          { label: 'Dia simulado', value: String(day), style: "font: 500 14.5px/1.2 'JetBrains Mono', monospace;" },
+        ],
+      },
+      { id: 'allocation', type: 'allocation_breakdown', variant: 'default', span: 1, tAllocation: true, alloc },
+    ];
+    [['acoes', 'Ações', 'stocks'], ['etf', 'ETFs', 'etf'], ['rf', 'Renda fixa', 'fixed_income']].forEach((k) => {
+      const rows = c.pos.filter((x) => x.cls === k[0]);
+      if (rows.length === 0) {
+        return;
+      }
+      const sub = rows.reduce((sum, x) => sum + this.value(x, day), 0);
+      out.push({
+        id: 'positions_' + k[2], type: 'position_list', variant: k[2], span: 1, tPositions: true,
+        title: k[1], subtotal: this.money(sub),
+        items: rows.map((x) => {
+          const v = this.value(x, day);
+          const r = ((v - x.applied) / x.applied) * 100;
+          return {
+            name: prods[x.p].name, applied: this.money(x.applied), value: this.money(v), ret: this.signedPct(r),
+            retStyle: 'font-size: 12.5px; font-weight: 700; color: ' + (r < 0 ? p.neg : p.pos) + ';',
+          };
+        }),
+      });
+    });
+    const items = this.activityItems(p, c, day, false);
+    out.push({ id: 'history', type: 'activity_list', variant: 'history', span: 1, tActivity: true, title: 'Movimentações', items, empty: items.length === 0, emptyText: 'Nenhuma movimentação ainda.' });
+    return out;
+  }
+
+  profileSections(p, c, desktop) {
+    const profs = this.profiles();
+    const levels = ['conservador', 'moderado', 'arrojado'].map((k) => {
+      const mine = k === c.profile;
+      return {
+        label: profs[k].label, desc: profs[k].desc, limit: 'Produtos até risco ' + profs[k].max, mine,
+        bars: this.bars(p, profs[k].max, mine ? p.acc : p.ink3),
+        style: 'box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 14px; ' + (mine ? 'border: 2px solid ' + p.acc + '; background: ' + p.accSoft + ';' : 'border: 1px solid ' + p.line + '; background: ' + p.s2 + ';'),
+      };
+    });
+    return [
+      { id: 'header', type: 'profile_header', variant: 'default', span: 2, tProfileHeader: true },
+      {
+        id: 'suitability', type: 'profile_scale', variant: c.profile, span: 2, tScale: true,
+        sub: 'Define os destaques de Investir e quando uma compra recebe aviso.',
+        levelsGrid: 'display: grid; grid-template-columns: repeat(' + (desktop ? 3 : 1) + ', minmax(0, 1fr)); gap: 10px;',
+        levels,
+        foot: 'Última avaliação em ' + c.assessed + '. Para refazer o questionário, fale com a sua assessora.',
+      },
+      {
+        id: 'registration', type: 'profile_field_list', variant: 'default', span: 1, tFields: true,
+        fields: [
+          { label: 'Nome', value: c.name },
+          { label: 'E-mail', value: c.email },
+          { label: 'Telefone', value: c.phone },
+          { label: 'Cidade', value: c.city },
+          { label: 'Segmento', value: c.segment },
+          { label: 'Cliente desde', value: c.since },
+        ],
+      },
+      { id: 'preferences', type: 'preference_list', variant: 'default', span: 1, tPrefs: true },
+      {
+        id: 'advisor', type: 'advisor_card', variant: c.segment === 'Singular' ? 'dedicated' : 'default', span: 2, tAdvisor: true,
+        kicker: c.segment === 'Singular' ? 'Sua assessora dedicada' : 'Sua assessora',
+        meta: 'Resposta em até ' + c.sla + ' · cliente ' + c.segment,
+      },
+    ];
+  }
+
+  catalogSections(p) {
+    const all = this.clients();
+    const f = all.fernanda;
+    const t = all.thiago;
+    const m = all.mariana;
+    const moments = [
+      this.momentSection(p, f, this.moment(f, 0, false, false)),
+      this.momentSection(p, t, this.moment(t, 0, false, false)),
+      this.momentSection(p, m, this.moment(m, 0, false, false)),
+      this.momentSection(p, m, this.moment(m, 0, true, false)),
+      this.momentSection(p, m, this.moment(m, 12, false, false)),
+      this.momentSection(p, f, this.moment(f, 0, false, true)),
+    ];
+    const home = this.homeSections(p, m, 12, false, false, false, false);
+    const homeT = this.homeSections(p, t, 0, false, false, false, false);
+    const inv = this.investSections(p, t, false);
+    const invF = this.investSections(p, f, false);
+    const wal = this.walletSections(p, m, 12);
+    const prof = this.profileSections(p, f, false);
+    return moments.concat([home[1], home[2], home[3], homeT[4], inv[0], inv[1], invF[4], wal[0], wal[1], wal[2]], prof.slice(0, 4));
+  }
+
+  renderVals() {
+    const P = this.props;
+    const S = this.state;
+    const I = this.icons();
+    const clientKey = S.client ?? P.client ?? 'thiago';
+    const screen = S.screen ?? P.screen ?? 'home';
+    const layout = P.layout ?? 'phone';
+    const theme = S.theme ?? P.theme ?? 'dark';
+    const xray = S.xray ?? this.on(P.xray);
+    const day = S.day ?? Number(P.day ?? 0);
+    const caseOpen = S.caseOpen ?? this.on(P.caseOpen);
+    const fallback = this.on(P.fallback);
+    const hide = S.hide ?? false;
+    const beta = S.beta ?? false;
+    const channel = S.channel ?? 'chat';
+    const productId = S.product ?? P.product ?? 'cobalto';
+
+    const p = this.palette(theme);
+    const c = this.clients()[clientKey];
+    const prof = this.profiles()[c.profile];
+    const isCatalog = screen === 'catalog';
+    const isDesktop = layout === 'desktop' || isCatalog;
+    const desktopShell = layout === 'desktop' && !isCatalog;
+    const sduiScreens = ['home', 'investir', 'carteira', 'perfil', 'catalog'];
+    const isSdui = sduiScreens.includes(screen);
+
+    let sections = [];
+    if (screen === 'home') { sections = this.homeSections(p, c, day, caseOpen, fallback, xray, hide); }
+    if (screen === 'investir') { sections = this.investSections(p, c, desktopShell); }
+    if (screen === 'carteira') { sections = this.walletSections(p, c, day); }
+    if (screen === 'perfil') { sections = this.profileSections(p, c, desktopShell); }
+    if (screen === 'catalog') { sections = this.catalogSections(p); }
+
+    const showChips = xray || isCatalog;
+    sections = sections.map((s) => Object.assign({}, s, {
+      chip: showChips,
+      label: s.id + ' · ' + s.type + ' · ' + s.variant,
+      wrap: 'display: flex; flex-direction: column; gap: 8px; min-width: 0;'
+        + (desktopShell ? ' grid-column: span ' + s.span + ';' : '')
+        + (xray && !isCatalog ? ' outline: 2px dashed ' + p.acc + '; outline-offset: 5px; border-radius: 16px;' : ''),
+    }));
+
+    const cols = isCatalog ? 3 : (desktopShell ? 2 : 1);
+    const gridStyle = 'display: grid; grid-template-columns: repeat(' + cols + ', minmax(0, 1fr)); align-items: start; gap: ' + (isCatalog ? '36px 28px' : (xray ? '28px' : (desktopShell ? '20px' : '16px'))) + ';';
+
+    const titles = {
+      home: ['Olá, ' + c.first, 'Cliente ' + c.segment + ' desde ' + c.since],
+      investir: ['Investir', 'Produtos fictícios · preço fixo da simulação'],
+      carteira: ['Carteira', 'Valores de mercado no dia simulado ' + day],
+      perfil: ['Perfil', 'Seus dados, seu perfil de investidor e suas preferências'],
+      catalog: ['Catálogo de componentes SDUI', 'Cada cartão é um type do registro do app. O rótulo mostra seção · type · variante. Um type novo pede código no app; uma variante nova de um type que já existe, não.'],
+    };
+    const tt = titles[screen] || ['', ''];
+
+    const tabDefs = [
+      { key: 'home', label: 'Início', icon: I.home },
+      { key: 'investir', label: 'Investir', icon: I.invest },
+      { key: 'carteira', label: 'Carteira', icon: I.wallet },
+      { key: 'perfil', label: 'Perfil', icon: I.user },
+    ];
+    const activeTab = screen === 'compra' || screen === 'compraOk' ? 'investir' : screen;
+    const tabs = tabDefs.map((t) => {
+      const on = t.key === activeTab;
+      return {
+        label: t.label, icon: t.icon, current: on ? 'page' : 'false',
+        go: () => this.setState({ screen: t.key }),
+        bottom: 'min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: none; background: none; font: ' + (on ? '700' : '600') + " 11.5px/1 'Manrope', sans-serif; cursor: pointer; color: " + (on ? p.accText : p.ink3) + ';',
+        side: 'min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: none; border-radius: 10px; cursor: pointer; font: 600 14px/1 ' + "'Manrope', sans-serif; " + (on ? 'background: ' + p.s2 + '; color: ' + p.accText + ';' : 'background: none; color: ' + p.ink2 + ';'),
+      };
+    });
+
+    const buyProduct = this.productView(p, productId, c.profile);
+    const buy = {
+      name: buyProduct.name, cls: buyProduct.cls, risk: buyProduct.risk, ret: buyProduct.ret, bars: buyProduct.bars, over: buyProduct.over,
+      amount: this.money(1000), cash: this.money(c.cash),
+      warn: 'Este produto tem risco ' + buyProduct.risk + '. Seu perfil é ' + prof.label.toLowerCase() + ', que vai até risco ' + prof.max + '. Você pode investir mesmo assim, e a sua assessora será avisada.',
+      chips: [
+        { label: 'US$ 250', on: false },
+        { label: 'US$ 1.000', on: true },
+        { label: 'Tudo', on: false },
+      ].map((ch) => ({
+        label: ch.label, pressed: ch.on ? 'true' : 'false',
+        style: "min-height: 40px; padding: 0 14px; border-radius: 999px; font: 700 13px/1 'Manrope', sans-serif; cursor: pointer; " + (ch.on ? 'border: 1px solid ' + p.acc + '; background: ' + p.accSoft + '; color: ' + p.accText + ';' : 'border: 1px solid ' + p.line + '; background: none; color: ' + p.ink2 + ';'),
+      })),
+    };
+
+    const stepStyle = (state) => {
+      if (state === 'feito') { return ['width: 12px; height: 12px; flex: none; border-radius: 50%; background: ' + p.pos + ';', p.pos]; }
+      if (state === 'agora') { return ['width: 12px; height: 12px; flex: none; box-sizing: border-box; border-radius: 50%; border: 3px solid ' + p.acc + ';', p.accText]; }
+      return ['width: 12px; height: 12px; flex: none; box-sizing: border-box; border-radius: 50%; border: 2px solid ' + p.line + ';', p.ink3];
+    };
+    const okSteps = [
+      ['Gravado na outbox do account-sim', 'feito'],
+      ['Publicado no RabbitMQ', 'feito'],
+      [buyProduct.over ? 'Regra: compra acima do perfil' : 'Avaliado pelas regras', 'agora'],
+      ['Na fila da assessoria', 'aguardando'],
+    ].map((s) => {
+      const st = stepStyle(s[1]);
+      return { label: s[0], state: s[1], dot: st[0], stateStyle: "font: 500 11.5px/1 'JetBrains Mono', monospace; color: " + st[1] + ';' };
+    });
+    const ok = {
+      protocol: '01A0E3B1-7C2D',
+      lead: this.money(1000) + ' em ' + buyProduct.name + '. O valor saiu do caixa e já aparece na sua carteira.',
+      routing: 'account.event.recorded · kind aplicacao · schema 3',
+      eventId: '01a0e3b1-7c2d-7f3e-9a1b-5c8e2d4f6a70',
+      steps: okSteps,
+    };
+
+    const channels = [['chat', 'Chat'], ['email', 'E-mail']].map((ch) => ({
+      label: ch[1], pressed: channel === ch[0] ? 'true' : 'false',
+      pick: () => this.setState({ channel: ch[0] }),
+      style: "min-height: 40px; border: none; border-radius: 9px; font: 700 13px/1 'Manrope', sans-serif; cursor: pointer; " + (channel === ch[0] ? 'background: ' + p.s1 + '; color: ' + p.ink + ';' : 'background: none; color: ' + p.ink3 + ';'),
+    }));
+
+    const cardBase = 'box-sizing: border-box; background: ' + p.s1 + '; border: 1px solid ' + p.line + '; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px;';
+    const slug = screen === 'catalog' ? 'home' : screen;
+    const sectionCount = sections.filter((s) => !s.tOmitted).length;
+
+    return {
+      p, c, day,
+      frameW: isDesktop ? '1440px' : '390px',
+      frameH: (P.frameH ?? (isDesktop ? 1300 : 1240)) + 'px',
+      isDesktop, isPhone: !isDesktop,
+      chrome: !isCatalog,
+      showSidebar: desktopShell,
+      showPhoneHeader: !isDesktop,
+      showTabbar: !isDesktop,
+      mainPad: isCatalog ? '48px 56px' : (desktopShell ? '32px 40px 40px' : '4px 16px 24px'),
+      showTitle: isSdui,
+      title: tt[0], subtitle: tt[1], titleSize: isCatalog ? '34px' : (desktopShell ? '30px' : '24px'),
+      xrayBanner: xray && isSdui && !isCatalog,
+      slug,
+      xrayMeta: 'slug ' + slug + ' · revision ' + (beta ? 'v2 (beta)' : 'v1') + ' · schema 1 · ' + sectionCount + ' seções' + (fallback ? ' · timeline fora do ar' : ''),
+      isSdui,
+      sections, gridStyle,
+      chipStyle: "align-self: flex-start; font: 500 11px/1.2 'JetBrains Mono', monospace; background: " + p.acc + '; color: ' + p.accInk + '; border-radius: 4px; padding: 4px 7px;',
+      card: cardBase,
+      rowCard: cardBase + ' flex-direction: row; align-items: center; gap: 14px;',
+      listRow: 'min-height: 64px; display: flex; align-items: center; gap: 12px; padding: 10px 0 0; border: none; border-top: 1px solid ' + p.line + '; background: none; color: ' + p.ink + '; cursor: pointer; font-family: inherit;',
+      warnPill: "align-self: flex-start; font: 700 11.5px/1 'Manrope', sans-serif; padding: 6px 10px; border-radius: 999px; background: " + p.warnSoft + '; color: ' + p.warnText + '; border: 1px solid ' + p.warn + ';',
+      primaryBtn: "align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; border: none; border-radius: 12px; background: " + p.acc + '; color: ' + p.accInk + "; font: 800 14px/1 'Manrope', sans-serif; cursor: pointer;",
+      secondaryBtn: "min-height: 44px; flex: none; padding: 0 16px; border: 1px solid " + p.line + '; border-radius: 12px; background: none; color: ' + p.ink + "; font: 700 13.5px/1 'Manrope', sans-serif; cursor: pointer;",
+      primaryFull: "min-height: 52px; border: none; border-radius: 14px; background: " + p.acc + '; color: ' + p.accInk + "; font: 800 15px/1 'Manrope', sans-serif; cursor: pointer;",
+      ghostFull: "min-height: 52px; border: none; border-radius: 14px; background: none; color: " + p.ink2 + "; font: 700 15px/1 'Manrope', sans-serif; cursor: pointer;",
+      secondaryFull: "min-height: 52px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; border: 1px solid " + p.line + '; border-radius: 14px; color: ' + p.ink + "; font: 700 15px/1 'Manrope', sans-serif; text-decoration: none;",
+      isCompra: screen === 'compra',
+      isCompraOk: screen === 'compraOk',
+      isLoading: screen === 'loading',
+      buy, ok, tabs, channels,
+      themeLabel: theme === 'dark' ? 'Tema claro' : 'Tema escuro',
+      themeName: theme === 'dark' ? 'Escuro' : 'Claro',
+      themeIcon: theme === 'dark' ? I.sun : I.moon,
+      toggleTheme: () => this.setState({ theme: theme === 'dark' ? 'light' : 'dark' }),
+      hideLabel: hide ? 'Mostrar valores' : 'Esconder valores',
+      toggleHide: () => this.setState({ hide: !hide }),
+      xrayPressed: xray ? 'true' : 'false',
+      xrayBtn: "min-height: 34px; padding: 0 10px; border-radius: 6px; font: 600 12px/1 'Albert Sans', sans-serif; cursor: pointer; " + (xray ? 'border: 1px solid #14191a; background: #14191a; color: #f5f3ec;' : 'border: 1px solid #d9d6cc; background: #fbfaf6; color: #14191a;'),
+      toggleXray: () => this.setState({ xray: !xray }),
+      advanceDay: () => this.setState({ day: day + 1 }),
+      switchClient: () => {
+        const order = ['fernanda', 'thiago', 'mariana'];
+        this.setState({ client: order[(order.indexOf(clientKey) + 1) % 3], screen: 'home' });
+      },
+      betaPressed: beta ? 'true' : 'false',
+      betaText: beta ? 'Ligado. Você recebe a revision v2 das telas antes dos outros clientes.' : 'Veja antes as novas versões das telas.',
+      toggleBeta: () => this.setState({ beta: !beta }),
+      switchStyle: 'width: 52px; height: 32px; flex: none; box-sizing: border-box; padding: 3px; border: none; border-radius: 999px; cursor: pointer; display: flex; align-items: center; justify-content: ' + (beta ? 'flex-end' : 'flex-start') + '; background: ' + (beta ? p.acc : p.s2) + ';',
+      knobStyle: 'display: block; width: 26px; height: 26px; border-radius: 50%; background: ' + (beta ? p.accInk : p.ink3) + ';',
+      goInvest: () => this.setState({ screen: 'investir' }),
+      goHome: () => this.setState({ screen: 'home' }),
+      confirm: () => this.setState({ screen: 'compraOk' }),
+      noop: () => {},
+    };
+  }
+}
+</script>
+</body>
+</html>

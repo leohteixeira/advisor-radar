@@ -1,0 +1,226 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-09-28T23:10:00Z"
+  },
+  "title": "Advisor Radar — SDUI no app do cliente",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 3300,
+      "title": "Seleção (desktop) — destaque e seção SDUI",
+      "is_interactive": true
+    },
+    "Selecao-SDUI-mobile.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 390,
+      "h": 2080,
+      "title": "Seleção (celular) — faixa e seção SDUI",
+      "is_interactive": true
+    },
+    "OrlaApp.dc.html": {
+      "x": 1990,
+      "y": 0,
+      "w": 390,
+      "h": 1240,
+      "title": "Protótipo navegável — Orla Invest",
+      "is_interactive": true
+    },
+    "Home-Fernanda.dc.html": {
+      "x": 0,
+      "y": 3800,
+      "w": 390,
+      "h": 1240,
+      "title": "Início · Fernanda · segment_upgrade_near"
+    },
+    "Home-Thiago.dc.html": {
+      "x": 470,
+      "y": 3800,
+      "w": 390,
+      "h": 1240,
+      "title": "Início · Thiago · idle_cash"
+    },
+    "Home-Mariana.dc.html": {
+      "x": 940,
+      "y": 3800,
+      "w": 390,
+      "h": 1240,
+      "title": "Início · Mariana · portfolio_review"
+    },
+    "Home-Thiago-RaioX.dc.html": {
+      "x": 1410,
+      "y": 3800,
+      "w": 390,
+      "h": 1400,
+      "title": "Início · Thiago · raio-X das seções"
+    },
+    "Home-Mariana-Caso.dc.html": {
+      "x": 1880,
+      "y": 3800,
+      "w": 390,
+      "h": 1240,
+      "title": "Início · Mariana · case_open (após reclamação)"
+    },
+    "Home-Mariana-Queda.dc.html": {
+      "x": 2350,
+      "y": 3800,
+      "w": 390,
+      "h": 1240,
+      "title": "Início · Mariana · portfolio_drop (dia 12)"
+    },
+    "Investir-Thiago.dc.html": {
+      "x": 0,
+      "y": 5580,
+      "w": 390,
+      "h": 1760,
+      "title": "Investir · Thiago (arrojado)"
+    },
+    "Compra-Fernanda-Aviso.dc.html": {
+      "x": 470,
+      "y": 5580,
+      "w": 390,
+      "h": 1120,
+      "title": "Compra · Fernanda · aviso de perfil"
+    },
+    "Compra-Enviada.dc.html": {
+      "x": 940,
+      "y": 5580,
+      "w": 390,
+      "h": 1120,
+      "title": "Compra enviada · bastidores"
+    },
+    "Carteira-Mariana.dc.html": {
+      "x": 1410,
+      "y": 5580,
+      "w": 390,
+      "h": 1960,
+      "title": "Carteira · Mariana · dia 12"
+    },
+    "Perfil-Fernanda.dc.html": {
+      "x": 1880,
+      "y": 5580,
+      "w": 390,
+      "h": 1960,
+      "title": "Perfil · Fernanda (conservadora)"
+    },
+    "Perfil-Thiago-Claro.dc.html": {
+      "x": 2350,
+      "y": 5580,
+      "w": 390,
+      "h": 1960,
+      "title": "Perfil · Thiago · tema claro"
+    },
+    "Investir-Desktop.dc.html": {
+      "x": 0,
+      "y": 7920,
+      "w": 1440,
+      "h": 1300,
+      "title": "Investir · desktop"
+    },
+    "Carteira-Desktop.dc.html": {
+      "x": 1520,
+      "y": 7920,
+      "w": 1440,
+      "h": 1300,
+      "title": "Carteira · desktop · dia 12"
+    },
+    "Perfil-Desktop.dc.html": {
+      "x": 3040,
+      "y": 7920,
+      "w": 1440,
+      "h": 1300,
+      "title": "Perfil · desktop"
+    },
+    "Home-Desktop-RaioX.dc.html": {
+      "x": 4560,
+      "y": 7920,
+      "w": 1440,
+      "h": 1300,
+      "title": "Início · desktop · raio-X"
+    },
+    "Catalogo.dc.html": {
+      "x": 0,
+      "y": 9600,
+      "w": 1440,
+      "h": 2900,
+      "title": "Catálogo de componentes SDUI"
+    },
+    "Home-Carregando.dc.html": {
+      "x": 1520,
+      "y": 9600,
+      "w": 390,
+      "h": 1000,
+      "title": "Estado · carregando a tela"
+    },
+    "Home-Falha-Isolada.dc.html": {
+      "x": 1990,
+      "y": 9600,
+      "w": 390,
+      "h": 1400,
+      "title": "Estado · falha isolada e variante padrão"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Selecao-SDUI-mobile.dc.html",
+    "OrlaApp.dc.html",
+    "Home-Fernanda.dc.html",
+    "Home-Thiago.dc.html",
+    "Home-Mariana.dc.html",
+    "Home-Thiago-RaioX.dc.html",
+    "Home-Mariana-Caso.dc.html",
+    "Home-Mariana-Queda.dc.html",
+    "Investir-Thiago.dc.html",
+    "Compra-Fernanda-Aviso.dc.html",
+    "Compra-Enviada.dc.html",
+    "Carteira-Mariana.dc.html",
+    "Perfil-Fernanda.dc.html",
+    "Perfil-Thiago-Claro.dc.html",
+    "Investir-Desktop.dc.html",
+    "Carteira-Desktop.dc.html",
+    "Perfil-Desktop.dc.html",
+    "Home-Desktop-RaioX.dc.html",
+    "Catalogo.dc.html",
+    "Home-Carregando.dc.html",
+    "Home-Falha-Isolada.dc.html"
+  ],
+  "notes": {
+    "rowHomes": {
+      "x": 0,
+      "y": 3560,
+      "text": "Três clientes, três inícios — o mesmo app",
+      "kind": "title1",
+      "maxW": 2740
+    },
+    "rowScreens": {
+      "x": 0,
+      "y": 5340,
+      "text": "Investir, compra, Carteira e Perfil (celular)",
+      "kind": "title1",
+      "maxW": 2740
+    },
+    "rowDesktop": {
+      "x": 0,
+      "y": 7680,
+      "text": "Desktop",
+      "kind": "title1",
+      "maxW": 6000
+    },
+    "rowCatalog": {
+      "x": 0,
+      "y": 9360,
+      "text": "Catálogo e estados",
+      "kind": "title1",
+      "maxW": 2380
+    }
+  },
+  "designSystems": []
+}
