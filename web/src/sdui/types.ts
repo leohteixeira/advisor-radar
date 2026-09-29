@@ -206,3 +206,58 @@ export interface PositionListProps {
   applied_label: string;
   items: PositionItem[];
 }
+
+export interface ProfileHeaderProps {
+  initials: string;
+  name: string;
+  subtitle: string;
+  /** Left out when the registration read failed. */
+  account?: string;
+}
+
+/** One investor profile level; `max_risk` comes from advisory, never from web. */
+export interface ProfileLevel {
+  key: string;
+  label: string;
+  description: string;
+  limit: string;
+  max_risk: number;
+  current: boolean;
+}
+
+export interface ProfileScaleProps {
+  title: string;
+  subtitle: string;
+  current_label: string;
+  levels: ProfileLevel[];
+  footer: string;
+}
+
+export interface ProfileField {
+  label: string;
+  value: string;
+}
+
+export interface ProfileFieldListProps {
+  title: string;
+  fields: ProfileField[];
+  footnote: string;
+}
+
+export interface PreferenceOption {
+  value: string;
+  label: string;
+}
+
+export interface PreferenceListProps {
+  title: string;
+  theme: { label: string; hint: string };
+  channel: { label: string; hint: string; value: string; options: PreferenceOption[] };
+  beta: { label: string; hint: string; enabled: boolean };
+}
+
+/** What the preferences route stores: `channel` is `chat` or `email`. */
+export interface Preferences {
+  channel: string;
+  beta: boolean;
+}

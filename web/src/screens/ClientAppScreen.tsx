@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { apiPath } from '../api/base';
 import { ApiError } from '../api/bff';
-import { dollars, fetchPOVHome, formatCents, postPOV, protocolOf, type POVHome } from '../api/pov';
+import { dollars, fetchPOVHome, formatCents, postPOV, protocolOf, putPreferences, type POVHome } from '../api/pov';
 import { fetchScreen } from '../sdui/api';
 import { SduiContext, type SduiContextValue } from '../sdui/context';
 import { findPurchase, type PurchaseTarget } from '../sdui/purchase';
 import { SduiError, SduiLoading, SduiScreen } from '../sdui/SduiScreen';
-import type { Screen, Slug } from '../sdui/types';
+import type { Preferences, Screen, Slug } from '../sdui/types';
 import { purchaseSteps, PurchaseForm, PurchaseSent, type Bought, type LiveStep } from './PurchasePanel';
 
 interface Sent {
@@ -40,8 +40,7 @@ type Panel = 'home' | 'deposit' | 'withdraw' | 'complaint' | 'message' | 'done' 
 type ScreenView = { slug: Slug; status: 'loading' } | { slug: Slug; status: 'ready'; screen: Screen } | { slug: Slug; status: 'error' };
 
 /**
- * Client app tabs. Início, Investir, and Carteira render their SDUI screens;
- * Perfil still renders the home with a note until its story.
+ * Client app tabs; each renders the SDUI screen of the same slug.
  */
 const TABS = [
   { slug: 'home', label: 'Início', icon: 'home' },
@@ -51,11 +50,6 @@ const TABS = [
 ] as const;
 
 type TabSlug = (typeof TABS)[number]['slug'];
-
-/** The screen a tab fetches. */
-function screenSlug(tab: TabSlug): Slug {
-  return tab === 'perfil' ? 'home' : tab;
-}
 
 const PRESETS = [
   {
@@ -234,7 +228,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const [sent, setSent] = useState<Sent | null>(null);
   const [steps, setSteps] = useState<LiveStep[]>([]);
   const [extraChat, setExtraChat] = useState<ChatRow[]>([]);
-  const slug = screenSlug(tab);
+  const slug: Slug = tab;
   const [view, setView] = useState<ScreenView>({ slug, status: 'loading' });
   const [reload, setReload] = useState(0);
   const [purchase, setPurchase] = useState<PurchaseTarget | null>(null);
@@ -252,7 +246,6 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const buyKey = useRef<{ cents: number; key: string } | null>(null);
   const form = useRef(0);
   const inFlight = useRef(false);
-  const navNote = tab === 'perfil' ? (TABS.find((item) => item.slug === tab)?.label ?? null) : null;
   const liveEvent = panel === 'done' ? sent?.event_id : panel === 'bought' ? bought?.event_id : undefined;
 
   useEffect(() => {
@@ -351,6 +344,14 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
       storeLightTheme(next);
       return next;
     });
+  }
+
+  // Perfil stores the channel and beta flag, then re-reads the screen; the
+  // current screen stays on view until the re-read settles. A failed write
+  // rejects so the preference list keeps the previous value.
+  async function savePreferences(next: Preferences) {
+    await putPreferences(id, next);
+    setReload((value) => value + 1);
   }
 
   function pickNav(next: TabSlug) {
@@ -474,13 +475,16 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const complaintText = preset >= 0 ? PRESETS[preset]?.text ?? '' : text.trim();
   const ready = view.slug === slug && view.status === 'ready' ? view.screen : null;
   // Raio-X only has something to outline while an SDUI screen of its own tab is on view.
-  const sduiOnView = showScreen && ready !== null && navNote === null;
+  const sduiOnView = showScreen && ready !== null;
   const sdui: SduiContextValue = {
     onNavigate: pickNav,
     masked: hide,
     onToggleMask: () => setHide((value) => !value),
     onPanel: open,
     onPurchase: openPurchase,
+    light,
+    onToggleTheme: toggleTheme,
+    onPreferences: savePreferences,
   };
   let area = <SduiLoading />;
   if (ready) {
@@ -538,12 +542,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
                 <PurchaseForm key={purchase.product.product_id} target={purchase} notice={notice} busy={buying} masked={hide} onBack={() => open('home')} onSubmit={(value) => void buy(purchase, value)} />
               ) : null}
               {panel === 'bought' && bought ? <PurchaseSent bought={bought} steps={steps} masked={hide} onHome={() => pickNav('home')} /> : null}
-              {showScreen ? (
-                <>
-                  <NavNote name={navNote} />
-                  {area}
-                </>
-              ) : null}
+              {showScreen ? area : null}
             </div>
             <p className="pov-app__fine">Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</p>
           </div>
@@ -982,13 +981,3 @@ function MoneyPanel({
   );
 }
 
-function NavNote({ name }: { name: string | null }) {
-  if (!name) {
-    return null;
-  }
-  return (
-    <p role="status" className="pov-app__nav-note">
-      {name} não entra nesta simulação. O caminho é Depositar, Sacar, Mensagem ou Reclamar.
-    </p>
-  );
-}

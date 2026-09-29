@@ -149,3 +149,22 @@ export async function postPOV(
   });
   return read<POVAccepted>(res);
 }
+
+/** One client's stored contact channel (`chat` or `email`) and beta flag. */
+export interface POVPreferences {
+  channel: string;
+  beta: boolean;
+}
+
+/**
+ * Stores one client's preferences. The PUT is idempotent and takes no
+ * Idempotency-Key; a non-2xx answer throws ApiError.
+ */
+export async function putPreferences(id: string, prefs: POVPreferences): Promise<POVPreferences> {
+  const res = await fetch(apiPath(`v1/client-pov/customers/${encodeURIComponent(id)}/preferences`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel: prefs.channel, beta: prefs.beta }),
+  });
+  return read<POVPreferences>(res);
+}

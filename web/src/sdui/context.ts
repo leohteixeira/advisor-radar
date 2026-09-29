@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { Slug } from './types';
+import type { Preferences, Slug } from './types';
 
 /** Coded panels a panel action opens without a product. */
 export type OpenPanel = 'deposit' | 'withdraw' | 'message' | 'complaint';
@@ -14,6 +14,14 @@ export interface SduiContextValue {
   onPanel: (panel: OpenPanel) => void;
   /** Opens the coded purchase form for one product of the screen on view. */
   onPurchase: (productID: string) => void;
+  /** The local theme: true when light. It lives in the browser only. */
+  light: boolean;
+  onToggleTheme: () => void;
+  /**
+   * Stores the channel and beta flag, then reloads the screen. It rejects
+   * when the write fails, so the caller keeps the previous value.
+   */
+  onPreferences: (next: Preferences) => Promise<void>;
 }
 
 export const SduiContext = createContext<SduiContextValue | null>(null);

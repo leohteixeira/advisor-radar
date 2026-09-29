@@ -7,8 +7,12 @@ import { InvestSummary } from './components/InvestSummary';
 import { MomentCard } from './components/MomentCard';
 import { PortfolioSummary } from './components/PortfolioSummary';
 import { PositionList } from './components/PositionList';
+import { PreferenceList } from './components/PreferenceList';
 import { ProductList } from './components/ProductList';
 import { ProductRail } from './components/ProductRail';
+import { ProfileFieldList } from './components/ProfileFieldList';
+import { ProfileHeader } from './components/ProfileHeader';
+import { ProfileScale } from './components/ProfileScale';
 import { WealthSummary } from './components/WealthSummary';
 
 /** What every registered component receives from the envelope. */
@@ -34,6 +38,10 @@ const REGISTRY: Readonly<Record<string, ComponentType<SduiComponentProps>>> = {
   portfolio_summary: PortfolioSummary,
   allocation_breakdown: AllocationBreakdown,
   position_list: PositionList,
+  profile_header: ProfileHeader,
+  profile_scale: ProfileScale,
+  profile_field_list: ProfileFieldList,
+  preference_list: PreferenceList,
 };
 
 /** Finds the component for a type, or undefined when web does not know it. */
