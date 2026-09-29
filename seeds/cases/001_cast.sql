@@ -1,5 +1,17 @@
 -- Cases cast: Paulo, Ana Beatriz, Patrícia with Ana's operator id snapshotted.
 
+-- A reseed returns the cases to this cast. Every case opened from the app
+-- during a walk is resolved first, so each client's home leaves case_open, and
+-- the upserts below never reopen a cast case next to another open case of the
+-- same customer (cases_one_open_per_customer_idx).
+UPDATE cases SET state = 'Resolvido'
+WHERE state <> 'Resolvido'
+  AND id NOT IN (
+    '01a0e3a4-9a44-76e9-9644-aec5cdb8be90',
+    '01a0e3a4-9a44-76f2-9263-f892becdd32a',
+    '01a0e3a4-9a44-76fb-9df9-047e1974d2f6'
+  );
+
 INSERT INTO cases (id, customer_id, signal_id, advisor_id, state, sla_total_minutes, escalated, opened_at)
 VALUES ('01a0e3a4-9a44-76e9-9644-aec5cdb8be90', '01a0e3a4-9a44-7571-9cd6-29d603ed75d1', '01a0e3a4-9a44-764a-90c1-20f5fd0964b8', '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', 'Em atendimento', 120, false, now() - interval '25 minutes')
 ON CONFLICT (id) DO UPDATE SET
