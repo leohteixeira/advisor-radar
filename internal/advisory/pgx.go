@@ -88,6 +88,29 @@ WHERE customer_id = $1::uuid`
 	return nil
 }
 
+// SaveRevaluation upserts the customer's latest revaluation. The stored row
+// is replaced only by one from another epoch (a reseed starts the days over)
+// or from a later day, so a redelivered older day is ignored.
+func (t *pgxTx) SaveRevaluation(ctx context.Context, customerID string, rev Revaluation) error {
+	const q = `
+INSERT INTO revaluation (customer_id, epoch, sim_day, amount_cents, before_cents, product_id, product_change_bp, source_event_id)
+VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::uuid)
+ON CONFLICT (customer_id) DO UPDATE SET
+    epoch = EXCLUDED.epoch,
+    sim_day = EXCLUDED.sim_day,
+    amount_cents = EXCLUDED.amount_cents,
+    before_cents = EXCLUDED.before_cents,
+    product_id = EXCLUDED.product_id,
+    product_change_bp = EXCLUDED.product_change_bp,
+    source_event_id = EXCLUDED.source_event_id
+WHERE revaluation.epoch <> EXCLUDED.epoch OR EXCLUDED.sim_day > revaluation.sim_day`
+	_, err := t.tx.Exec(ctx, q, customerID, rev.Epoch, rev.SimDay, rev.AmountCents, rev.BeforeCents, rev.ProductID, rev.ProductChangeBP, rev.SourceEventID)
+	if err != nil {
+		return fmt.Errorf("advisory pgx: save revaluation: %w", err)
+	}
+	return nil
+}
+
 // InsertAlert stages one alert row. Conflicts on id are ignored. A zero
 // SourceSchemaVersion is stored as NULL.
 func (t *pgxTx) InsertAlert(ctx context.Context, row AlertRow) error {

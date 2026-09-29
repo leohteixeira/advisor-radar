@@ -9,12 +9,15 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
+
 	"github.com/leohteixeira/advisor-radar/internal/outbox"
 )
 
 // Memory is an in-process POV store seeded with DemoSeed: the product
-// catalog, and the cash, positions, registration, and preferences of the
-// three accounts.
+// catalog, the cash, positions, registration, and preferences of the three
+// accounts, and the simulated day. One mutex serializes every transaction, so
+// an advance and a command never interleave.
 type Memory struct {
 	mu            sync.Mutex
 	products      []Product
@@ -25,6 +28,8 @@ type Memory struct {
 	keys          map[string]string
 	outbox        []outbox.Row
 	published     map[string]struct{}
+	sim           SimState
+	advances      map[string]AdvanceResult
 }
 
 // NewMemory returns a store holding DemoSeed.
@@ -36,13 +41,16 @@ func NewMemory() *Memory {
 		preferences:   map[string]Preferences{},
 		keys:          map[string]string{},
 		published:     map[string]struct{}{},
+		advances:      map[string]AdvanceResult{},
 	}
 	m.reset(DemoSeed())
 	return m
 }
 
-// reset replaces the seeded rows. Stored slices are never mutated in place,
-// so a shallow snapshot in WithTx is enough to roll back.
+// reset replaces the seeded rows, returns the simulated day to 0 in a new
+// epoch, and forgets every advance key, so a key from before the reseed
+// advances again instead of replaying the old epoch. Stored slices are never mutated in place, so a shallow snapshot in
+// WithTx is enough to roll back.
 func (m *Memory) reset(seed Seed) {
 	m.products = slices.Clone(seed.Products)
 	for _, account := range seed.Accounts {
@@ -51,6 +59,8 @@ func (m *Memory) reset(seed Seed) {
 		m.registrations[account.CustomerID] = account.Registration
 		m.preferences[account.CustomerID] = seedPreferences(account.Preferences)
 	}
+	m.sim = SimState{Day: 0, Epoch: uuid.NewString()}
+	m.advances = map[string]AdvanceResult{}
 }
 
 // WithTx runs fn under the store lock. An error leaves the previous snapshot.
@@ -68,6 +78,8 @@ func (m *Memory) WithTx(ctx context.Context, fn func(Tx) error) error {
 	snapPreferences := maps.Clone(m.preferences)
 	snapKeys := maps.Clone(m.keys)
 	snapOut := slices.Clone(m.outbox)
+	snapSim := m.sim
+	snapAdvances := maps.Clone(m.advances)
 
 	tx := &memoryTx{store: m}
 	if err := fn(tx); err != nil {
@@ -78,6 +90,8 @@ func (m *Memory) WithTx(ctx context.Context, fn func(Tx) error) error {
 		m.preferences = snapPreferences
 		m.keys = snapKeys
 		m.outbox = snapOut
+		m.sim = snapSim
+		m.advances = snapAdvances
 		return err
 	}
 	return nil
@@ -119,7 +133,7 @@ func (t *memoryTx) GetAccount(ctx context.Context, customerID string) (Account, 
 	if !ok {
 		return Account{}, false, nil
 	}
-	account, err := aggregate(customerID, cash, valuePositions(t.store.positions[customerID], SeedDay))
+	account, err := valueAccount(customerID, cash, t.store.positions[customerID], t.store.sim.Day)
 	if err != nil {
 		return Account{}, false, err
 	}
@@ -243,5 +257,52 @@ func (t *memoryTx) ResetPOV(ctx context.Context, seed Seed) error {
 		return err
 	}
 	t.store.reset(seed)
+	return nil
+}
+
+// LockSimulation returns the stored day; WithTx already holds the store lock.
+func (t *memoryTx) LockSimulation(ctx context.Context) (SimState, error) {
+	return t.Simulation(ctx)
+}
+
+func (t *memoryTx) Simulation(ctx context.Context) (SimState, error) {
+	if err := ctx.Err(); err != nil {
+		return SimState{}, err
+	}
+	return t.store.sim, nil
+}
+
+func (t *memoryTx) SetSimDay(ctx context.Context, day int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t.store.sim.Day = day
+	return nil
+}
+
+// CustomerIDs lists the POV accounts in byte-wise id order.
+func (t *memoryTx) CustomerIDs(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(t.store.cash)), nil
+}
+
+func (t *memoryTx) LookupAdvance(ctx context.Context, key string) (AdvanceResult, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return AdvanceResult{}, false, err
+	}
+	result, ok := t.store.advances[key]
+	result.EventIDs = slices.Clone(result.EventIDs)
+	return result, ok, nil
+}
+
+func (t *memoryTx) SaveAdvance(ctx context.Context, key string, result AdvanceResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	result.EventIDs = slices.Clone(result.EventIDs)
+	result.Replay = false
+	t.store.advances[key] = result
 	return nil
 }

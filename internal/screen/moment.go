@@ -3,6 +3,7 @@ package screen
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,11 +11,12 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/event"
 )
 
-// Home moment variants, in the catalog's priority order after portfolio_drop
-// (story 13). Advisory evaluates every condition and cases supplies the open
-// case; a variant here only checks the fact it is given and formats copy. It
-// compares no threshold and computes no segmentation.
+// Home moment variants, in the catalog's priority order. Advisory evaluates
+// every condition and cases supplies the open case; a variant here only
+// checks the fact it is given and formats copy. It compares no threshold and
+// computes no segmentation.
 const (
+	momentPortfolioDrop      = "portfolio_drop"
 	momentCaseOpen           = "case_open"
 	momentSegmentUpgraded    = "segment_upgraded"
 	momentSegmentUpgradeNear = "segment_upgrade_near"
@@ -29,6 +31,11 @@ const (
 // variants that show a segment SLA match only when cat has one for it.
 func momentVariants(cat Catalog) map[variantKey]registered {
 	return map[variantKey]registered{
+		{typeMomentCard, momentPortfolioDrop}: {
+			variant: portfolioDropMoment{},
+			needs:   []Source{SourceMoments, SourceAdvisory},
+			uses:    []Source{SourceCatalog},
+		},
 		{typeMomentCard, momentCaseOpen}: {
 			variant: caseOpenMoment{cat: cat},
 			needs:   []Source{SourceCases, SourceAdvisory},
@@ -218,7 +225,8 @@ func (idleCashMoment) Build(s Snapshot, c Catalog) (Component, error) {
 }
 
 // idleDays is the whole days since the customer's most recent account
-// movement on the timeline, at least 1. It is false when the timeline failed
+// movement on the timeline, at least 1. A reavaliacao is the market moving,
+// not the client, so it does not count. It is false when the timeline failed
 // or holds no account movement.
 func idleDays(s Snapshot) (int, bool) {
 	if !s.Activity.OK() {
@@ -227,7 +235,7 @@ func idleDays(s Snapshot) (int, bool) {
 	var newest time.Duration
 	found := false
 	for _, row := range s.Activity.Value {
-		if row.Source != event.NameAccountEventRecorded {
+		if row.Source != event.NameAccountEventRecorded || row.Kind == kindReavaliacao {
 			continue
 		}
 		age := row.Age
@@ -242,6 +250,54 @@ func idleDays(s Snapshot) (int, bool) {
 		return 0, false
 	}
 	return max(int(newest/(24*time.Hour)), 1), true
+}
+
+// portfolioDropMoment matches the portfolio_drop fact advisory reports for
+// the current simulated day: a loss above 15% of the patrimony. Its copy
+// names the product that moved the most and the advisor, so it matches only
+// when the catalog names that product and advisory has the advisor; the
+// catalog is optional, and without it the section falls through. The copy
+// says the product fell ("recuou"), so a product that rose the most falls
+// through too.
+type portfolioDropMoment struct{}
+
+func (portfolioDropMoment) Matches(s Snapshot) bool {
+	m := s.Moments.Value
+	if !s.Moments.OK() || !m.PortfolioDrop || m.DropProductBP >= 0 || !hasAdvisor(s) {
+		return false
+	}
+	return productNames(s)[s.Moments.Value.DropProductID] != ""
+}
+
+func (portfolioDropMoment) Build(s Snapshot, c Catalog) (Component, error) {
+	if !s.Moments.OK() || !s.Moments.Value.PortfolioDrop {
+		return Component{}, errors.New("screen: portfolio_drop needs the drop fact")
+	}
+	m := s.Moments.Value
+	if m.DropProductBP >= 0 {
+		return Component{}, fmt.Errorf("screen: portfolio_drop product change %d bp is not a fall", m.DropProductBP)
+	}
+	f := customerFields(s)
+	if f.AdvisorName == "" {
+		return Component{}, errors.New("screen: portfolio_drop needs the advisor")
+	}
+	f.Product = productNames(s)[m.DropProductID]
+	if f.Product == "" {
+		return Component{}, fmt.Errorf("screen: portfolio_drop product %q is not in the catalog", m.DropProductID)
+	}
+	f.DropPct = PercentBP(m.DropBP)
+	f.ProductPct = PercentBP(m.DropProductBP)
+	f.Day = strconv.Itoa(m.DropDay)
+	cp := copier{cat: c, typ: typeMomentCard, variant: momentPortfolioDrop, fields: f}
+	props := MomentCard{
+		Kicker: cp.text("kicker"),
+		Title:  cp.text("title"),
+		Body:   cp.text("body"),
+		Tone:   ToneNeg,
+		Icon:   "drop",
+		Action: &Action{Type: ActionNavigate, Label: cp.text("action"), Target: ScreenCarteira},
+	}
+	return momentComponent(momentPortfolioDrop, props, cp.err)
 }
 
 // portfolioReviewMoment matches a Singular client, as advisory reports it,

@@ -50,6 +50,11 @@ type Entry struct {
 	// that are not account events, and for an account event whose amount is
 	// not a number or is past 2^53 cents.
 	AmountCents int64 `json:"amount_cents,omitempty"`
+	// SimDay is the simulated day a reavaliacao revalued the account to, and
+	// ProductChangeBP the signed day change in basis points of the product
+	// that moved it the most. Both are 0 on every other row.
+	SimDay          int `json:"sim_day,omitempty"`
+	ProductChangeBP int `json:"product_change_bp,omitempty"`
 }
 
 // Index is an in-memory customer timeline. It has no database.
@@ -193,12 +198,14 @@ func entryFromEvent(name, eventID, customerID string, at time.Time, schemaVersio
 	switch name {
 	case event.NameAccountEventRecorded:
 		var p struct {
-			Kind      string `json:"kind"`
-			Title     string `json:"title"`
-			Text      string `json:"text"`
-			Meta      string `json:"meta"`
-			Amount    any    `json:"amount"`
-			ProductID string `json:"product_id"`
+			Kind            string `json:"kind"`
+			Title           string `json:"title"`
+			Text            string `json:"text"`
+			Meta            string `json:"meta"`
+			Amount          any    `json:"amount"`
+			ProductID       string `json:"product_id"`
+			SimDay          int    `json:"sim_day"`
+			ProductChangeBP int    `json:"product_change_bp"`
 		}
 		if err := json.Unmarshal(payload, &p); err != nil {
 			return Entry{}, fmt.Errorf("timeline: decode account payload: %w", err)
@@ -212,15 +219,17 @@ func entryFromEvent(name, eventID, customerID string, at time.Time, schemaVersio
 			title = kindTitle(kind)
 		}
 		return Entry{
-			EventID:     eventID,
-			CustomerID:  customerID,
-			Kind:        kind,
-			Title:       title,
-			Text:        p.Text,
-			Meta:        p.Meta,
-			Ago:         ago,
-			ProductID:   p.ProductID,
-			AmountCents: amountCents(p.Amount, schemaVersion),
+			EventID:         eventID,
+			CustomerID:      customerID,
+			Kind:            kind,
+			Title:           title,
+			Text:            p.Text,
+			Meta:            p.Meta,
+			Ago:             ago,
+			ProductID:       p.ProductID,
+			AmountCents:     amountCents(p.Amount, schemaVersion),
+			SimDay:          p.SimDay,
+			ProductChangeBP: p.ProductChangeBP,
 		}, nil
 	case event.NameMessageReceived, event.NameMessageTriaged:
 		var p struct {

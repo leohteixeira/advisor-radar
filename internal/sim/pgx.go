@@ -14,10 +14,13 @@ import (
 )
 
 // PGXStore is the PostgreSQL Store over pov_account, pov_position,
-// pov_product, pov_registration, pov_preferences, pov_idempotency, and outbox
-// in the account_sim database. Every writer takes a transaction-scoped advisory lock
-// per customer, so commands for one customer run one at a time and a
-// concurrent request with the same key becomes a replay.
+// pov_product, pov_registration, pov_preferences, pov_idempotency, pov_sim,
+// pov_advance, and outbox in the account_sim database. Every writer takes a
+// transaction-scoped advisory lock per customer, so commands for one customer
+// run one at a time and a concurrent request with the same key becomes a
+// replay. An advance or a reset first takes the simulation lock, a second
+// lock space, and only then the customer locks in byte-wise id order, so it
+// cannot deadlock with a command, which takes one customer lock only.
 type PGXStore struct {
 	pool *pgxpool.Pool
 }
@@ -59,6 +62,10 @@ var _ Tx = (*pgxTx)(nil)
 // per-customer locks cannot collide with single-key locks or other spaces.
 const customerLockSpace int32 = 0x504F5641 // "POVA"
 
+// simLockSpace is the first key of the simulation lock, distinct from
+// customerLockSpace.
+const simLockSpace int32 = 0x504F5653 // "POVS"
+
 // lock serializes writers for one customer until the transaction ends.
 func (t *pgxTx) lock(ctx context.Context, customerID string) error {
 	if _, err := t.tx.Exec(ctx,
@@ -69,30 +76,39 @@ func (t *pgxTx) lock(ctx context.Context, customerID string) error {
 	return nil
 }
 
-// GetAccount reads the cash and values the positions at the current day. It
-// takes the customer lock first, so cash and positions come from one state
-// that no command is changing.
+// GetAccount reads the cash and values the positions at the stored
+// simulated day. It takes the customer lock first, so cash and positions come
+// from one state that no command is changing, and an advance holding that
+// lock has committed its day before the day is read.
 func (t *pgxTx) GetAccount(ctx context.Context, customerID string) (Account, bool, error) {
 	if err := t.lock(ctx, customerID); err != nil {
 		return Account{}, false, err
 	}
 	const q = `
-SELECT caixa
+SELECT caixa, (SELECT sim_day FROM pov_sim WHERE id)
 FROM pov_account
 WHERE customer_id = $1`
-	var cash int64
-	err := t.tx.QueryRow(ctx, q, customerID).Scan(&cash)
+	var (
+		cash int64
+		day  *int32
+	)
+	err := t.tx.QueryRow(ctx, q, customerID).Scan(&cash, &day)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Account{}, false, nil
 	}
 	if err != nil {
 		return Account{}, false, fmt.Errorf("sim pgx: get account: %w", err)
 	}
+	// Migration 006 seeds the simulation row; pricing without it would value
+	// every position at day 0 while AdvanceDay and Simulation fail.
+	if day == nil {
+		return Account{}, false, errors.New("sim pgx: get account: the simulation row is missing")
+	}
 	positions, err := t.listPositions(ctx, customerID)
 	if err != nil {
 		return Account{}, false, err
 	}
-	account, err := aggregate(customerID, cash, positions)
+	account, err := valueAccount(customerID, cash, positions, int(*day))
 	if err != nil {
 		return Account{}, false, err
 	}
@@ -132,7 +148,7 @@ ON CONFLICT (customer_id, product_id) DO UPDATE SET
 	return nil
 }
 
-// listPositions returns the customer's positions valued at the current day.
+// listPositions returns the customer's positions, not yet valued.
 func (t *pgxTx) listPositions(ctx context.Context, customerID string) ([]Position, error) {
 	const q = `
 SELECT p.product_id, pr.asset_class, p.units_cents, p.applied_cents
@@ -151,7 +167,7 @@ WHERE p.customer_id = $1`
 	if err != nil {
 		return nil, fmt.Errorf("sim pgx: scan positions: %w", err)
 	}
-	return valuePositions(positions, SeedDay), nil
+	return positions, nil
 }
 
 // ListProducts returns the catalog ordered by risk and then id.
@@ -284,12 +300,17 @@ VALUES ($1::uuid, $2, $3::jsonb)`
 	return nil
 }
 
-// ResetPOV upserts the catalog, then restores each seeded account: cash,
-// exactly the seeded positions, registration, and preferences. It sorts the accounts by
-// customer_id (byte-wise string order, not by lock hash) and takes each
-// customer lock in that order, so it serializes with Apply and two resets
-// acquire their locks in the same order and cannot deadlock.
+// ResetPOV takes the simulation lock, upserts the catalog, then restores
+// each seeded account: cash, exactly the seeded positions, registration, and
+// preferences. It sorts the accounts by customer_id (byte-wise string order, not by lock
+// hash) and takes each customer lock in that order, so it serializes with
+// Apply and AdvanceDay, and two resets acquire their locks in the same order
+// and cannot deadlock. Last, it returns the simulated day to 0 in a new epoch
+// and clears the advance keys of the old one.
 func (t *pgxTx) ResetPOV(ctx context.Context, seed Seed) error {
+	if err := t.lockSimulation(ctx); err != nil {
+		return err
+	}
 	const upsertProduct = `
 INSERT INTO pov_product (id, name, asset_class, risk, return_label, minimum_cents)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -318,6 +339,18 @@ ON CONFLICT (id) DO UPDATE SET
 		if err := t.resetAccount(ctx, account); err != nil {
 			return err
 		}
+	}
+	const resetSim = `
+INSERT INTO pov_sim (id, sim_day, epoch)
+VALUES (true, 0, gen_random_uuid())
+ON CONFLICT (id) DO UPDATE SET sim_day = 0, epoch = EXCLUDED.epoch`
+	if _, err := t.tx.Exec(ctx, resetSim); err != nil {
+		return fmt.Errorf("sim pgx: reset simulation: %w", err)
+	}
+	// The advance keys belong to the old epoch: a replay would answer its day
+	// and ids while the stored day is 0.
+	if _, err := t.tx.Exec(ctx, `DELETE FROM pov_advance`); err != nil {
+		return fmt.Errorf("sim pgx: clear advance keys: %w", err)
 	}
 	return nil
 }
@@ -361,6 +394,96 @@ ON CONFLICT (customer_id) DO UPDATE SET
 	}
 	if err := t.PutPreferences(ctx, account.CustomerID, seedPreferences(account.Preferences)); err != nil {
 		return fmt.Errorf("sim pgx: reset preferences: %w", err)
+	}
+	return nil
+}
+
+// lockSimulation serializes advances and resets until the transaction ends.
+func (t *pgxTx) lockSimulation(ctx context.Context) error {
+	if _, err := t.tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1::int4, 0)`, simLockSpace); err != nil {
+		return fmt.Errorf("sim pgx: lock simulation: %w", err)
+	}
+	return nil
+}
+
+// LockSimulation takes the simulation lock and reads the stored day.
+func (t *pgxTx) LockSimulation(ctx context.Context) (SimState, error) {
+	if err := t.lockSimulation(ctx); err != nil {
+		return SimState{}, err
+	}
+	return t.Simulation(ctx)
+}
+
+// Simulation reads the stored day and epoch. Migration 006 seeds the row, so
+// its absence is an error.
+func (t *pgxTx) Simulation(ctx context.Context) (SimState, error) {
+	const q = `
+SELECT sim_day, epoch::text
+FROM pov_sim
+WHERE id`
+	var (
+		state SimState
+		day   int32
+	)
+	err := t.tx.QueryRow(ctx, q).Scan(&day, &state.Epoch)
+	if err != nil {
+		return SimState{}, fmt.Errorf("sim pgx: read simulation: %w", err)
+	}
+	state.Day = int(day)
+	return state, nil
+}
+
+func (t *pgxTx) SetSimDay(ctx context.Context, day int) error {
+	tag, err := t.tx.Exec(ctx, `UPDATE pov_sim SET sim_day = $1 WHERE id`, day)
+	if err != nil {
+		return fmt.Errorf("sim pgx: set simulated day: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("sim pgx: set simulated day: %d rows updated, want 1", tag.RowsAffected())
+	}
+	return nil
+}
+
+// CustomerIDs lists every POV account in byte-wise id order (COLLATE "C"),
+// the order the customer locks are taken in.
+func (t *pgxTx) CustomerIDs(ctx context.Context) ([]string, error) {
+	rows, err := t.tx.Query(ctx, `SELECT customer_id FROM pov_account ORDER BY customer_id COLLATE "C"`)
+	if err != nil {
+		return nil, fmt.Errorf("sim pgx: list customers: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("sim pgx: scan customers: %w", err)
+	}
+	return ids, nil
+}
+
+func (t *pgxTx) LookupAdvance(ctx context.Context, key string) (AdvanceResult, bool, error) {
+	const q = `
+SELECT sim_day, event_ids
+FROM pov_advance
+WHERE idem_key = $1`
+	var (
+		result AdvanceResult
+		day    int32
+	)
+	err := t.tx.QueryRow(ctx, q, key).Scan(&day, &result.EventIDs)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AdvanceResult{}, false, nil
+	}
+	if err != nil {
+		return AdvanceResult{}, false, fmt.Errorf("sim pgx: lookup advance: %w", err)
+	}
+	result.SimDay = int(day)
+	return result, true, nil
+}
+
+func (t *pgxTx) SaveAdvance(ctx context.Context, key string, result AdvanceResult) error {
+	const q = `
+INSERT INTO pov_advance (idem_key, sim_day, event_ids)
+VALUES ($1, $2, $3)`
+	if _, err := t.tx.Exec(ctx, q, key, result.SimDay, result.EventIDs); err != nil {
+		return fmt.Errorf("sim pgx: save advance: %w", err)
 	}
 	return nil
 }

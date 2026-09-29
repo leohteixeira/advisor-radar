@@ -34,6 +34,8 @@ const (
 
 	// ScreenInvestir is the navigate target of the Investir screen.
 	ScreenInvestir = "investir"
+	// ScreenCarteira is the navigate target of the Carteira screen.
+	ScreenCarteira = "carteira"
 )
 
 // ReasonBuildError is the omitted reason for a section whose variant failed to
@@ -98,14 +100,17 @@ type MomentCard struct {
 }
 
 // WealthSummary is the wealth_summary props. CashCents is the cash a form may
-// need as a number.
+// need as a number. DayChange and DayChangeTone are the day-change pill, set
+// only by the with_day_change variant.
 type WealthSummary struct {
-	TotalLabel string          `json:"total_label"`
-	Total      string          `json:"total"`
-	CashLabel  string          `json:"cash_label"`
-	Cash       string          `json:"cash"`
-	CashCents  int64           `json:"cash_cents"`
-	Allocation []AllocationRow `json:"allocation"`
+	TotalLabel    string          `json:"total_label"`
+	Total         string          `json:"total"`
+	DayChange     string          `json:"day_change,omitempty"`
+	DayChangeTone string          `json:"day_change_tone,omitempty"`
+	CashLabel     string          `json:"cash_label"`
+	Cash          string          `json:"cash"`
+	CashCents     int64           `json:"cash_cents"`
+	Allocation    []AllocationRow `json:"allocation"`
 }
 
 // AllocationRow is one asset class of an allocation. BarWidth is 0–100.
@@ -181,10 +186,14 @@ type ProductList struct {
 
 // PortfolioSummary is the portfolio_summary props: total patrimony and the
 // stats "Valor aplicado", "Rentabilidade", "Caixa", and "Dia simulado".
+// DayChange and DayChangeTone are the day-change pill, set only by the
+// with_day_change variant.
 type PortfolioSummary struct {
-	TotalLabel string `json:"total_label"`
-	Total      string `json:"total"`
-	Stats      []Stat `json:"stats"`
+	TotalLabel    string `json:"total_label"`
+	Total         string `json:"total"`
+	DayChange     string `json:"day_change,omitempty"`
+	DayChangeTone string `json:"day_change_tone,omitempty"`
+	Stats         []Stat `json:"stats"`
 }
 
 // Stat is one labelled value. Tone is set only for a signed value. Money

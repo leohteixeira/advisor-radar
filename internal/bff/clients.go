@@ -54,7 +54,10 @@ type Customer struct {
 }
 
 // MomentFacts are the home moment conditions advisory evaluated for one
-// customer. Money is integer USD cents.
+// customer. Money is integer USD cents. With PortfolioDrop, DropBP is the
+// loss in positive basis points, DropProductID and DropProductBP the product
+// that moved the most and its signed day change, and DropDay the simulated
+// day.
 type MomentFacts struct {
 	SegmentUpgraded    bool
 	UpgradedSegment    string
@@ -65,6 +68,10 @@ type MomentFacts struct {
 	PatrimonyCents     int64
 	PortfolioReview    bool
 	PortfolioDrop      bool
+	DropBP             int
+	DropProductID      string
+	DropProductBP      int
+	DropDay            int
 }
 
 // InvestorProfile is one customer's advisory investor profile. MaxRiskTable
@@ -217,6 +224,10 @@ func (g *GRPCQueue) MomentFacts(ctx context.Context, customerID string) (MomentF
 		PatrimonyCents:     res.GetPatrimonyCents(),
 		PortfolioReview:    res.GetPortfolioReview(),
 		PortfolioDrop:      res.GetPortfolioDrop(),
+		DropBP:             int(res.GetDropBp()),
+		DropProductID:      res.GetDropProductId(),
+		DropProductBP:      int(res.GetDropProductBp()),
+		DropDay:            int(res.GetDropDay()),
 	}, nil
 }
 

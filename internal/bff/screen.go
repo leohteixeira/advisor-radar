@@ -138,6 +138,8 @@ func (a screenAccounts) Account(ctx context.Context, customerID string) (screen.
 		Cash:      account.Caixa,
 		Patrimony: account.Patrimony,
 		Positions: positions,
+		SimDay:    account.SimDay,
+		DayChange: account.DayChange,
 	}, nil
 }
 
@@ -175,13 +177,15 @@ func (a screenActivity) Activity(ctx context.Context, customerID string) ([]scre
 	out := make([]screen.Activity, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, screen.Activity{
-			Kind:        row.Kind,
-			Title:       row.Title,
-			Source:      row.Source,
-			OccurredAt:  row.OccurredAt,
-			Age:         time.Duration(max(row.Ago, 0)) * time.Minute,
-			ProductID:   row.ProductID,
-			AmountCents: row.AmountCents,
+			Kind:            row.Kind,
+			Title:           row.Title,
+			Source:          row.Source,
+			OccurredAt:      row.OccurredAt,
+			Age:             time.Duration(max(row.Ago, 0)) * time.Minute,
+			ProductID:       row.ProductID,
+			AmountCents:     row.AmountCents,
+			SimDay:          row.SimDay,
+			ProductChangeBP: row.ProductChangeBP,
 		})
 	}
 	return out, nil
@@ -208,6 +212,10 @@ func (m screenMoments) Moments(ctx context.Context, customerID string) (screen.M
 		PatrimonyCents:     f.PatrimonyCents,
 		PortfolioReview:    f.PortfolioReview,
 		PortfolioDrop:      f.PortfolioDrop,
+		DropBP:             f.DropBP,
+		DropProductID:      f.DropProductID,
+		DropProductBP:      f.DropProductBP,
+		DropDay:            f.DropDay,
 	}, nil
 }
 

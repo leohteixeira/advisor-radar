@@ -24,7 +24,11 @@ func carteiraVariants() map[variantKey]registered {
 	account := []Source{SourceAccount}
 	positions := []Source{SourceAccount, SourceCatalog}
 	return map[variantKey]registered{
-		{typePortfolioSummary, "default"}:    {variant: portfolioSummary{}, needs: account},
+		{typePortfolioSummary, "default"}: {variant: portfolioSummary{}, needs: account},
+		{typePortfolioSummary, variantWithDayChange}: {
+			variant: dayChangeVariant{base: portfolioSummary{}, typ: typePortfolioSummary},
+			needs:   account,
+		},
 		{typeAllocationBreakdown, "default"}: {variant: allocationBreakdown{}, needs: account},
 		{typePositionList, "stocks"}:         {variant: positionList{name: "stocks", class: classAcoes}, needs: positions},
 		{typePositionList, "etf"}:            {variant: positionList{name: "etf", class: classETFs}, needs: positions},

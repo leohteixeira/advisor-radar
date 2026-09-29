@@ -34,7 +34,7 @@ func NewAccountSim(client accountv1.AccountServiceClient) *AccountSim {
 	return &AccountSim{client: client, timeout: DefaultAccountTimeout}
 }
 
-// Balance reads patrimony and cash through GetAccount. The caller's deadline
+// Balance reads patrimony, cash, and the simulated day through GetAccount. The caller's deadline
 // travels with the call; without one, the call gets DefaultAccountTimeout.
 // Every failure, NotFound included, is returned wrapped with its status.
 func (a *AccountSim) Balance(ctx context.Context, customerID string) (Balance, error) {
@@ -47,7 +47,11 @@ func (a *AccountSim) Balance(ctx context.Context, customerID string) (Balance, e
 	if err != nil {
 		return Balance{}, fmt.Errorf("advisory: account-sim get account: %w", err)
 	}
-	return Balance{PatrimonyCents: res.GetPatrimonyCents(), CashCents: res.GetCaixaCents()}, nil
+	return Balance{
+		PatrimonyCents: res.GetPatrimonyCents(),
+		CashCents:      res.GetCaixaCents(),
+		SimDay:         int(res.GetSimDay()),
+	}, nil
 }
 
 // noAccountSim is the AccountReader of an advisory without account-sim: every

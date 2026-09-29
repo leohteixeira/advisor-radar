@@ -115,7 +115,10 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-var _ ProductCatalog = (*grpcPOV)(nil)
+var (
+	_ ProductCatalog   = (*grpcPOV)(nil)
+	_ SimulationSource = (*grpcPOV)(nil)
+)
 
 // grpcPOV is the POVSource over account/v1. It maps account-sim statuses back
 // to the sim sentinels that the POV handlers translate to HTTP.
@@ -211,6 +214,37 @@ func (p *grpcPOV) UpdatePreferences(ctx context.Context, customerID string, pref
 	return POVPreferences{Channel: res.GetChannel(), Beta: res.GetBeta()}, nil
 }
 
+// AdvanceDay advances the global simulated day through account-sim, which
+// writes the day and one reavaliacao outbox row per account in one
+// transaction. The key makes a retry safe; Retried is set when the
+// interceptor sent the command more than once.
+func (p *grpcPOV) AdvanceDay(ctx context.Context, idempotencyKey, commandID string) (AdvanceResult, error) {
+	var retried bool
+	ctx = withRetryMark(ctx, &retried)
+	reply, err := p.client.AdvanceDay(ctx, &accountv1.AdvanceDayRequest{
+		IdempotencyKey: idempotencyKey,
+		CommandId:      commandID,
+	})
+	if err != nil {
+		return AdvanceResult{}, accountSimError("advance day", err)
+	}
+	return AdvanceResult{
+		SimDay:   int(reply.GetSimDay()),
+		EventIDs: reply.GetEventIds(),
+		Replay:   reply.GetReplay(),
+		Retried:  retried,
+	}, nil
+}
+
+// SimDay reads the current global simulated day.
+func (p *grpcPOV) SimDay(ctx context.Context) (int, error) {
+	res, err := p.client.GetSimulation(ctx, &accountv1.GetSimulationRequest{})
+	if err != nil {
+		return 0, accountSimError("get simulation", err)
+	}
+	return int(res.GetSimDay()), nil
+}
+
 // Apply sends one client command to account-sim, which writes the account
 // state and the outbox row in one transaction. Retried is set when the
 // interceptor sent the command more than once.
@@ -300,5 +334,7 @@ func povFromProto(a *accountv1.Account) POVAccount {
 		Caixa:      a.GetCaixaCents(),
 		Patrimony:  a.GetPatrimonyCents(),
 		Positions:  positions,
+		SimDay:     int(a.GetSimDay()),
+		DayChange:  a.GetDayChangeCents(),
 	}
 }

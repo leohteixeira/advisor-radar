@@ -30,6 +30,10 @@ const activityLimit = 5
 func builtinVariants(cat Catalog) map[variantKey]registered {
 	variants := map[variantKey]registered{
 		{typeWealthSummary, "default"}: {variant: defaultWealth{}, needs: []Source{SourceAccount}},
+		{typeWealthSummary, variantWithDayChange}: {
+			variant: dayChangeVariant{base: defaultWealth{}, typ: typeWealthSummary},
+			needs:   []Source{SourceAccount},
+		},
 		{typeActionGrid, "default"}:    {variant: defaultActions{}},
 		{typeAdvisorCard, "dedicated"}: {variant: advisorCard{name: "dedicated", singularOnly: true}, needs: []Source{SourceAdvisory}},
 		{typeAdvisorCard, "default"}:   {variant: advisorCard{name: "default"}, needs: []Source{SourceAdvisory}},

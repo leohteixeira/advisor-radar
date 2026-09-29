@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -142,15 +143,18 @@ WHERE customer_id = $1`
 	return p, nil
 }
 
-// MomentBook is the book side of the moment facts: the customer's segment
-// and the segment alerts raised since a given time.
+// MomentBook is the book side of the moment facts: the customer's segment,
+// the segment alerts raised since a given time, and the latest revaluation
+// (nil when there is none).
 type MomentBook struct {
-	Segment string
-	Alerts  []SegmentAlert
+	Segment     string
+	Alerts      []SegmentAlert
+	Revaluation *Revaluation
 }
 
-// MomentBook reads the customer's segment and the segmento alerts raised
-// after since, newest first, from one read-only repeatable-read snapshot, so
+// MomentBook reads the customer's segment, the segmento alerts raised after
+// since, newest first, and the latest revaluation, from one read-only
+// repeatable-read snapshot, so
 // a concurrent Apply is seen whole or not at all. A customer outside the book
 // wraps ErrUnknownCustomer.
 func (r *BookReader) MomentBook(ctx context.Context, customerID string, since time.Time) (MomentBook, error) {
@@ -167,7 +171,7 @@ func (r *BookReader) MomentBook(ctx context.Context, customerID string, since ti
 	return mb, nil
 }
 
-// readMomentBook runs the two MomentBook reads inside tx.
+// readMomentBook runs the three MomentBook reads inside tx.
 func readMomentBook(ctx context.Context, tx pgx.Tx, customerID string, since time.Time) (MomentBook, error) {
 	const segmentQ = `SELECT segment FROM book WHERE customer_id = $1`
 	var mb MomentBook
@@ -201,7 +205,32 @@ ORDER BY raised_at DESC`
 	if err := rows.Err(); err != nil {
 		return MomentBook{}, fmt.Errorf("advisory: moment book alerts: %w", err)
 	}
+	rev, err := readRevaluation(ctx, tx, customerID)
+	if err != nil {
+		return MomentBook{}, err
+	}
+	mb.Revaluation = rev
 	return mb, nil
+}
+
+// readRevaluation reads the customer's latest revaluation, nil when there is
+// none.
+func readRevaluation(ctx context.Context, tx pgx.Tx, customerID string) (*Revaluation, error) {
+	const q = `
+SELECT epoch::text, sim_day, amount_cents, before_cents, product_id, product_change_bp, source_event_id::text
+FROM revaluation
+WHERE customer_id = $1`
+	var rev Revaluation
+	err := tx.QueryRow(ctx, q, customerID).Scan(
+		&rev.Epoch, &rev.SimDay, &rev.AmountCents, &rev.BeforeCents, &rev.ProductID, &rev.ProductChangeBP, &rev.SourceEventID,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("advisory: moment book revaluation: %w", err)
+	}
+	return &rev, nil
 }
 
 // FactsReader reads the book rows behind GetInvestorProfile and
@@ -413,7 +442,13 @@ func (s *GRPCServer) GetMomentFacts(ctx context.Context, req *advisoryv1.GetMome
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "moment facts: %v", err)
 	}
-	f := EvaluateMoments(MomentInput{Segment: mb.Segment, Balance: balance, Alerts: mb.Alerts, Now: now})
+	f := EvaluateMoments(MomentInput{
+		Segment:     mb.Segment,
+		Balance:     balance,
+		Alerts:      mb.Alerts,
+		Revaluation: mb.Revaluation,
+		Now:         now,
+	})
 	return &advisoryv1.MomentFacts{
 		SegmentUpgraded:    f.SegmentUpgraded,
 		UpgradedSegment:    f.UpgradedSegment,
@@ -424,5 +459,14 @@ func (s *GRPCServer) GetMomentFacts(ctx context.Context, req *advisoryv1.GetMome
 		PatrimonyCents:     f.PatrimonyCents,
 		PortfolioReview:    f.PortfolioReview,
 		PortfolioDrop:      f.PortfolioDrop,
+		DropBp:             clampInt32(f.DropBP),
+		DropProductId:      f.DropProductID,
+		DropProductBp:      clampInt32(f.DropProductBP),
+		DropDay:            clampInt32(f.DropDay),
 	}, nil
+}
+
+// clampInt32 narrows n to the int32 range of the proto fields.
+func clampInt32(n int) int32 {
+	return int32(max(min(n, math.MaxInt32), math.MinInt32))
 }

@@ -127,6 +127,20 @@ func ChangePercent(delta, base int64) string {
 	return sign + groupDigits(whole.String()) + "," + frac.String() + "%"
 }
 
+// PercentBP formats basis points as an unsigned percentage with one decimal,
+// rounded half away from zero: 1551 and −1551 both read "15,5%", and 5350
+// reads "53,5%". The caller's copy says which way it moved.
+func PercentBP(bp int) string {
+	tenths := (magnitude(int64(bp)) + 5) / 10
+	return groupThousands(tenths/10) + "," + strconv.FormatUint(tenths%10, 10) + "%"
+}
+
+// ChangePercentBP formats signed basis points as ChangePercent does:
+// "−53,5%" with U+2212, "+2,0%", and "0,0%" for zero.
+func ChangePercentBP(bp int) string {
+	return ChangePercent(int64(bp), 10_000)
+}
+
 // SignTone is the tone of a signed amount: TonePos above zero, ToneNeg below,
 // and ToneNeutral at zero.
 func SignTone(n int64) string {

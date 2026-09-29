@@ -111,6 +111,18 @@ message MomentFacts {
   int64 patrimony_cents = 7;
   // portfolio_review is true when the book segment is Singular.
   bool portfolio_review = 8;
-  // portfolio_drop is always false until the drop moment is evaluated.
+  // portfolio_drop is true when the client's latest reavaliacao is for the
+  // current simulated day (account-sim's stored day) and lost more than 15%
+  // of the patrimony before it.
   bool portfolio_drop = 9;
+  // drop_bp is that loss in basis points of the patrimony before it,
+  // positive (1551 is 15.51%); 0 without portfolio_drop.
+  int32 drop_bp = 10;
+  // drop_product_id is the product that moved most in that revaluation.
+  string drop_product_id = 11;
+  // drop_product_bp is that product's price change on the day in basis
+  // points, signed (-5350 is -53.5%).
+  int32 drop_product_bp = 12;
+  // drop_day is the simulated day of the drop.
+  int32 drop_day = 13;
 }

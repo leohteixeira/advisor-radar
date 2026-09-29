@@ -34,6 +34,11 @@ const (
 // into a product position (schema version 3).
 const KindAplicacao = "aplicacao"
 
+// KindReavaliacao is the account.event.recorded kind of a daily revaluation:
+// the patrimony change of one account when the simulated day advances
+// (schema version 3).
+const KindReavaliacao = "reavaliacao"
+
 // MaxAmountCents caps one deposit, withdrawal, or purchase at USD 1 billion,
 // which keeps balances in int64 cents far from overflow. A larger amount is
 // ErrAmount.
@@ -58,9 +63,11 @@ const (
 
 // Account is one POV account in integer USD cents (ADR 0010). Acoes, ETFs,
 // and RendaFixa are aggregates: the sum of the market values of the positions
-// of that class at the current simulated day. Caixa is the cash balance, the
-// only stored amount on the account itself. Positions are the positions the
-// aggregates were summed from, valued at the same day.
+// of that class at SimDay, the current simulated day. Caixa is the cash
+// balance, the only stored amount on the account itself. Positions are the
+// positions the aggregates were summed from, valued at the same day.
+// DayChange is the patrimony at SimDay minus the patrimony of the same
+// holdings at SimDay − 1, and 0 on day 0.
 type Account struct {
 	CustomerID string
 	Acoes      int64
@@ -68,6 +75,8 @@ type Account struct {
 	RendaFixa  int64
 	Caixa      int64
 	Positions  []Position
+	SimDay     int
+	DayChange  int64
 }
 
 // Assets is the patrimony: positions at market value plus cash.
@@ -155,7 +164,7 @@ func DemoSeed() Seed {
 			AssetClass:   class,
 			UnitsCents:   unitsCents,
 			AppliedCents: appliedCents,
-			ValueCents:   Value(productID, unitsCents, SeedDay),
+			ValueCents:   Value(productID, unitsCents, 0),
 		}
 	}
 	return Seed{
@@ -219,12 +228,12 @@ func DemoSeed() Seed {
 }
 
 // POVSeed is the three demo accounts on day 0, as class aggregates of
-// DemoSeed with their positions valued at SeedDay.
+// DemoSeed with their positions valued on day 0.
 func POVSeed() []Account {
 	seed := DemoSeed()
 	accounts := make([]Account, 0, len(seed.Accounts))
 	for _, account := range seed.Accounts {
-		valued, err := aggregate(account.CustomerID, account.CashCents, valuePositions(account.Positions, SeedDay))
+		valued, err := valueAccount(account.CustomerID, account.CashCents, account.Positions, 0)
 		if err != nil {
 			// DemoSeed takes every class from Catalog, so this is a programming error.
 			panic(err)
@@ -253,6 +262,31 @@ func aggregate(customerID string, cashCents int64, positions []Position) (Accoun
 		}
 	}
 	return account, nil
+}
+
+// valueAccount values positions at day and aggregates them with cash into the
+// account as read on that day, with its day change.
+func valueAccount(customerID string, cashCents int64, positions []Position, day int) (Account, error) {
+	account, err := aggregate(customerID, cashCents, valuePositions(positions, day))
+	if err != nil {
+		return Account{}, err
+	}
+	account.SimDay = day
+	account.DayChange = dayChange(account.Positions, day)
+	return account, nil
+}
+
+// dayChange is the change in market value of positions from day − 1 to day;
+// cash does not move with the day. Day 0 has no day before it, so it is 0.
+func dayChange(positions []Position, day int) int64 {
+	if day <= 0 {
+		return 0
+	}
+	var change int64
+	for _, position := range positions {
+		change += Value(position.ProductID, position.UnitsCents, day) - Value(position.ProductID, position.UnitsCents, day-1)
+	}
+	return change
 }
 
 // valuePositions returns a copy of positions valued at day, ordered by class
@@ -311,15 +345,23 @@ type Result struct {
 
 // Tx is one account-sim transaction. A returned error rolls the whole tx back.
 //
-// GetAccount returns cash, the positions valued at the current day, and their
-// class aggregates. PutAccount writes only the cash (Caixa); positions are
-// untouched. AddPosition adds delta's UnitsCents and AppliedCents to the
-// customer's position in delta.ProductID, creating it when absent.
-// GetPreferences reports ok false for an unknown customer; a known customer
-// without a stored row reads DefaultPreferences. Like GetAccount, it
-// serializes with the customer's other writers. PutPreferences stores them
-// for a known customer. ResetPOV restores the catalog, cash, positions,
-// registration, and preferences of seed.
+// GetAccount returns cash, the positions valued at the stored simulated day,
+// their class aggregates, and the day change. PutAccount writes only the cash
+// (Caixa); positions are untouched. AddPosition adds delta's UnitsCents and
+// AppliedCents to the customer's position in delta.ProductID, creating it
+// when absent. GetPreferences reports ok false for an unknown customer; a
+// known customer without a stored row reads DefaultPreferences. Like
+// GetAccount, it serializes with the customer's other writers.
+// PutPreferences stores them for a known customer. ResetPOV restores the
+// catalog, cash, positions, registration, and preferences of seed, and
+// returns the simulated day to 0 with a new epoch.
+//
+// The simulation methods serve AdvanceDay. LockSimulation serializes with
+// every other advance and reset until the transaction ends and returns the
+// stored day; it is taken before any customer lock. Simulation reads the
+// stored day without locking. CustomerIDs lists every POV account in
+// byte-wise id order, the order customer locks are taken in. LookupAdvance
+// and SaveAdvance keep the reply of each advance idempotency key.
 type Tx interface {
 	GetAccount(ctx context.Context, customerID string) (Account, bool, error)
 	PutAccount(ctx context.Context, account Account) error
@@ -332,6 +374,12 @@ type Tx interface {
 	SaveKey(ctx context.Context, customerID, key, eventID string) error
 	InsertOutbox(ctx context.Context, row outbox.Row) error
 	ResetPOV(ctx context.Context, seed Seed) error
+	LockSimulation(ctx context.Context) (SimState, error)
+	Simulation(ctx context.Context) (SimState, error)
+	SetSimDay(ctx context.Context, day int) error
+	CustomerIDs(ctx context.Context) ([]string, error)
+	LookupAdvance(ctx context.Context, key string) (AdvanceResult, bool, error)
+	SaveAdvance(ctx context.Context, key string, result AdvanceResult) error
 }
 
 // Store runs one function inside a transaction.
@@ -439,7 +487,7 @@ func Apply(ctx context.Context, store Store, cmd Command) (Result, error) {
 }
 
 // Reseed restores the catalog and the three POV accounts (cash, positions,
-// registration, and preferences) to DemoSeed.
+// registration, and preferences) to DemoSeed, and the simulated day to 0.
 func Reseed(ctx context.Context, store Store) error {
 	if store == nil {
 		return fmt.Errorf("sim: store is required")
@@ -519,8 +567,8 @@ func build(account Account, products []Product, cmd Command) (plan, error) {
 // buildPurchase validates a purchase in the contract order: an unknown
 // product, then the amount (1 to MaxAmountCents and at least the product
 // minimum), then the cash. It moves the amount from cash into units of the
-// product at the current day's price, so patrimony is unchanged: before and
-// after are both the patrimony before the purchase.
+// product at the price of the account's simulated day, so patrimony is
+// unchanged: before and after are both the patrimony before the purchase.
 func buildPurchase(account Account, products []Product, cmd Command) (plan, error) {
 	i := slices.IndexFunc(products, func(p Product) bool { return p.ID == cmd.ProductID })
 	if cmd.ProductID == "" || i < 0 {
@@ -551,7 +599,7 @@ func buildPurchase(account Account, products []Product, cmd Command) (plan, erro
 	p.position = &Position{
 		ProductID:    product.ID,
 		AssetClass:   product.AssetClass,
-		UnitsCents:   Units(product.ID, cmd.Amount, SeedDay),
+		UnitsCents:   Units(product.ID, cmd.Amount, account.SimDay),
 		AppliedCents: cmd.Amount,
 	}
 	return p, nil

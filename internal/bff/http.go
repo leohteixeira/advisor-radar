@@ -32,6 +32,7 @@ type Handler struct {
 	screens    *screen.Engine
 	now        func() time.Time
 	limits     *povLimiter
+	advances   *advanceLimiter
 	counts     *povCounts
 	bastidores *bastidoresHub
 	logger     *slog.Logger
@@ -99,6 +100,7 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 		pov:        pov,
 		now:        now,
 		limits:     newPOVLimiter(),
+		advances:   newAdvanceLimiter(),
 		counts:     newPOVCounts(),
 		bastidores: newBastidoresHub(),
 		logger:     slog.Default(),
@@ -132,6 +134,8 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/purchases", h.postPOVPurchase)
 	mux.HandleFunc("PUT /v1/client-pov/customers/{id}/preferences", h.putPOVPreferences)
 	mux.HandleFunc("GET /v1/client-pov/counters", h.povCounters)
+	mux.HandleFunc("GET /v1/client-pov/simulation", h.getSimulation)
+	mux.HandleFunc("POST /v1/client-pov/simulation/advance-day", h.postAdvanceDay)
 	mux.HandleFunc("GET /v1/client-pov/customers/{id}/stream", h.povStream)
 	mux.HandleFunc("GET /v1/client-pov/customers/{id}/screens/{slug}", h.getScreen)
 	// One server span per request, named after the matched route pattern.

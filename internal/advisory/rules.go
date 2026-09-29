@@ -53,7 +53,10 @@ type Decision struct {
 	MaxRisk    int
 }
 
-// EvaluateAccount applies the four account-fact rules. One fact may yield two decisions.
+// EvaluateAccount applies the four account-fact rules. One fact may yield two
+// decisions. The drop rule runs on the phase-1 asset_drop and on a negative
+// reavaliacao (the daily revaluation of the simulated market); a gain never
+// fires it.
 func EvaluateAccount(p sim.AccountPayload) []Decision {
 	out := make([]Decision, 0, 2)
 
@@ -63,6 +66,13 @@ func EvaluateAccount(p sim.AccountPayload) []Decision {
 			out = append(out, d)
 		}
 	case "asset_drop":
+		if d, ok := ruleDrop(p); ok {
+			out = append(out, d)
+		}
+	case sim.KindReavaliacao:
+		if p.Amount >= 0 {
+			break
+		}
 		if d, ok := ruleDrop(p); ok {
 			out = append(out, d)
 		}
@@ -153,11 +163,13 @@ func ruleWithdrawal(p sim.AccountPayload) (Decision, bool) {
 	}, true
 }
 
+// ruleDrop raises queda when the move is more than 15% of before. p is in
+// dollars; the comparison runs in exact integer cents (dropAboveThreshold),
+// the same predicate the portfolio_drop moment uses.
 func ruleDrop(p sim.AccountPayload) (Decision, bool) {
-	if p.Before <= 0 {
-		return Decision{}, false
-	}
-	if math.Abs(p.Amount)/p.Before <= 0.15 {
+	loss, okLoss := dollarsToCents(math.Abs(p.Amount))
+	before, okBefore := dollarsToCents(p.Before)
+	if !okLoss || !okBefore || !dropAboveThreshold(loss, before) {
 		return Decision{}, false
 	}
 	return Decision{
@@ -168,6 +180,24 @@ func ruleDrop(p sim.AccountPayload) (Decision, bool) {
 		Before:  p.Before,
 		After:   p.After,
 	}, true
+}
+
+// dropAboveThreshold reports whether a loss of lossCents is more than 15% of
+// beforeCents: loss/before > 0.15 is loss·20 > before·3, exact in integers
+// for any amount up to 2^53 cents. A before of zero or less never holds.
+func dropAboveThreshold(lossCents, beforeCents int64) bool {
+	return beforeCents > 0 && lossCents*20 > beforeCents*3
+}
+
+// dollarsToCents rounds a dollar amount to whole cents. It reports false
+// when the result is not finite or beyond 2^53 cents, where cents stop being
+// exact.
+func dollarsToCents(dollars float64) (int64, bool) {
+	cents := math.Round(dollars * 100)
+	if math.IsNaN(cents) || math.Abs(cents) > maxExactCents {
+		return 0, false
+	}
+	return int64(cents), true
 }
 
 func ruleDeposit(p sim.AccountPayload) (Decision, bool) {

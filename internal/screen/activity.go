@@ -3,6 +3,7 @@ package screen
 import (
 	"cmp"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/leohteixeira/advisor-radar/internal/event"
@@ -15,10 +16,11 @@ const copyActivityRow = "activity_row"
 
 // Timeline kinds whose rows the client may see.
 const (
-	kindAporte    = "aporte"
-	kindSaque     = "saque"
-	kindAplicacao = "aplicacao"
-	kindMensagem  = "mensagem"
+	kindAporte      = "aporte"
+	kindSaque       = "saque"
+	kindAplicacao   = "aplicacao"
+	kindMensagem    = "mensagem"
+	kindReavaliacao = "reavaliacao"
 )
 
 // activityItems is the one timeline mapping of the home activity and the
@@ -45,7 +47,9 @@ func activityItems(s Snapshot, c Catalog, limit int) ([]ActivityItem, error) {
 // its amount signed positive with tone pos, a saque signed negative with tone
 // neg, when the row has one. Kinds whose text the BFF writes are added as
 // cases here: an aplicacao reads "Compra · {{product}}" ("Compra" without a
-// known name) with the amount that left caixa, signed.
+// known name) with the amount that left caixa, signed; a reavaliacao reads
+// "Reavaliação diária" with the simulated day and the product that moved the
+// most as meta, and the signed change of the patrimony as value.
 func activityItem(row Activity, names map[string]string, c Catalog) (ActivityItem, error) {
 	item := ActivityItem{Icon: activityIcon(row.Kind), Title: row.Title, Meta: RelativeTime(row.Age)}
 	switch row.Kind {
@@ -57,6 +61,8 @@ func activityItem(row Activity, names map[string]string, c Catalog) (ActivityIte
 		if row.AmountCents > 0 {
 			item.Value, item.Tone = SignedMoney(-row.AmountCents), ToneNeg
 		}
+	case kindReavaliacao:
+		return revaluationItem(row, names, c)
 	case kindAplicacao:
 		name := names[row.ProductID]
 		cp := copier{cat: c, typ: copyActivityRow, variant: "default", fields: Fields{Product: name}}
@@ -71,6 +77,36 @@ func activityItem(row Activity, names map[string]string, c Catalog) (ActivityIte
 		if cp.err != nil {
 			return ActivityItem{}, cp.err
 		}
+	}
+	return item, nil
+}
+
+// revaluationItem maps a reavaliacao row: "dia simulado 3 · Cobalto
+// Semicondutores −53,5%" as meta, or "dia simulado 3" when the product has no
+// known name, and the signed patrimony change with its tone. A loss gets the
+// drop icon.
+func revaluationItem(row Activity, names map[string]string, c Catalog) (ActivityItem, error) {
+	name := names[row.ProductID]
+	cp := copier{cat: c, typ: copyActivityRow, variant: "default", fields: Fields{
+		Day:     strconv.Itoa(row.SimDay),
+		Product: name,
+		Percent: ChangePercentBP(row.ProductChangeBP),
+	}}
+	metaKey := "reavaliacao_meta"
+	if name == "" {
+		metaKey = "reavaliacao_meta_unnamed"
+	}
+	item := ActivityItem{
+		Title: cp.text("reavaliacao"),
+		Meta:  cp.text(metaKey),
+		Value: SignedMoney(row.AmountCents),
+		Tone:  SignTone(row.AmountCents),
+	}
+	if row.AmountCents < 0 {
+		item.Icon = "drop"
+	}
+	if cp.err != nil {
+		return ActivityItem{}, cp.err
 	}
 	return item, nil
 }
@@ -112,12 +148,13 @@ func isClientSource(source string) bool {
 }
 
 // visibleActivity is the client-facing rows, most recent first, at most
-// limit. Each row's Age is measured from OccurredAt against now when both are
-// known, else it keeps the indexed Age. rows is never changed.
+// limit. A reavaliacao that changed nothing is not shown. Each row's Age is
+// measured from OccurredAt against now when both are known, else it keeps the
+// indexed Age. rows is never changed.
 func visibleActivity(rows []Activity, now time.Time, limit int) []Activity {
 	out := make([]Activity, 0, min(len(rows), limit))
 	for _, row := range rows {
-		if !isClientSource(row.Source) {
+		if !isClientSource(row.Source) || row.Kind == kindReavaliacao && row.AmountCents == 0 {
 			continue
 		}
 		if !row.OccurredAt.IsZero() && !now.IsZero() {

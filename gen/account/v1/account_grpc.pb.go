@@ -30,6 +30,8 @@ const (
 	AccountService_GetRegistration_FullMethodName   = "/account.v1.AccountService/GetRegistration"
 	AccountService_GetPreferences_FullMethodName    = "/account.v1.AccountService/GetPreferences"
 	AccountService_UpdatePreferences_FullMethodName = "/account.v1.AccountService/UpdatePreferences"
+	AccountService_AdvanceDay_FullMethodName        = "/account.v1.AccountService/AdvanceDay"
+	AccountService_GetSimulation_FullMethodName     = "/account.v1.AccountService/GetSimulation"
 )
 
 // AccountServiceClient is the client API for AccountService service.
@@ -63,6 +65,14 @@ type AccountServiceClient interface {
 	// other than "chat" or "email" is InvalidArgument; an unknown customer is
 	// NotFound.
 	UpdatePreferences(ctx context.Context, in *UpdatePreferencesRequest, opts ...grpc.CallOption) (*Preferences, error)
+	// AdvanceDay moves the global simulated day forward by one and publishes
+	// one account.event.recorded kind reavaliacao at schema_version 3 per POV
+	// account, in one transaction. A replayed idempotency_key advances nothing,
+	// publishes nothing, and returns the original reply with replay set. A
+	// missing idempotency_key is InvalidArgument.
+	AdvanceDay(ctx context.Context, in *AdvanceDayRequest, opts ...grpc.CallOption) (*AdvanceDayReply, error)
+	// GetSimulation returns the current simulated day.
+	GetSimulation(ctx context.Context, in *GetSimulationRequest, opts ...grpc.CallOption) (*Simulation, error)
 }
 
 type accountServiceClient struct {
@@ -183,6 +193,26 @@ func (c *accountServiceClient) UpdatePreferences(ctx context.Context, in *Update
 	return out, nil
 }
 
+func (c *accountServiceClient) AdvanceDay(ctx context.Context, in *AdvanceDayRequest, opts ...grpc.CallOption) (*AdvanceDayReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdvanceDayReply)
+	err := c.cc.Invoke(ctx, AccountService_AdvanceDay_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accountServiceClient) GetSimulation(ctx context.Context, in *GetSimulationRequest, opts ...grpc.CallOption) (*Simulation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Simulation)
+	err := c.cc.Invoke(ctx, AccountService_GetSimulation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AccountServiceServer is the server API for AccountService service.
 // All implementations must embed UnimplementedAccountServiceServer
 // for forward compatibility.
@@ -214,6 +244,14 @@ type AccountServiceServer interface {
 	// other than "chat" or "email" is InvalidArgument; an unknown customer is
 	// NotFound.
 	UpdatePreferences(context.Context, *UpdatePreferencesRequest) (*Preferences, error)
+	// AdvanceDay moves the global simulated day forward by one and publishes
+	// one account.event.recorded kind reavaliacao at schema_version 3 per POV
+	// account, in one transaction. A replayed idempotency_key advances nothing,
+	// publishes nothing, and returns the original reply with replay set. A
+	// missing idempotency_key is InvalidArgument.
+	AdvanceDay(context.Context, *AdvanceDayRequest) (*AdvanceDayReply, error)
+	// GetSimulation returns the current simulated day.
+	GetSimulation(context.Context, *GetSimulationRequest) (*Simulation, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
 
@@ -256,6 +294,12 @@ func (UnimplementedAccountServiceServer) GetPreferences(context.Context, *GetPre
 }
 func (UnimplementedAccountServiceServer) UpdatePreferences(context.Context, *UpdatePreferencesRequest) (*Preferences, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdatePreferences not implemented")
+}
+func (UnimplementedAccountServiceServer) AdvanceDay(context.Context, *AdvanceDayRequest) (*AdvanceDayReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AdvanceDay not implemented")
+}
+func (UnimplementedAccountServiceServer) GetSimulation(context.Context, *GetSimulationRequest) (*Simulation, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSimulation not implemented")
 }
 func (UnimplementedAccountServiceServer) mustEmbedUnimplementedAccountServiceServer() {}
 func (UnimplementedAccountServiceServer) testEmbeddedByValue()                        {}
@@ -476,6 +520,42 @@ func _AccountService_UpdatePreferences_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccountService_AdvanceDay_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdvanceDayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).AdvanceDay(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_AdvanceDay_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).AdvanceDay(ctx, req.(*AdvanceDayRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AccountService_GetSimulation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSimulationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).GetSimulation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_GetSimulation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).GetSimulation(ctx, req.(*GetSimulationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccountService_ServiceDesc is the grpc.ServiceDesc for AccountService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -526,6 +606,14 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdatePreferences",
 			Handler:    _AccountService_UpdatePreferences_Handler,
+		},
+		{
+			MethodName: "AdvanceDay",
+			Handler:    _AccountService_AdvanceDay_Handler,
+		},
+		{
+			MethodName: "GetSimulation",
+			Handler:    _AccountService_GetSimulation_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

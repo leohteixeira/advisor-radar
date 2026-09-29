@@ -430,13 +430,14 @@ func handleDelivery(ctx context.Context, store *advisory.PGXStore, body []byte) 
 
 // classifyApplyError marks failures that redelivery cannot fix as permanent so
 // they do not requeue: a money-scale error, a customer outside the book, an
-// unknown investor profile, and an invalid purchase.
+// unknown investor profile, an invalid purchase, and an invalid revaluation.
 func classifyApplyError(err error) error {
 	switch {
 	case errors.Is(err, sim.ErrMoneyScale),
 		errors.Is(err, advisory.ErrUnknownCustomer),
 		errors.Is(err, advisory.ErrUnknownProfile),
-		errors.Is(err, advisory.ErrInvalidPurchase):
+		errors.Is(err, advisory.ErrInvalidPurchase),
+		errors.Is(err, advisory.ErrInvalidRevaluation):
 		return permanentDeliveryError{err: err}
 	}
 	return err

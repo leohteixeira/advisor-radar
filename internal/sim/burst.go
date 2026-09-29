@@ -25,17 +25,26 @@ type MessagePayload struct {
 // Schema version 1 stores amount, before, and after as whole USD dollars.
 // Schema versions 2 and 3 store those fields as integer USD cents. Version 3
 // adds ProductID, AssetClass, and Risk, which an aplicacao (purchase) sets
-// from the catalog row of the product bought.
+// from the catalog row of the product bought. A reavaliacao (revaluation,
+// version 3) sets Amount to the signed patrimony change, Before and After to
+// the patrimony on the old and new day, SimDay to the new day, and ProductID
+// and ProductChangeBP to the position that moved most and its price change
+// in basis points; ProductID is empty when nothing moved.
 type AccountPayload struct {
-	Kind        string  `json:"kind"`
-	Amount      float64 `json:"amount"`
-	Before      float64 `json:"before"`
-	After       float64 `json:"after"`
-	Origin      string  `json:"origin,omitempty"`
-	Destination string  `json:"destination,omitempty"`
-	ProductID   string  `json:"product_id,omitempty"`
-	AssetClass  string  `json:"asset_class,omitempty"`
-	Risk        int     `json:"risk,omitempty"`
+	Kind            string  `json:"kind"`
+	Amount          float64 `json:"amount"`
+	Before          float64 `json:"before"`
+	After           float64 `json:"after"`
+	Origin          string  `json:"origin,omitempty"`
+	Destination     string  `json:"destination,omitempty"`
+	ProductID       string  `json:"product_id,omitempty"`
+	AssetClass      string  `json:"asset_class,omitempty"`
+	Risk            int     `json:"risk,omitempty"`
+	SimDay          int     `json:"sim_day,omitempty"`
+	ProductChangeBP int     `json:"product_change_bp,omitempty"`
+	// Epoch is the simulation epoch of a reavaliacao (schema version 3,
+	// additive): consumers tell the days of one seed from the next by it.
+	Epoch string `json:"epoch,omitempty"`
 }
 
 // Dollars returns a copy whose amount, before, and after are whole USD dollars.

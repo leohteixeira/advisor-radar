@@ -27,7 +27,9 @@ const (
 
 // POVAccount is one account-sim account in integer USD cents. Acoes, ETFs,
 // and RendaFixa are class aggregates of Positions at market value; Patrimony
-// is positions plus Caixa, as account-sim reports it.
+// is positions plus Caixa, as account-sim reports it. SimDay is the global
+// simulated day the values are at, and DayChange the patrimony change since
+// the day before (0 on day 0).
 type POVAccount struct {
 	CustomerID string
 	Acoes      int64
@@ -36,6 +38,8 @@ type POVAccount struct {
 	Caixa      int64
 	Patrimony  int64
 	Positions  []POVPosition
+	SimDay     int
+	DayChange  int64
 }
 
 // POVPosition is one holding in integer USD cents.

@@ -1,6 +1,7 @@
 package advisory
 
 import (
+	"math"
 	"time"
 
 	"github.com/leohteixeira/advisor-radar/internal/book"
@@ -19,10 +20,12 @@ const (
 const upgradeWindow = 24 * time.Hour
 
 // Balance is the account-sim balance of one client in integer USD cents.
-// Patrimony is positions at market value plus cash.
+// Patrimony is positions at market value plus cash. SimDay is the global
+// simulated day account-sim values the positions at.
 type Balance struct {
 	PatrimonyCents int64
 	CashCents      int64
+	SimDay         int
 }
 
 // SegmentAlert is one segmento alert of a client: the segments it moved
@@ -46,23 +49,34 @@ type MomentFacts struct {
 	CashCents          int64
 	PatrimonyCents     int64
 	PortfolioReview    bool
-	// PortfolioDrop stays false until the drop moment is evaluated.
+	// PortfolioDrop holds when the latest revaluation is for the current
+	// simulated day and lost more than 15% of the patrimony before it.
+	// DropBP is that loss in positive basis points of before, DropProductID
+	// and DropProductBP the product that moved the most and its signed day
+	// change in basis points, and DropDay the simulated day. All four are
+	// zero when PortfolioDrop is false.
 	PortfolioDrop bool
+	DropBP        int
+	DropProductID string
+	DropProductBP int
+	DropDay       int
 }
 
 // MomentInput is everything the moment facts are evaluated from.
+// Revaluation is the client's latest reavaliacao, nil when there is none.
 type MomentInput struct {
-	Segment string
-	Balance Balance
-	Alerts  []SegmentAlert
-	Now     time.Time
+	Segment     string
+	Balance     Balance
+	Alerts      []SegmentAlert
+	Revaluation *Revaluation
+	Now         time.Time
 }
 
 // EvaluateMoments applies one pure rule per moment fact.
 func EvaluateMoments(in MomentInput) MomentFacts {
 	upgraded, upgradedTo := segmentUpgraded(in.Segment, in.Alerts, in.Now)
 	near, gap := segmentUpgradeNear(in.Segment, in.Balance)
-	return MomentFacts{
+	f := MomentFacts{
 		SegmentUpgraded:    upgraded,
 		UpgradedSegment:    upgradedTo,
 		SegmentUpgradeNear: near,
@@ -72,6 +86,35 @@ func EvaluateMoments(in MomentInput) MomentFacts {
 		PatrimonyCents:     in.Balance.PatrimonyCents,
 		PortfolioReview:    portfolioReview(in.Segment),
 	}
+	if rev, ok := portfolioDrop(in.Revaluation, in.Balance.SimDay); ok {
+		f.PortfolioDrop = true
+		f.DropBP = lossBP(rev.AmountCents, rev.BeforeCents)
+		f.DropProductID = rev.ProductID
+		f.DropProductBP = rev.ProductChangeBP
+		f.DropDay = rev.SimDay
+	}
+	return f
+}
+
+// portfolioDrop holds when rev is for simDay, the current simulated day
+// account-sim reports, and its loss is above 15% of before
+// (dropAboveThreshold, the predicate of the drop rule).
+// A revaluation of an earlier day, a gain, or a flat day never holds, so the
+// moment ends on the next advance.
+func portfolioDrop(rev *Revaluation, simDay int) (Revaluation, bool) {
+	if rev == nil || rev.SimDay != simDay || rev.AmountCents >= 0 {
+		return Revaluation{}, false
+	}
+	if !dropAboveThreshold(-rev.AmountCents, rev.BeforeCents) {
+		return Revaluation{}, false
+	}
+	return *rev, true
+}
+
+// lossBP is the loss −amount as positive basis points of before, rounded half
+// away from zero. before is positive.
+func lossBP(amount, before int64) int {
+	return int(math.Round(float64(-amount) * 10_000 / float64(before)))
 }
 
 // segmentUpgraded looks at the client's most recent live segment change: an

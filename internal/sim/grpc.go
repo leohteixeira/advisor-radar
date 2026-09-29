@@ -88,6 +88,41 @@ func (s *GRPCServer) Purchase(ctx context.Context, req *accountv1.PurchaseReques
 	})
 }
 
+// AdvanceDay moves the global simulated day forward by one and publishes one
+// reavaliacao per POV account. A replayed key returns the original reply.
+func (s *GRPCServer) AdvanceDay(ctx context.Context, req *accountv1.AdvanceDayRequest) (*accountv1.AdvanceDayReply, error) {
+	result, err := AdvanceDay(ctx, s.store, AdvanceCommand{
+		IdempotencyKey: req.GetIdempotencyKey(),
+		CommandID:      req.GetCommandId(),
+	})
+	if err != nil {
+		var attrs []any
+		if req.GetCommandId() != "" {
+			attrs = append(attrs, slog.String("command_id", req.GetCommandId()))
+		}
+		return nil, s.statusOf("AdvanceDay", err, attrs...)
+	}
+	return &accountv1.AdvanceDayReply{
+		SimDay:   int32(result.SimDay), // a day count, far below 2^31
+		EventIds: result.EventIDs,
+		Replay:   result.Replay,
+	}, nil
+}
+
+// GetSimulation returns the current simulated day.
+func (s *GRPCServer) GetSimulation(ctx context.Context, _ *accountv1.GetSimulationRequest) (*accountv1.Simulation, error) {
+	var state SimState
+	err := s.store.WithTx(ctx, func(tx Tx) error {
+		found, err := tx.Simulation(ctx)
+		state = found
+		return err
+	})
+	if err != nil {
+		return nil, s.statusOf("GetSimulation", err)
+	}
+	return &accountv1.Simulation{SimDay: int32(state.Day)}, nil
+}
+
 // GetAccount returns one POV account with its positions valued at the
 // current day.
 func (s *GRPCServer) GetAccount(ctx context.Context, req *accountv1.GetAccountRequest) (*accountv1.Account, error) {
@@ -299,6 +334,8 @@ func accountToProto(a Account) *accountv1.Account {
 		CaixaCents:     a.Caixa,
 		Positions:      out,
 		PatrimonyCents: a.Assets(),
+		SimDay:         int32(a.SimDay), // a day count, far below 2^31
+		DayChangeCents: a.DayChange,
 	}
 }
 

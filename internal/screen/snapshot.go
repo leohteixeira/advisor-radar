@@ -62,7 +62,8 @@ var ErrUnknownCustomer = errors.New("screen: unknown customer")
 // Account is the account-sim account in integer USD cents. Acoes, ETFs, and
 // RendaFixa are the class aggregates of the positions at market value;
 // Patrimony is positions plus Cash. SimDay is the global simulated day the
-// values are at; it stays 0 until account-sim reports the day.
+// values are at. DayChange is patrimony at SimDay minus patrimony at SimDay −
+// 1, 0 on day 0, as account-sim computes it.
 type Account struct {
 	Acoes     int64
 	ETFs      int64
@@ -71,6 +72,7 @@ type Account struct {
 	Patrimony int64
 	Positions []Position
 	SimDay    int
+	DayChange int64
 }
 
 // Position is one holding at market value, in integer USD cents.
@@ -94,20 +96,27 @@ type Customer struct {
 // event it came from. OccurredAt is the event time; when it is zero, Age (how
 // long ago the row was when it was indexed) is used instead. ProductID and
 // AmountCents are the product and the amount in integer USD cents of an
-// account event that carries them, such as an aplicacao.
+// account event that carries them, such as an aplicacao. A reavaliacao also
+// carries the SimDay it revalued to and ProductChangeBP, the signed day
+// change in basis points of ProductID, the product that moved the most.
 type Activity struct {
-	Kind        string
-	Title       string
-	Source      string
-	OccurredAt  time.Time
-	Age         time.Duration
-	ProductID   string
-	AmountCents int64
+	Kind            string
+	Title           string
+	Source          string
+	OccurredAt      time.Time
+	Age             time.Duration
+	ProductID       string
+	AmountCents     int64
+	SimDay          int
+	ProductChangeBP int
 }
 
 // MomentFacts are the home moment conditions advisory evaluated for the
 // customer. The engine only orders them; it compares no threshold. Money is
-// integer USD cents.
+// integer USD cents. With PortfolioDrop, DropBP is the loss in positive basis
+// points of the patrimony before it, DropProductID and DropProductBP the
+// product that moved the most and its signed day change in basis points, and
+// DropDay the simulated day.
 type MomentFacts struct {
 	SegmentUpgraded    bool
 	UpgradedSegment    string
@@ -118,6 +127,10 @@ type MomentFacts struct {
 	PatrimonyCents     int64
 	PortfolioReview    bool
 	PortfolioDrop      bool
+	DropBP             int
+	DropProductID      string
+	DropProductBP      int
+	DropDay            int
 }
 
 // InvestorProfile is the customer's suitability profile from advisory:

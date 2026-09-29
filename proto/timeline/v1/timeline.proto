@@ -37,6 +37,12 @@ message TimelineItem {
   // that are not account events, and for an account event whose amount is
   // not a number or is past 2^53 cents.
   int64 amount_cents = 11;
+  // sim_day is the simulated market day a reavaliacao revalued the account
+  // to. Zero for every other row.
+  int32 sim_day = 12;
+  // product_change_bp is the day change, in signed basis points, of the
+  // product that moved a reavaliacao the most. Zero for every other row.
+  int32 product_change_bp = 13;
 }
 
 message SearchResponse {

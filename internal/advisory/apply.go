@@ -4,9 +4,13 @@ package advisory
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/leohteixeira/advisor-radar/internal/book"
 	"github.com/leohteixeira/advisor-radar/internal/event"
@@ -55,15 +59,41 @@ type AlertPayload struct {
 	MaxRisk       int     `json:"max_risk,omitempty"`
 }
 
+// Revaluation is the latest reavaliacao of one customer, as the
+// portfolio_drop moment reads it. Money is integer USD cents; AmountCents is
+// after − before, signed. ProductID is the position that moved the most and
+// ProductChangeBP its day change in signed basis points. SourceEventID is the
+// account event it came from, and Epoch the account-sim simulation epoch it
+// was published in: a reseed starts a new epoch and the days over.
+type Revaluation struct {
+	Epoch           string
+	SimDay          int
+	AmountCents     int64
+	BeforeCents     int64
+	ProductID       string
+	ProductChangeBP int
+	SourceEventID   string
+}
+
+// ErrInvalidRevaluation marks a reavaliacao that cannot be applied: a
+// schema_version below 3, a sim_day outside 1 to 2^31−1, a product_change_bp
+// outside int32, an event id or epoch that is not a UUID, or money too large
+// to be exact cents. Redelivery cannot fix it. Fractional or non-finite cents already
+// wrap sim.ErrMoneyScale.
+var ErrInvalidRevaluation = errors.New("advisory: invalid revaluation")
+
 // Tx is the write side of one Apply transaction. InvestorProfile reads the
 // book profile the suitability rule compares against; a customer outside the
-// book wraps ErrUnknownCustomer.
+// book wraps ErrUnknownCustomer. SaveRevaluation replaces the customer's
+// latest revaluation when rev is from another epoch or a later day, so a
+// redelivered older day never replaces a newer one.
 type Tx interface {
 	ClaimInbox(ctx context.Context, eventID string) (bool, error)
 	InvestorProfile(ctx context.Context, customerID string) (string, error)
 	InsertAlert(ctx context.Context, row AlertRow) error
 	InsertOutbox(ctx context.Context, row OutboxRow) error
 	UpdateBook(ctx context.Context, customerID string, aum float64, segment string) error
+	SaveRevaluation(ctx context.Context, customerID string, rev Revaluation) error
 }
 
 // Store persists inbox, alerts, and outbox. Declared here for Apply/Publish.
@@ -85,7 +115,9 @@ type Broker interface {
 // 2 on, the event is a live POV fact and the book follows it: AUM becomes
 // after, and the segment is derived from it, for every kind (aporte, saque,
 // aplicacao, reavaliacao). An aplicacao is also checked against the book's
-// investor profile, read in the same transaction.
+// investor profile, read in the same transaction. A reavaliacao is also kept
+// as the customer's latest revaluation, in cents, for the portfolio_drop
+// moment.
 func Apply(ctx context.Context, store Store, env event.Envelope) error {
 	if store == nil {
 		return fmt.Errorf("advisory: store is required")
@@ -118,6 +150,13 @@ func Apply(ctx context.Context, store Store, env event.Envelope) error {
 			return fmt.Errorf("advisory: apply %s: %w: aplicacao at schema_version %d", env.EventID, ErrInvalidPurchase, env.SchemaVersion)
 		}
 		in.purchase = &dollars
+	}
+	if dollars.Kind == sim.KindReavaliacao {
+		rev, err := revaluationOf(env, payload)
+		if err != nil {
+			return fmt.Errorf("advisory: apply %s: %w", env.EventID, err)
+		}
+		in.revaluation = &rev
 	}
 	if env.SchemaVersion >= event.SchemaVersionCents {
 		in.updateBook = true
@@ -227,6 +266,70 @@ type raiseInput struct {
 	// purchase is the dollar-scaled aplicacao the suitability rule checks
 	// against the book profile inside the transaction; nil for other facts.
 	purchase *sim.AccountPayload
+	// revaluation is the reavaliacao to keep as the customer's latest; nil
+	// for other facts.
+	revaluation *Revaluation
+}
+
+// revaluationOf reads the cents payload of a reavaliacao (before it is
+// scaled to dollars) as a Revaluation.
+func revaluationOf(env event.Envelope, p sim.AccountPayload) (Revaluation, error) {
+	if env.SchemaVersion < event.SchemaVersionPositions {
+		return Revaluation{}, fmt.Errorf("%w: schema_version %d", ErrInvalidRevaluation, env.SchemaVersion)
+	}
+	if p.SimDay < 1 || p.SimDay > math.MaxInt32 {
+		return Revaluation{}, fmt.Errorf("%w: sim_day %d", ErrInvalidRevaluation, p.SimDay)
+	}
+	if p.ProductChangeBP < math.MinInt32 || p.ProductChangeBP > math.MaxInt32 {
+		return Revaluation{}, fmt.Errorf("%w: product_change_bp %d", ErrInvalidRevaluation, p.ProductChangeBP)
+	}
+	if !canonicalUUID(env.EventID) {
+		return Revaluation{}, fmt.Errorf("%w: event_id is not a uuid", ErrInvalidRevaluation)
+	}
+	if !canonicalUUID(p.Epoch) {
+		return Revaluation{}, fmt.Errorf("%w: epoch is not a uuid", ErrInvalidRevaluation)
+	}
+	amount, err := wholeCents(p.Amount, "amount")
+	if err != nil {
+		return Revaluation{}, err
+	}
+	before, err := wholeCents(p.Before, "before")
+	if err != nil {
+		return Revaluation{}, err
+	}
+	return Revaluation{
+		Epoch:           p.Epoch,
+		SimDay:          p.SimDay,
+		AmountCents:     amount,
+		BeforeCents:     before,
+		ProductID:       p.ProductID,
+		ProductChangeBP: p.ProductChangeBP,
+		SourceEventID:   env.EventID,
+	}, nil
+}
+
+// canonicalUUID reports whether s is a UUID in the 36-character hyphenated
+// form PostgreSQL stores, so a bad id is refused before the insert.
+func canonicalUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	_, err := uuid.Parse(s)
+	return err == nil
+}
+
+// maxExactCents bounds the cents wholeCents accepts: every integer up to
+// 2^53 is exact in a float64.
+const maxExactCents = 1 << 53
+
+// wholeCents converts a cents amount decoded as a float64 to int64. Dollars
+// has already refused non-finite and fractional cents; a value beyond 2^53
+// is not exact and wraps ErrInvalidRevaluation.
+func wholeCents(v float64, field string) (int64, error) {
+	if math.Abs(v) > maxExactCents {
+		return 0, fmt.Errorf("%w: %s is too large to be exact cents", ErrInvalidRevaluation, field)
+	}
+	return int64(v), nil
 }
 
 // raise claims the inbox, writes the book, and stages one alert and outbox row
@@ -247,6 +350,11 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 		}
 		if err := writeBook(ctx, tx, in); err != nil {
 			return err
+		}
+		if in.revaluation != nil {
+			if err := tx.SaveRevaluation(ctx, in.customerID, *in.revaluation); err != nil {
+				return fmt.Errorf("advisory: save revaluation: %w", err)
+			}
 		}
 		decisions, err := withSuitability(ctx, tx, in)
 		if err != nil {

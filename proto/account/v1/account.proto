@@ -31,6 +31,14 @@ service AccountService {
   // other than "chat" or "email" is InvalidArgument; an unknown customer is
   // NotFound.
   rpc UpdatePreferences(UpdatePreferencesRequest) returns (Preferences);
+  // AdvanceDay moves the global simulated day forward by one and publishes
+  // one account.event.recorded kind reavaliacao at schema_version 3 per POV
+  // account, in one transaction. A replayed idempotency_key advances nothing,
+  // publishes nothing, and returns the original reply with replay set. A
+  // missing idempotency_key is InvalidArgument.
+  rpc AdvanceDay(AdvanceDayRequest) returns (AdvanceDayReply);
+  // GetSimulation returns the current simulated day.
+  rpc GetSimulation(GetSimulationRequest) returns (Simulation);
 }
 
 message DepositRequest {
@@ -83,8 +91,8 @@ message GetAccountRequest {
 
 // Account holds one POV account in integer USD cents (ADR 0010). The three
 // class fields are aggregates: the sum of the market values of the positions
-// of that class at the current simulated day. caixa_cents is the cash
-// balance. patrimony_cents is positions at market value plus cash.
+// of that class at sim_day, the current simulated day. caixa_cents is the
+// cash balance. patrimony_cents is positions at market value plus cash.
 message Account {
   string customer_id = 1;
   int64 acoes_cents = 2;
@@ -93,6 +101,11 @@ message Account {
   int64 caixa_cents = 5;
   repeated Position positions = 6;
   int64 patrimony_cents = 7;
+  // sim_day is the simulated day the values are for.
+  int32 sim_day = 8;
+  // day_change_cents is the patrimony at sim_day minus the patrimony of the
+  // same holdings at sim_day - 1, signed; 0 on day 0.
+  int64 day_change_cents = 9;
 }
 
 // Position is the holding of one fictional product.
@@ -161,4 +174,26 @@ message Preferences {
   // channel is "chat" or "email".
   string channel = 1;
   bool beta = 2;
+}
+
+message AdvanceDayRequest {
+  string idempotency_key = 1;
+  // command_id is an optional caller correlation id. account-sim only logs
+  // it; idempotency is decided by idempotency_key alone.
+  string command_id = 2;
+}
+
+message AdvanceDayReply {
+  // sim_day is the day the advance moved to.
+  int32 sim_day = 1;
+  // event_ids are the reavaliacao event ids, one per POV account in
+  // byte-wise customer id order.
+  repeated string event_ids = 2;
+  bool replay = 3;
+}
+
+message GetSimulationRequest {}
+
+message Simulation {
+  int32 sim_day = 1;
 }

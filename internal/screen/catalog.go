@@ -60,6 +60,12 @@ type Fields struct {
 	Percent string
 	// AssessedOn is the investor profile assessment date as dd/mm/yyyy.
 	AssessedOn string
+	// DropPct is a portfolio loss as an unsigned percentage, such as
+	// "15,5%".
+	DropPct string
+	// ProductPct is a product's day change as an unsigned percentage, such
+	// as "53,5%".
+	ProductPct string
 }
 
 // headingSources maps each field a screen heading may use to the Snapshot

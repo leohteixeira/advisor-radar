@@ -11,9 +11,17 @@
             {
               "id": "moment",
               "type": "moment_card",
-              "variants": ["case_open", "segment_upgraded", "segment_upgrade_near", "idle_cash", "portfolio_review", "welcome"]
+              "variants": [
+                "portfolio_drop",
+                "case_open",
+                "segment_upgraded",
+                "segment_upgrade_near",
+                "idle_cash",
+                "portfolio_review",
+                "welcome"
+              ]
             },
-            { "id": "wealth", "type": "wealth_summary", "variants": ["default"] },
+            { "id": "wealth", "type": "wealth_summary", "variants": ["with_day_change", "default"] },
             { "id": "actions", "type": "action_grid", "variants": ["default"] },
             { "id": "advisor", "type": "advisor_card", "variants": ["dedicated", "default"] },
             { "id": "activity", "type": "activity_list", "variants": ["recent", "empty"] }
@@ -48,7 +56,7 @@
           "title": "Carteira",
           "subtitle": "Valores de mercado no dia simulado {{.Day}}",
           "sections": [
-            { "id": "summary", "type": "portfolio_summary", "variants": ["default"] },
+            { "id": "summary", "type": "portfolio_summary", "variants": ["with_day_change", "default"] },
             { "id": "allocation", "type": "allocation_breakdown", "variants": ["default"] },
             { "id": "positions_stocks", "type": "position_list", "variants": ["stocks"] },
             { "id": "positions_etf", "type": "position_list", "variants": ["etf"] },
@@ -77,6 +85,12 @@
   },
   "copy": {
     "moment_card": {
+      "portfolio_drop": {
+        "kicker": "Sua carteira hoje",
+        "title": "{{if .FirstName}}{{.FirstName}}, sua{{else}}Sua{{end}} carteira caiu {{.DropPct}} hoje",
+        "body": "{{.Product}} recuou {{.ProductPct}} no dia simulado {{.Day}}. A {{.AdvisorName}} já foi avisada e vai falar com você.",
+        "action": "Ver carteira"
+      },
       "case_open": {
         "kicker": "Atendimento em andamento",
         "title": "Sua reclamação está com a {{.AdvisorName}}",
@@ -123,6 +137,9 @@
         "etfs": "ETFs",
         "fixed_income": "Renda fixa",
         "cash": "Caixa"
+      },
+      "with_day_change": {
+        "day_change": "{{.Amount}} ({{.Percent}}) no dia {{.Day}}"
       }
     },
     "action_grid": {
@@ -161,7 +178,10 @@
     "activity_row": {
       "default": {
         "aplicacao": "Compra · {{.Product}}",
-        "aplicacao_unnamed": "Compra"
+        "aplicacao_unnamed": "Compra",
+        "reavaliacao": "Reavaliação diária",
+        "reavaliacao_meta": "dia simulado {{.Day}} · {{.Product}} {{.Percent}}",
+        "reavaliacao_meta_unnamed": "dia simulado {{.Day}}"
       }
     },
     "portfolio_summary": {
@@ -172,6 +192,9 @@
         "return_value": "{{.Amount}} ({{.Percent}})",
         "cash": "Caixa",
         "day": "Dia simulado"
+      },
+      "with_day_change": {
+        "day_change": "{{.Amount}} ({{.Percent}}) no dia {{.Day}}"
       }
     },
     "allocation_breakdown": {
