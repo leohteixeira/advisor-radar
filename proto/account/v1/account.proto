@@ -1,0 +1,199 @@
+syntax = "proto3";
+
+package account.v1;
+
+option go_package = "github.com/leohteixeira/advisor-radar/gen/account/v1;accountv1";
+
+// AccountService is the account-sim command and query surface (ADR 0008).
+// Every command carries an idempotency key; a replayed key returns the
+// original event id with replay set and writes nothing. Amounts are integer
+// USD cents.
+service AccountService {
+  rpc Deposit(DepositRequest) returns (CommandReply);
+  rpc Withdraw(WithdrawRequest) returns (CommandReply);
+  rpc SendMessage(SendMessageRequest) returns (CommandReply);
+  rpc FileComplaint(FileComplaintRequest) returns (CommandReply);
+  // Purchase moves amount_cents of cash into the product's position at the
+  // fixed catalog price and publishes account.event.recorded kind aplicacao
+  // at schema_version 3. An unknown product, an amount outside 1 to
+  // 100000000000 cents, or one below the product minimum is InvalidArgument;
+  // an amount above the cash is FailedPrecondition.
+  rpc Purchase(PurchaseRequest) returns (CommandReply);
+  rpc GetAccount(GetAccountRequest) returns (Account);
+  rpc ListAccounts(ListAccountsRequest) returns (ListAccountsResponse);
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+  rpc GetRegistration(GetRegistrationRequest) returns (Registration);
+  // GetPreferences returns the customer's contact channel and beta flag.
+  // An unknown customer is NotFound.
+  rpc GetPreferences(GetPreferencesRequest) returns (Preferences);
+  // UpdatePreferences stores the contact channel and beta flag and returns
+  // what is stored. It writes no outbox row and publishes no event. A channel
+  // other than "chat" or "email" is InvalidArgument; an unknown customer is
+  // NotFound.
+  rpc UpdatePreferences(UpdatePreferencesRequest) returns (Preferences);
+  // AdvanceDay moves the global simulated day forward by one and publishes
+  // one account.event.recorded kind reavaliacao at schema_version 3 per POV
+  // account, in one transaction. A replayed idempotency_key advances nothing,
+  // publishes nothing, and returns the original reply with replay set. A
+  // missing idempotency_key is InvalidArgument.
+  rpc AdvanceDay(AdvanceDayRequest) returns (AdvanceDayReply);
+  // GetSimulation returns the current simulated day.
+  rpc GetSimulation(GetSimulationRequest) returns (Simulation);
+}
+
+message DepositRequest {
+  string customer_id = 1;
+  string idempotency_key = 2;
+  int64 amount_cents = 3;
+  string origin = 4;
+}
+
+message WithdrawRequest {
+  string customer_id = 1;
+  string idempotency_key = 2;
+  int64 amount_cents = 3;
+  string destination = 4;
+}
+
+message SendMessageRequest {
+  string customer_id = 1;
+  string idempotency_key = 2;
+  // channel is "chat" or "e-mail".
+  string channel = 3;
+  string text = 4;
+}
+
+message FileComplaintRequest {
+  string customer_id = 1;
+  string idempotency_key = 2;
+  string text = 3;
+}
+
+message PurchaseRequest {
+  string customer_id = 1;
+  string idempotency_key = 2;
+  // product_id is a catalog product id, e.g. "acoesg".
+  string product_id = 3;
+  int64 amount_cents = 4;
+  // command_id is an optional caller correlation id. account-sim only logs
+  // it; idempotency is decided by idempotency_key alone.
+  string command_id = 5;
+}
+
+message CommandReply {
+  string event_id = 1;
+  bool replay = 2;
+}
+
+message GetAccountRequest {
+  string customer_id = 1;
+}
+
+// Account holds one POV account in integer USD cents (ADR 0010). The three
+// class fields are aggregates: the sum of the market values of the positions
+// of that class at sim_day, the current simulated day. caixa_cents is the
+// cash balance. patrimony_cents is positions at market value plus cash.
+message Account {
+  string customer_id = 1;
+  int64 acoes_cents = 2;
+  int64 etfs_cents = 3;
+  int64 renda_fixa_cents = 4;
+  int64 caixa_cents = 5;
+  repeated Position positions = 6;
+  int64 patrimony_cents = 7;
+  // sim_day is the simulated day the values are for.
+  int32 sim_day = 8;
+  // day_change_cents is the patrimony at sim_day minus the patrimony of the
+  // same holdings at sim_day - 1, signed; 0 on day 0.
+  int64 day_change_cents = 9;
+}
+
+// Position is the holding of one fictional product.
+message Position {
+  string product_id = 1;
+  // asset_class is "acoes", "etfs", or "renda_fixa".
+  string asset_class = 2;
+  // applied_cents is the cash spent on the position.
+  int64 applied_cents = 3;
+  // value_cents is the market value at the current simulated day.
+  int64 value_cents = 4;
+}
+
+message ListAccountsRequest {}
+
+message ListAccountsResponse {
+  repeated Account accounts = 1;
+}
+
+message ListProductsRequest {}
+
+// Product is one entry of the fictional product catalog.
+message Product {
+  string id = 1;
+  string name = 2;
+  // asset_class is "acoes", "etfs", or "renda_fixa".
+  string asset_class = 3;
+  // risk is 1 (lowest) to 5 (highest).
+  int32 risk = 4;
+  // return_label is Portuguese display text, e.g. "4,9% a.a.".
+  string return_label = 5;
+  int64 minimum_cents = 6;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+}
+
+message GetRegistrationRequest {
+  string customer_id = 1;
+}
+
+// Registration is the fictional registration data of one POV customer.
+message Registration {
+  string customer_id = 1;
+  string email = 2;
+  // phone is already masked display text.
+  string phone = 3;
+  string city = 4;
+  string account_number = 5;
+}
+
+message GetPreferencesRequest {
+  string customer_id = 1;
+}
+
+message UpdatePreferencesRequest {
+  string customer_id = 1;
+  // channel is "chat" or "email".
+  string channel = 2;
+  bool beta = 3;
+}
+
+// Preferences are the client's contact channel and beta program flag.
+message Preferences {
+  // channel is "chat" or "email".
+  string channel = 1;
+  bool beta = 2;
+}
+
+message AdvanceDayRequest {
+  string idempotency_key = 1;
+  // command_id is an optional caller correlation id. account-sim only logs
+  // it; idempotency is decided by idempotency_key alone.
+  string command_id = 2;
+}
+
+message AdvanceDayReply {
+  // sim_day is the day the advance moved to.
+  int32 sim_day = 1;
+  // event_ids are the reavaliacao event ids, one per POV account in
+  // byte-wise customer id order.
+  repeated string event_ids = 2;
+  bool replay = 3;
+}
+
+message GetSimulationRequest {}
+
+message Simulation {
+  int32 sim_day = 1;
+}

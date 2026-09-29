@@ -4,9 +4,15 @@ package advisory
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
+	"slices"
 	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/leohteixeira/advisor-radar/internal/book"
 	"github.com/leohteixeira/advisor-radar/internal/event"
 	"github.com/leohteixeira/advisor-radar/internal/identity"
 	"github.com/leohteixeira/advisor-radar/internal/sim"
@@ -20,33 +26,74 @@ type OutboxRow struct {
 }
 
 // AlertRow is the local alert write that pairs with an outbox row.
+// SourceSchemaVersion is the schema version of the account event that raised
+// the alert, or 0 when the alert does not come from one.
 type AlertRow struct {
-	ID            string
-	CustomerID    string
-	Kind          string
-	Rule          string
-	SourceEventID string
-	RaisedAt      time.Time
-	Payload       []byte
+	ID                  string
+	CustomerID          string
+	Kind                string
+	Rule                string
+	SourceEventID       string
+	RaisedAt            time.Time
+	Payload             []byte
+	SourceSchemaVersion int
 }
 
-// AlertPayload is the domain payload on alert.raised.
+// AlertPayload is the domain payload on alert.raised. Money is whole USD
+// dollars on every kind. A perfil alert also names the product bought
+// (ProductID, AssetClass, Risk) and the profile it exceeds (Profile, MaxRisk).
 type AlertPayload struct {
-	Kind   string  `json:"kind"`
-	Rule   string  `json:"rule"`
-	Amount float64 `json:"amount,omitempty"`
-	Before float64 `json:"before,omitempty"`
-	After  float64 `json:"after,omitempty"`
-	From   string  `json:"from,omitempty"`
-	To     string  `json:"to,omitempty"`
-	Days   int     `json:"days,omitempty"`
+	Kind          string  `json:"kind"`
+	Rule          string  `json:"rule"`
+	SourceEventID string  `json:"source_event_id,omitempty"`
+	Amount        float64 `json:"amount,omitempty"`
+	Before        float64 `json:"before,omitempty"`
+	After         float64 `json:"after,omitempty"`
+	From          string  `json:"from,omitempty"`
+	To            string  `json:"to,omitempty"`
+	Days          int     `json:"days,omitempty"`
+	ProductID     string  `json:"product_id,omitempty"`
+	AssetClass    string  `json:"asset_class,omitempty"`
+	Risk          int     `json:"risk,omitempty"`
+	Profile       string  `json:"profile,omitempty"`
+	MaxRisk       int     `json:"max_risk,omitempty"`
 }
 
-// Tx is the write side of one Apply transaction.
+// Revaluation is the latest reavaliacao of one customer, as the
+// portfolio_drop moment reads it. Money is integer USD cents; AmountCents is
+// after − before, signed. ProductID is the position that moved the most and
+// ProductChangeBP its day change in signed basis points. SourceEventID is the
+// account event it came from, and Epoch the account-sim simulation epoch it
+// was published in: a reseed starts a new epoch and the days over.
+type Revaluation struct {
+	Epoch           string
+	SimDay          int
+	AmountCents     int64
+	BeforeCents     int64
+	ProductID       string
+	ProductChangeBP int
+	SourceEventID   string
+}
+
+// ErrInvalidRevaluation marks a reavaliacao that cannot be applied: a
+// schema_version below 3, a sim_day outside 1 to 2^31−1, a product_change_bp
+// outside int32, an event id or epoch that is not a UUID, or money too large
+// to be exact cents. Redelivery cannot fix it. Fractional or non-finite cents already
+// wrap sim.ErrMoneyScale.
+var ErrInvalidRevaluation = errors.New("advisory: invalid revaluation")
+
+// Tx is the write side of one Apply transaction. InvestorProfile reads the
+// book profile the suitability rule compares against; a customer outside the
+// book wraps ErrUnknownCustomer. SaveRevaluation replaces the customer's
+// latest revaluation when rev is from another epoch or a later day, so a
+// redelivered older day never replaces a newer one.
 type Tx interface {
 	ClaimInbox(ctx context.Context, eventID string) (bool, error)
+	InvestorProfile(ctx context.Context, customerID string) (string, error)
 	InsertAlert(ctx context.Context, row AlertRow) error
 	InsertOutbox(ctx context.Context, row OutboxRow) error
+	UpdateBook(ctx context.Context, customerID string, aum float64, segment string) error
+	SaveRevaluation(ctx context.Context, customerID string, rev Revaluation) error
 }
 
 // Store persists inbox, alerts, and outbox. Declared here for Apply/Publish.
@@ -63,6 +110,14 @@ type Broker interface {
 
 // Apply evaluates one inbound envelope. Only account.event.recorded enters the
 // inbox. A second delivery of the same event_id is a no-op.
+//
+// Every schema version is scaled to dollars before a rule runs. From version
+// 2 on, the event is a live POV fact and the book follows it: AUM becomes
+// after, and the segment is derived from it, for every kind (aporte, saque,
+// aplicacao, reavaliacao). An aplicacao is also checked against the book's
+// investor profile, read in the same transaction. A reavaliacao is also kept
+// as the customer's latest revaluation, in cents, for the portfolio_drop
+// moment.
 func Apply(ctx context.Context, store Store, env event.Envelope) error {
 	if store == nil {
 		return fmt.Errorf("advisory: store is required")
@@ -76,14 +131,39 @@ func Apply(ctx context.Context, store Store, env event.Envelope) error {
 		return fmt.Errorf("advisory: apply %s: %w", env.EventID, err)
 	}
 
-	decisions := EvaluateAccount(payload)
-	return raise(ctx, store, raiseInput{
+	dollars, err := payload.Dollars(env.SchemaVersion)
+	if err != nil {
+		return fmt.Errorf("advisory: apply %s: %w", env.EventID, err)
+	}
+
+	decisions := EvaluateAccount(dollars)
+	in := raiseInput{
 		sourceEventID: env.EventID,
+		schemaVersion: env.SchemaVersion,
 		customerID:    env.CustomerID,
 		occurredAt:    env.OccurredAt,
 		decisions:     decisions,
 		alertIDs:      nil,
-	})
+	}
+	if dollars.Kind == sim.KindAplicacao {
+		if env.SchemaVersion < event.SchemaVersionPositions {
+			return fmt.Errorf("advisory: apply %s: %w: aplicacao at schema_version %d", env.EventID, ErrInvalidPurchase, env.SchemaVersion)
+		}
+		in.purchase = &dollars
+	}
+	if dollars.Kind == sim.KindReavaliacao {
+		rev, err := revaluationOf(env, payload)
+		if err != nil {
+			return fmt.Errorf("advisory: apply %s: %w", env.EventID, err)
+		}
+		in.revaluation = &rev
+	}
+	if env.SchemaVersion >= event.SchemaVersionCents {
+		in.updateBook = true
+		in.bookAUM = dollars.After
+		in.bookSegment = book.SegmentFromAssets(dollars.After)
+	}
+	return raise(ctx, store, in)
 }
 
 // ApplySilence raises a contato alert when days > 90. alertID may be empty for
@@ -174,26 +254,93 @@ func RunPublisher(ctx context.Context, store Store, broker Broker, every time.Du
 
 type raiseInput struct {
 	sourceEventID string
+	// schemaVersion is the source account event's; 0 for a silence fact.
+	schemaVersion int
 	customerID    string
 	occurredAt    time.Time
 	decisions     []Decision
 	alertIDs      map[string]string
+	updateBook    bool
+	bookAUM       float64
+	bookSegment   string
+	// purchase is the dollar-scaled aplicacao the suitability rule checks
+	// against the book profile inside the transaction; nil for other facts.
+	purchase *sim.AccountPayload
+	// revaluation is the reavaliacao to keep as the customer's latest; nil
+	// for other facts.
+	revaluation *Revaluation
 }
 
-func raise(ctx context.Context, store Store, in raiseInput) error {
-	if len(in.decisions) == 0 {
-		// Still claim the inbox so a quiet fact is not re-evaluated forever.
-		return store.WithTx(ctx, func(tx Tx) error {
-			claimed, err := tx.ClaimInbox(ctx, in.sourceEventID)
-			if err != nil {
-				return fmt.Errorf("advisory: claim inbox: %w", err)
-			}
-			_ = claimed
-			return nil
-		})
+// revaluationOf reads the cents payload of a reavaliacao (before it is
+// scaled to dollars) as a Revaluation.
+func revaluationOf(env event.Envelope, p sim.AccountPayload) (Revaluation, error) {
+	if env.SchemaVersion < event.SchemaVersionPositions {
+		return Revaluation{}, fmt.Errorf("%w: schema_version %d", ErrInvalidRevaluation, env.SchemaVersion)
 	}
+	if p.SimDay < 1 || p.SimDay > math.MaxInt32 {
+		return Revaluation{}, fmt.Errorf("%w: sim_day %d", ErrInvalidRevaluation, p.SimDay)
+	}
+	if p.ProductChangeBP < math.MinInt32 || p.ProductChangeBP > math.MaxInt32 {
+		return Revaluation{}, fmt.Errorf("%w: product_change_bp %d", ErrInvalidRevaluation, p.ProductChangeBP)
+	}
+	if !canonicalUUID(env.EventID) {
+		return Revaluation{}, fmt.Errorf("%w: event_id is not a uuid", ErrInvalidRevaluation)
+	}
+	if !canonicalUUID(p.Epoch) {
+		return Revaluation{}, fmt.Errorf("%w: epoch is not a uuid", ErrInvalidRevaluation)
+	}
+	amount, err := wholeCents(p.Amount, "amount")
+	if err != nil {
+		return Revaluation{}, err
+	}
+	before, err := wholeCents(p.Before, "before")
+	if err != nil {
+		return Revaluation{}, err
+	}
+	return Revaluation{
+		Epoch:           p.Epoch,
+		SimDay:          p.SimDay,
+		AmountCents:     amount,
+		BeforeCents:     before,
+		ProductID:       p.ProductID,
+		ProductChangeBP: p.ProductChangeBP,
+		SourceEventID:   env.EventID,
+	}, nil
+}
 
+// canonicalUUID reports whether s is a UUID in the 36-character hyphenated
+// form PostgreSQL stores, so a bad id is refused before the insert.
+func canonicalUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	_, err := uuid.Parse(s)
+	return err == nil
+}
+
+// maxExactCents bounds the cents wholeCents accepts: every integer up to
+// 2^53 is exact in a float64.
+const maxExactCents = 1 << 53
+
+// wholeCents converts a cents amount decoded as a float64 to int64. Dollars
+// has already refused non-finite and fractional cents; a value beyond 2^53
+// is not exact and wraps ErrInvalidRevaluation.
+func wholeCents(v float64, field string) (int64, error) {
+	if math.Abs(v) > maxExactCents {
+		return 0, fmt.Errorf("%w: %s is too large to be exact cents", ErrInvalidRevaluation, field)
+	}
+	return int64(v), nil
+}
+
+// raise claims the inbox, writes the book, and stages one alert and outbox row
+// per decision, all in one transaction. A quiet fact still claims the inbox,
+// so it is not re-evaluated forever.
+func raise(ctx context.Context, store Store, in raiseInput) error {
+	// raised is set only when this transaction claimed the event, so a
+	// redelivery counts nothing.
+	var raised []Decision
 	err := store.WithTx(ctx, func(tx Tx) error {
+		raised = nil
 		claimed, err := tx.ClaimInbox(ctx, in.sourceEventID)
 		if err != nil {
 			return fmt.Errorf("advisory: claim inbox: %w", err)
@@ -201,8 +348,20 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 		if !claimed {
 			return nil
 		}
+		if err := writeBook(ctx, tx, in); err != nil {
+			return err
+		}
+		if in.revaluation != nil {
+			if err := tx.SaveRevaluation(ctx, in.customerID, *in.revaluation); err != nil {
+				return fmt.Errorf("advisory: save revaluation: %w", err)
+			}
+		}
+		decisions, err := withSuitability(ctx, tx, in)
+		if err != nil {
+			return err
+		}
 
-		for _, d := range in.decisions {
+		for _, d := range decisions {
 			alertID := ""
 			if in.alertIDs != nil {
 				if fixed, ok := in.alertIDs[d.RuleKey]; ok {
@@ -218,14 +377,20 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 			}
 
 			payload := AlertPayload{
-				Kind:   d.Kind,
-				Rule:   d.Rule,
-				Amount: d.Amount,
-				Before: d.Before,
-				After:  d.After,
-				From:   d.From,
-				To:     d.To,
-				Days:   d.Days,
+				Kind:          d.Kind,
+				Rule:          d.Rule,
+				SourceEventID: in.sourceEventID,
+				Amount:        d.Amount,
+				Before:        d.Before,
+				After:         d.After,
+				From:          d.From,
+				To:            d.To,
+				Days:          d.Days,
+				ProductID:     d.ProductID,
+				AssetClass:    d.AssetClass,
+				Risk:          d.Risk,
+				Profile:       d.Profile,
+				MaxRisk:       d.MaxRisk,
 			}
 			payloadBytes, err := json.Marshal(payload)
 			if err != nil {
@@ -246,13 +411,14 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 			}
 
 			if err := tx.InsertAlert(ctx, AlertRow{
-				ID:            alertID,
-				CustomerID:    in.customerID,
-				Kind:          d.Kind,
-				Rule:          d.Rule,
-				SourceEventID: in.sourceEventID,
-				RaisedAt:      in.occurredAt,
-				Payload:       payloadBytes,
+				ID:                  alertID,
+				CustomerID:          in.customerID,
+				Kind:                d.Kind,
+				Rule:                d.Rule,
+				SourceEventID:       in.sourceEventID,
+				RaisedAt:            in.occurredAt,
+				Payload:             payloadBytes,
+				SourceSchemaVersion: in.schemaVersion,
 			}); err != nil {
 				return fmt.Errorf("advisory: insert alert %s: %w", alertID, err)
 			}
@@ -264,10 +430,39 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 				return fmt.Errorf("advisory: insert outbox %s: %w", alertID, err)
 			}
 		}
+		raised = decisions
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("advisory: raise: %w", err)
+	}
+	countRaised(ctx, raised)
+	return nil
+}
+
+// withSuitability returns in.decisions plus the suitability decision of a
+// purchase, which needs the book profile read inside tx.
+func withSuitability(ctx context.Context, tx Tx, in raiseInput) ([]Decision, error) {
+	if in.purchase == nil {
+		return in.decisions, nil
+	}
+	profile, err := tx.InvestorProfile(ctx, in.customerID)
+	if err != nil {
+		return nil, fmt.Errorf("advisory: suitability profile: %w", err)
+	}
+	d, ok, err := EvaluateSuitability(*in.purchase, profile)
+	if err != nil || !ok {
+		return in.decisions, err
+	}
+	return append(slices.Clip(in.decisions), d), nil
+}
+
+func writeBook(ctx context.Context, tx Tx, in raiseInput) error {
+	if !in.updateBook {
+		return nil
+	}
+	if err := tx.UpdateBook(ctx, in.customerID, in.bookAUM, in.bookSegment); err != nil {
+		return fmt.Errorf("advisory: update book: %w", err)
 	}
 	return nil
 }

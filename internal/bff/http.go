@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 	"time"
@@ -14,22 +15,66 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/leohteixeira/advisor-radar/internal/identity"
+	"github.com/leohteixeira/advisor-radar/internal/screen"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 )
 
 // Handler serves the queue, SSE stream, actions proxy, cases, timeline,
 // review queue, manager panel, and customer detail.
 type Handler struct {
-	board    *Board
-	actions  ActionsClient
-	queue    QueueSource
-	cases    CaseSource
-	review   ReviewSource
-	timeline TimelineClient
-	now      func() time.Time
+	board      *Board
+	actions    ActionsClient
+	queue      QueueSource
+	cases      CaseSource
+	review     ReviewSource
+	timeline   TimelineClient
+	pov        POVSource
+	screens    *screen.Engine
+	now        func() time.Time
+	limits     *povLimiter
+	advances   *advanceLimiter
+	counts     *povCounts
+	bastidores *bastidoresHub
+	logger     *slog.Logger
+	products   productNameCache
 }
 
 // NewHandler returns an HTTP handler. Nil sources are treated as empty.
-func NewHandler(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource) http.Handler {
+// Server is the BFF HTTP handler plus the in-memory Bastidores hub.
+type Server struct {
+	http.Handler
+	bastidores *bastidoresHub
+	h          *Handler
+}
+
+// SetLogger replaces the handler logger, slog.Default() until set. Call it
+// before the server handles requests.
+func (s *Server) SetLogger(logger *slog.Logger) {
+	if s == nil || s.h == nil || logger == nil {
+		return
+	}
+	s.h.logger = logger
+}
+
+// ObservePOV advances Bastidores from a broker body.
+func (s *Server) ObservePOV(routingKey string, body []byte) {
+	if s == nil || s.bastidores == nil {
+		return
+	}
+	s.bastidores.observe(routingKey, body)
+}
+
+func NewHandler(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource) *Server {
+	return newHandler(board, actions, tl, queue, review, cases, nil, nil)
+}
+
+// NewHandlerWithPOV is NewHandler plus the client POV command port.
+// now may be nil; the rate limit then uses time.Now.
+func NewHandlerWithPOV(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource, pov POVSource, now func() time.Time) *Server {
+	return newHandler(board, actions, tl, queue, review, cases, pov, now)
+}
+
+func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue QueueSource, review ReviewSource, cases CaseSource, pov POVSource, now func() time.Time) *Server {
 	if actions == nil {
 		actions = UnavailableActions{}
 	}
@@ -46,14 +91,27 @@ func NewHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 		cases = EmptyCases{}
 	}
 	h := &Handler{
-		board:    board,
-		actions:  actions,
-		queue:    queue,
-		cases:    cases,
-		review:   review,
-		timeline: tl,
-		now:      time.Now,
+		board:      board,
+		actions:    actions,
+		queue:      queue,
+		cases:      cases,
+		review:     review,
+		timeline:   tl,
+		pov:        pov,
+		now:        now,
+		limits:     newPOVLimiter(),
+		advances:   newAdvanceLimiter(),
+		counts:     newPOVCounts(),
+		bastidores: newBastidoresHub(),
+		logger:     slog.Default(),
 	}
+	if h.now == nil {
+		h.now = time.Now
+	}
+	if h.pov == nil {
+		h.pov = emptyPOV{}
+	}
+	h.screens = newScreenEngine(h.pov, h.queue, h.cases, h.timeline, h.now)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/queue", h.queueHandler)
 	mux.HandleFunc("GET /v1/queue/stream", h.stream)
@@ -67,7 +125,21 @@ func NewHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	mux.HandleFunc("GET /v1/review", h.listReview)
 	mux.HandleFunc("PUT /v1/review/{id}", h.correctReview)
 	mux.HandleFunc("GET /v1/manager", h.manager)
-	return mux
+	mux.HandleFunc("GET /v1/client-pov/customers", h.listPOV)
+	mux.HandleFunc("GET /v1/client-pov/customers/{id}", h.getPOV)
+	mux.HandleFunc("POST /v1/client-pov/customers/{id}/deposits", h.postPOVDeposit)
+	mux.HandleFunc("POST /v1/client-pov/customers/{id}/withdrawals", h.postPOVWithdrawal)
+	mux.HandleFunc("POST /v1/client-pov/customers/{id}/messages", h.postPOVMessage)
+	mux.HandleFunc("POST /v1/client-pov/customers/{id}/complaints", h.postPOVComplaint)
+	mux.HandleFunc("POST /v1/client-pov/customers/{id}/purchases", h.postPOVPurchase)
+	mux.HandleFunc("PUT /v1/client-pov/customers/{id}/preferences", h.putPOVPreferences)
+	mux.HandleFunc("GET /v1/client-pov/counters", h.povCounters)
+	mux.HandleFunc("GET /v1/client-pov/simulation", h.getSimulation)
+	mux.HandleFunc("POST /v1/client-pov/simulation/advance-day", h.postAdvanceDay)
+	mux.HandleFunc("GET /v1/client-pov/customers/{id}/stream", h.povStream)
+	mux.HandleFunc("GET /v1/client-pov/customers/{id}/screens/{slug}", h.getScreen)
+	// One server span per request, named after the matched route pattern.
+	return &Server{Handler: telemetry.HTTPHandler(mux, "bff"), bastidores: h.bastidores, h: h}
 }
 
 func (h *Handler) getCustomer(w http.ResponseWriter, r *http.Request) {

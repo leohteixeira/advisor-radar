@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>App do cliente — Orla Invest (fictícia)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Albert+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}</style>
+</helmet>
+<div style="width: {{frameW}}; height: 1000px; box-sizing: border-box; background: {{p.bg}}; color: {{p.ink}}; font-family: 'Manrope', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden">
+
+  <div style="flex: none; min-height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 4px 0 12px; background: #f5f3ec; color: #14191a; border-bottom: 1px solid #d9d6cc; font-family: 'Albert Sans', system-ui, sans-serif">
+    <span aria-hidden="true" style="width: 20px; height: 20px; flex: none; border-radius: 3px; background: #14191a; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 4px; box-sizing: border-box">
+      <span style="display: block; height: 2px; width: 11px; background: #6fbf8a"></span>
+      <span style="display: block; height: 2px; width: 7px; background: #f5f3ec"></span>
+      <span style="display: block; height: 2px; width: 4px; background: #f5f3ec"></span>
+    </span>
+    <span style="flex-grow: 1; min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><strong style="font-weight: 700">Simulação</strong> · vendo como {{c.name}}</span>
+    <a href="{{switchHref}}" style="min-height: 44px; display: inline-flex; align-items: center; padding: 0 10px; font-size: 12.5px; font-weight: 600; color: #1d4d3a; text-decoration: none">Trocar cliente</a>
+  </div>
+
+  <div style="flex: 1 1 0; min-height: 0; display: flex; position: relative">
+
+    <sc-if value="{{isDesktop}}" hint-placeholder-val="{{false}}">
+      <aside style="width: 240px; flex: none; box-sizing: border-box; padding: 24px 16px; background: {{p.s1}}; border-right: 1px solid {{p.line}}; display: flex; flex-direction: column; gap: 6px">
+        <span style="font: 800 22px/1 'Manrope', sans-serif; letter-spacing: -0.03em; padding: 0 12px 20px">orla<span style="color: {{p.accText}}">.</span><span style="font-weight: 500; color: {{p.ink3}}; font-size: 15px; letter-spacing: 0; margin-left: 4px">invest</span></span>
+        <nav aria-label="Navegação principal" style="display: flex; flex-direction: column; gap: 4px">
+          <button type="button" aria-current="page" style="min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: none; border-radius: 10px; background: {{p.s2}}; color: {{p.accText}}; font: 700 14px/1 'Manrope', sans-serif; text-align: left">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg>
+            Início
+          </button>
+          <button type="button" style="min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: none; border-radius: 10px; background: none; color: {{p.ink2}}; font: 600 14px/1 'Manrope', sans-serif; text-align: left">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"></path><path d="M15 7h6v6"></path></svg>
+            Investir
+          </button>
+          <button type="button" style="min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: none; border-radius: 10px; background: none; color: {{p.ink2}}; font: 600 14px/1 'Manrope', sans-serif; text-align: left">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12A9 9 0 1 1 12 3v9z"></path><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"></path></svg>
+            Carteira
+          </button>
+          <button type="button" style="min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: none; border-radius: 10px; background: none; color: {{p.ink2}}; font: 600 14px/1 'Manrope', sans-serif; text-align: left">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+            Perfil
+          </button>
+        </nav>
+        <span style="flex-grow: 1"></span>
+        <button type="button" aria-label="{{themeLabel}}" onClick="{{toggleTheme}}" style="min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: 1px solid {{p.line}}; border-radius: 10px; background: none; color: {{p.ink2}}; font: 600 13.5px/1 'Manrope', sans-serif; text-align: left">
+          <sc-if value="{{isDark}}" hint-placeholder-val="{{true}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></sc-if>
+          <sc-if value="{{isLight}}" hint-placeholder-val="{{false}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg></sc-if>
+          {{themeLabel}}
+        </button>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 14px 12px 0; margin-top: 10px; border-top: 1px solid {{p.line}}">
+          <span aria-hidden="true" style="width: 36px; height: 36px; flex: none; border-radius: 50%; background: {{p.s2}}; color: {{p.accText}}; display: flex; align-items: center; justify-content: center; font: 700 12.5px/1 'Manrope', sans-serif">{{c.initials}}</span>
+          <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+            <span style="font-size: 13.5px; font-weight: 700">{{c.name}}</span>
+            <span style="font-size: 12px; color: {{p.ink3}}">Cliente {{c.segment}}</span>
+          </div>
+        </div>
+      </aside>
+    </sc-if>
+
+    <div style="{{mainStyle}}">
+
+      <sc-if value="{{isMobile}}" hint-placeholder-val="{{true}}">
+        <div style="display: flex; align-items: center; gap: 6px; padding: 12px 12px 0 20px">
+          <span style="font: 800 21px/1 'Manrope', sans-serif; letter-spacing: -0.03em; flex-grow: 1">orla<span style="color: {{p.accText}}">.</span><span style="font-weight: 500; color: {{p.ink3}}; font-size: 15px; letter-spacing: 0; margin-left: 4px">invest</span></span>
+          <button type="button" aria-label="{{themeLabel}}" onClick="{{toggleTheme}}" style="width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; background: {{p.s1}}; color: {{p.ink}}; display: flex; align-items: center; justify-content: center">
+            <sc-if value="{{isDark}}" hint-placeholder-val="{{true}}"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></sc-if>
+            <sc-if value="{{isLight}}" hint-placeholder-val="{{false}}"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg></sc-if>
+          </button>
+          <button type="button" aria-label="Notificações" style="width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; background: {{p.s1}}; color: {{p.ink}}; display: flex; align-items: center; justify-content: center">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+          </button>
+          <span aria-hidden="true" style="width: 40px; height: 40px; flex: none; border-radius: 50%; background: {{p.s2}}; color: {{p.accText}}; display: flex; align-items: center; justify-content: center; font: 700 13px/1 'Manrope', sans-serif">{{c.initials}}</span>
+        </div>
+
+        <div style="padding: 18px 20px 0; display: flex; flex-direction: column; gap: 4px">
+          <h1 style="margin: 0; font: 700 22px/1.2 'Manrope', sans-serif; letter-spacing: -0.02em">Olá, {{c.first}}</h1>
+          <span style="font-size: 13px; color: {{p.ink3}}">Conta em dólar nos EUA · cliente desde {{c.since}}</span>
+        </div>
+
+        <section aria-label="Patrimônio" style="margin: 16px 20px 0; padding: 20px; background: {{p.s1}}; border: 1px solid {{p.line}}; border-radius: 16px; display: flex; flex-direction: column; gap: 14px">
+          <div style="display: flex; align-items: center; gap: 8px">
+            <span style="font-size: 13px; color: {{p.ink2}}; flex-grow: 1">Patrimônio total</span>
+            <span style="font: 700 11px/1 'Manrope', sans-serif; letter-spacing: .04em; text-transform: uppercase; color: {{p.accText}}; background: {{p.accSoft}}; border-radius: 999px; padding: 6px 10px">Cliente {{c.segment}}</span>
+            <button type="button" aria-label="{{eyeLabel}}" onClick="{{toggleHide}}" style="width: 44px; height: 44px; margin: -10px -12px -10px 0; padding: 0; border: none; background: none; color: {{p.ink2}}; display: flex; align-items: center; justify-content: center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </button>
+          </div>
+          <span style="font: 800 32px/1.1 'Manrope', sans-serif; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">{{aumText}}</span>
+          <div aria-hidden="true" style="display: flex; height: 8px; gap: 2px; border-radius: 4px; overflow: hidden">
+            <sc-for list="{{alloc}}" as="a" hint-placeholder-count="4"><span style="{{a.barStyle}}"></span></sc-for>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px">
+            <sc-for list="{{alloc}}" as="a" hint-placeholder-count="4">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <span style="{{a.dotStyle}}"></span>
+                <span style="font-size: 12.5px; color: {{p.ink2}}; flex-grow: 1">{{a.label}}</span>
+                <span style="font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums">{{a.pct}}%</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; padding-top: 14px; border-top: 1px solid {{p.line}}">
+            <span style="font-size: 13px; color: {{p.ink2}}; flex-grow: 1">Disponível para saque</span>
+            <span style="font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums">{{cashText}}</span>
+          </div>
+        </section>
+
+        <nav aria-label="Ações" style="margin: 20px 20px 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+          <sc-for list="{{actions}}" as="x" hint-placeholder-count="4">
+            <button type="button" onClick="{{x.go}}" style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 0; border: none; background: none; color: {{p.ink}}; font: 600 12.5px/1.2 'Manrope', sans-serif">
+              <span style="width: 52px; height: 52px; border-radius: 50%; background: {{p.s2}}; color: {{p.accText}}; display: flex; align-items: center; justify-content: center">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{x.icon}}"></path></svg>
+              </span>
+              {{x.label}}
+            </button>
+          </sc-for>
+        </nav>
+
+        <section aria-label="Sua assessoria" style="margin: 24px 20px 0; padding: 16px; background: {{p.s1}}; border: 1px solid {{p.line}}; border-radius: 16px; display: flex; align-items: center; gap: 12px">
+          <span aria-hidden="true" style="width: 44px; height: 44px; flex: none; border-radius: 50%; background: {{p.s2}}; color: {{p.ink}}; display: flex; align-items: center; justify-content: center; font: 700 13px/1 'Manrope', sans-serif">AP</span>
+          <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0">
+            <span style="font-size: 12px; color: {{p.ink3}}">Sua assessora</span>
+            <span style="font-size: 15px; font-weight: 700">{{c.advisor}}</span>
+          </div>
+          <button type="button" onClick="{{goChat}}" style="min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1.5px solid {{p.accText}}; background: none; color: {{p.accText}}; font: 700 13px/1 'Manrope', sans-serif">Conversar</button>
+        </section>
+
+        <section aria-label="Atividade recente" style="margin: 24px 20px 0; display: flex; flex-direction: column">
+          <h2 style="margin: 0 0 6px; font: 700 15px/1.3 'Manrope', sans-serif">Atividade recente</h2>
+          <sc-if value="{{hasActivity}}" hint-placeholder-val="{{true}}">
+            <sc-for list="{{activity}}" as="t" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid {{p.s2}}">
+                <span aria-hidden="true" style="width: 36px; height: 36px; flex: none; border-radius: 50%; background: {{p.s2}}; color: {{p.ink2}}; display: flex; align-items: center; justify-content: center">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{t.iconPath}}"></path></svg>
+                </span>
+                <div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1; min-width: 0">
+                  <span style="font-size: 14px; font-weight: 600">{{t.title}}</span>
+                  <span style="font-size: 12.5px; color: {{p.ink3}}">{{t.meta}}</span>
+                </div>
+                <span style="{{t.valueStyle}}">{{t.value}}</span>
+              </div>
+            </sc-for>
+          </sc-if>
+          <sc-if value="{{noActivity}}" hint-placeholder-val="{{false}}">
+            <div style="padding: 20px 16px; border: 1px dashed {{p.line}}; border-radius: 12px; font-size: 13.5px; color: {{p.ink2}}; text-align: center">Nenhuma movimentação nos últimos 30 dias.</div>
+          </sc-if>
+        </section>
+
+        <p style="margin: 0; padding: 20px 20px 24px; font-size: 11.5px; line-height: 1.5; color: {{p.ink3}}">Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</p>
+      </sc-if>
+
+      <sc-if value="{{isDesktop}}" hint-placeholder-val="{{false}}">
+        <div style="padding: 32px 40px 40px; display: flex; flex-direction: column; gap: 24px">
+          <div style="display: flex; align-items: flex-end; gap: 16px">
+            <div style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1">
+              <h1 style="margin: 0; font: 800 28px/1.15 'Manrope', sans-serif; letter-spacing: -0.02em">Olá, {{c.first}}</h1>
+              <span style="font-size: 14px; color: {{p.ink3}}">Conta em dólar nos EUA · cliente desde {{c.since}}</span>
+            </div>
+            <nav aria-label="Ações" style="display: flex; gap: 8px">
+              <sc-for list="{{actions}}" as="x" hint-placeholder-count="4">
+                <button type="button" onClick="{{x.go}}" style="{{x.pillStyle}}">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{x.icon}}"></path></svg>
+                  {{x.label}}
+                </button>
+              </sc-for>
+            </nav>
+            <button type="button" aria-label="Notificações" style="width: 44px; height: 44px; flex: none; padding: 0; border: 1px solid {{p.line}}; border-radius: 50%; background: {{p.s1}}; color: {{p.ink}}; display: flex; align-items: center; justify-content: center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+            </button>
+          </div>
+
+          <div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 24px">
+            <section aria-label="Patrimônio" style="padding: 28px; background: {{p.s1}}; border: 1px solid {{p.line}}; border-radius: 18px; display: flex; flex-direction: column; gap: 18px">
+              <div style="display: flex; align-items: center; gap: 10px">
+                <span style="font-size: 14px; color: {{p.ink2}}; flex-grow: 1">Patrimônio total</span>
+                <span style="font: 700 11px/1 'Manrope', sans-serif; letter-spacing: .04em; text-transform: uppercase; color: {{p.accText}}; background: {{p.accSoft}}; border-radius: 999px; padding: 6px 10px">Cliente {{c.segment}}</span>
+                <button type="button" aria-label="{{eyeLabel}}" onClick="{{toggleHide}}" style="width: 44px; height: 44px; margin: -10px -12px -10px 0; padding: 0; border: none; background: none; color: {{p.ink2}}; display: flex; align-items: center; justify-content: center">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+              </div>
+              <span style="font: 800 44px/1.05 'Manrope', sans-serif; letter-spacing: -0.03em; font-variant-numeric: tabular-nums">{{aumText}}</span>
+              <div aria-hidden="true" style="display: flex; height: 10px; gap: 3px; border-radius: 5px; overflow: hidden">
+                <sc-for list="{{alloc}}" as="a" hint-placeholder-count="4"><span style="{{a.barStyle}}"></span></sc-for>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px">
+                <sc-for list="{{alloc}}" as="a" hint-placeholder-count="4">
+                  <div style="display: flex; flex-direction: column; gap: 6px">
+                    <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: {{p.ink2}}"><span style="{{a.dotStyle}}"></span>{{a.label}}</span>
+                    <span style="font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums">{{a.pct}}%</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; padding-top: 18px; border-top: 1px solid {{p.line}}">
+                <span style="font-size: 14px; color: {{p.ink2}}; flex-grow: 1">Disponível para saque</span>
+                <span style="font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums">{{cashText}}</span>
+              </div>
+            </section>
+
+            <div style="display: flex; flex-direction: column; gap: 24px">
+              <section aria-label="Sua assessoria" style="padding: 24px; background: {{p.s1}}; border: 1px solid {{p.line}}; border-radius: 18px; display: flex; flex-direction: column; gap: 16px">
+                <div style="display: flex; align-items: center; gap: 12px">
+                  <span aria-hidden="true" style="width: 48px; height: 48px; flex: none; border-radius: 50%; background: {{p.s2}}; display: flex; align-items: center; justify-content: center; font: 700 14px/1 'Manrope', sans-serif">AP</span>
+                  <div style="display: flex; flex-direction: column; gap: 2px">
+                    <span style="font-size: 12.5px; color: {{p.ink3}}">Sua assessora</span>
+                    <span style="font-size: 16px; font-weight: 700">{{c.advisor}}</span>
+                  </div>
+                </div>
+                <sc-if value="{{hasLastMsg}}" hint-placeholder-val="{{true}}">
+                  <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; background: {{p.s2}}; border-radius: 12px">
+                    <span style="font-size: 12px; color: {{p.ink3}}">Sua última mensagem · {{lastMsg.meta}}</span>
+                    <span style="font-size: 13.5px; line-height: 1.45">{{lastMsg.text}}</span>
+                  </div>
+                </sc-if>
+                <div style="display: flex; gap: 8px">
+                  <button type="button" onClick="{{goChat}}" style="flex: 1 1 0; min-height: 44px; border-radius: 999px; border: none; background: {{p.acc}}; color: {{p.accInk}}; font: 800 13.5px/1 'Manrope', sans-serif">Conversar</button>
+                  <button type="button" onClick="{{goReclamacao}}" style="flex: 1 1 0; min-height: 44px; border-radius: 999px; border: 1.5px solid {{p.line}}; background: none; color: {{p.ink}}; font: 700 13.5px/1 'Manrope', sans-serif">Abrir reclamação</button>
+                </div>
+              </section>
+              <p style="margin: 0; font-size: 12px; line-height: 1.5; color: {{p.ink3}}">Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</p>
+            </div>
+          </div>
+
+          <section aria-label="Atividade recente" style="padding: 8px 28px 12px; background: {{p.s1}}; border: 1px solid {{p.line}}; border-radius: 18px; display: flex; flex-direction: column">
+            <h2 style="margin: 0; padding: 16px 0 8px; font: 700 16px/1.3 'Manrope', sans-serif">Atividade recente</h2>
+            <sc-if value="{{hasActivity}}" hint-placeholder-val="{{true}}">
+              <sc-for list="{{activity}}" as="t" hint-placeholder-count="3">
+                <div style="display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid {{p.s2}}">
+                  <span aria-hidden="true" style="width: 38px; height: 38px; flex: none; border-radius: 50%; background: {{p.s2}}; color: {{p.ink2}}; display: flex; align-items: center; justify-content: center">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{t.iconPath}}"></path></svg>
+                  </span>
+                  <span style="font-size: 14px; font-weight: 600; flex-grow: 1">{{t.title}}</span>
+                  <span style="font-size: 13px; color: {{p.ink3}}; width: 200px">{{t.meta}}</span>
+                  <span style="{{t.valueStyleWide}}">{{t.value}}</span>
+                </div>
+              </sc-for>
+            </sc-if>
+            <sc-if value="{{noActivity}}" hint-placeholder-val="{{false}}">
+              <div style="margin: 4px 0 16px; padding: 24px 16px; border: 1px dashed {{p.line}}; border-radius: 12px; font-size: 14px; color: {{p.ink2}}; text-align: center">Nenhuma movimentação nos últimos 30 dias.</div>
+            </sc-if>
+          </section>
+        </div>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{showScrim}}" hint-placeholder-val="{{false}}">
+      <button type="button" aria-label="Fechar painel" onClick="{{goHome}}" style="position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 1; padding: 0; border: none; background: {{p.scrim}}; cursor: default"></button>
+    </sc-if>
+
+    <sc-if value="{{showPanel}}" hint-placeholder-val="{{false}}">
+      <div style="{{panelStyle}}">
+
+        <sc-if value="{{isSaque}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; align-items: center; gap: 4px; padding: 8px 8px 0">
+            <button type="button" aria-label="{{backLabel}}" onClick="{{goHome}}" style="width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; background: none; color: {{p.ink}}; display: flex; align-items: center; justify-content: center">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{backIcon}}"></path></svg>
+            </button>
+            <h1 style="margin: 0; font: 700 17px/1.2 'Manrope', sans-serif">Sacar</h1>
+          </div>
+          <div style="flex-grow: 1; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 22px">
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <label for="saque-valor" style="font-size: 13px; color: {{p.ink2}}">Quanto você quer sacar?</label>
+              <div style="display: flex; align-items: baseline; gap: 8px; border-bottom: 2px solid {{amountLine}}">
+                <span style="font: 600 20px/1 'Manrope', sans-serif; color: {{p.ink3}}">US$</span>
+                <input id="saque-valor" inputmode="decimal" autocomplete="off" placeholder="0,00" value="{{amount}}" onChange="{{onAmount}}" style="flex-grow: 1; min-width: 0; background: none; border: none; outline: none; color: {{p.ink}}; font: 800 34px/1.2 'Manrope', sans-serif; padding: 6px 0; font-variant-numeric: tabular-nums">
+              </div>
+              <sc-if value="{{saqueOver}}" hint-placeholder-val="{{false}}">
+                <span style="font-size: 13px; color: {{p.neg}}">Valor acima do disponível para saque ({{cashText}}).</span>
+              </sc-if>
+              <sc-if value="{{saqueUnder}}" hint-placeholder-val="{{true}}">
+                <span style="font-size: 13px; color: {{p.ink3}}">Disponível: {{cashText}}</span>
+              </sc-if>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px">
+              <sc-for list="{{saqueChips}}" as="ch" hint-placeholder-count="4">
+                <button type="button" onClick="{{ch.pick}}" style="min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid {{p.line}}; background: {{p.s1}}; color: {{p.ink}}; font: 600 13px/1 'Manrope', sans-serif">{{ch.label}}</button>
+              </sc-for>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <span style="font-size: 13px; color: {{p.ink2}}">Para onde</span>
+              <sc-for list="{{dests}}" as="d" hint-placeholder-count="2">
+                <button type="button" aria-pressed="{{d.pressed}}" onClick="{{d.pick}}" style="{{d.style}}">
+                  <span style="{{d.radioStyle}}"></span>
+                  <span style="display: flex; flex-direction: column; gap: 3px">
+                    <span style="font-size: 14.5px; font-weight: 700">{{d.title}}</span>
+                    <span style="font-size: 12.5px; color: {{p.ink3}}">{{d.sub}}</span>
+                  </span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="padding: 12px 14px; border: 1px dashed {{p.dash}}; border-radius: 12px; display: flex; flex-direction: column; gap: 6px">
+              <span style="font: 500 11.5px/1.3 'JetBrains Mono', monospace; color: {{p.accText}}">simulação → account.event.recorded · saque</span>
+              <span style="font-size: 12.5px; line-height: 1.5; color: {{p.ink2}}">O advisory decide se vira alerta de saque relevante ou de queda de patrimônio. O app não calcula regra nenhuma.</span>
+            </div>
+            <span style="flex-grow: 1"></span>
+            <button type="button" disabled="{{saqueDisabled}}" onClick="{{submitSaque}}" style="{{saqueBtnStyle}}">Confirmar saque</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isAporte}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; align-items: center; gap: 4px; padding: 8px 8px 0">
+            <button type="button" aria-label="{{backLabel}}" onClick="{{goHome}}" style="width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; background: none; color: {{p.ink}}; display: flex; align-items: center; justify-content: center">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{backIcon}}"></path></svg>
+            </button>
+            <h1 style="margin: 0; font: 700 17px/1.2 'Manrope', sans-serif">Depositar</h1>
+          </div>
+          <div style="flex-grow: 1; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 22px">
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <label for="aporte-valor" style="font-size: 13px; color: {{p.ink2}}">Quanto você quer depositar?</label>
+              <div style="display: flex; align-items: baseline; gap: 8px; border-bottom: 2px solid {{p.line}}">
+                <span style="font: 600 20px/1 'Manrope', sans-serif; color: {{p.ink3}}">US$</span>
+                <input id="aporte-valor" inputmode="decimal" autocomplete="off" placeholder="0,00" value="{{amount}}" onChange="{{onAmount}}" style="flex-grow: 1; min-width: 0; background: none; border: none; outline: none; color: {{p.ink}}; font: 800 34px/1.2 'Manrope', sans-serif; padding: 6px 0; font-variant-numeric: tabular-nums">
+              </div>
+              <span style="font-size: 13px; color: {{p.ink3}}">Patrimônio atual: {{aumPlain}}</span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px">
+              <sc-for list="{{aporteChips}}" as="ch" hint-placeholder-count="3">
+                <button type="button" onClick="{{ch.pick}}" style="min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid {{p.line}}; background: {{p.s1}}; color: {{p.ink}}; font: 600 13px/1 'Manrope', sans-serif">{{ch.label}}</button>
+              </sc-for>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <span style="font-size: 13px; color: {{p.ink2}}">De onde vem o dinheiro</span>
+              <sc-for list="{{origins}}" as="d" hint-placeholder-count="2">
+                <button type="button" aria-pressed="{{d.pressed}}" onClick="{{d.pick}}" style="{{d.style}}">
+                  <span style="{{d.radioStyle}}"></span>
+                  <span style="display: flex; flex-direction: column; gap: 3px">
+                    <span style="font-size: 14.5px; font-weight: 700">{{d.title}}</span>
+                    <span style="font-size: 12.5px; color: {{p.ink3}}">{{d.sub}}</span>
+                  </span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="padding: 12px 14px; border: 1px dashed {{p.dash}}; border-radius: 12px; display: flex; flex-direction: column; gap: 6px">
+              <span style="font: 500 11.5px/1.3 'JetBrains Mono', monospace; color: {{p.accText}}">simulação → account.event.recorded · aporte</span>
+              <span style="font-size: 12.5px; line-height: 1.5; color: {{p.ink2}}">Pode gerar alerta de aporte grande e, se o patrimônio cruzar a faixa, de mudança de segmento.</span>
+            </div>
+            <span style="flex-grow: 1"></span>
+            <button type="button" disabled="{{aporteDisabled}}" onClick="{{submitAporte}}" style="{{aporteBtnStyle}}">Confirmar depósito</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isChat}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 16px 12px 8px; border-bottom: 1px solid {{p.s2}}">
+            <button type="button" aria-label="{{backLabel}}" onClick="{{goHome}}" style="width: 44px; height: 44px; flex: none; padding: 0; border: none; border-radius: 50%; background: none; color: {{p.ink}}; display: flex; align-items: center; justify-content: center">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{backIcon}}"></path></svg>
+            </button>
+            <span aria-hidden="true" style="width: 38px; height: 38px; flex: none; border-radius: 50%; background: {{p.s2}}; display: flex; align-items: center; justify-content: center; font: 700 12.5px/1 'Manrope', sans-serif">AP</span>
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+              <h1 style="margin: 0; font: 700 15.5px/1.2 'Manrope', sans-serif">{{c.advisor}}</h1>
+              <span style="font-size: 12px; color: {{p.ink3}}">Sua assessora · Orla Invest</span>
+            </div>
+          </div>
+          <div style="flex-grow: 1; padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 10px">
+            <span style="align-self: center; font-size: 12px; color: {{p.ink3}}; background: {{p.s1}}; border-radius: 999px; padding: 6px 12px">Suas mensagens chegam direto à assessoria</span>
+            <sc-if value="{{noChat}}" hint-placeholder-val="{{false}}">
+              <span style="align-self: center; margin-top: 24px; font-size: 13.5px; color: {{p.ink2}}">Ainda não há mensagens. Escreva a primeira.</span>
+            </sc-if>
+            <sc-for list="{{chat}}" as="m" hint-placeholder-count="2">
+              <div style="align-self: flex-end; max-width: 82%; display: flex; flex-direction: column; gap: 4px; align-items: flex-end">
+                <span style="background: {{p.acc}}; color: {{p.accInk}}; font-size: 14px; line-height: 1.45; padding: 10px 14px; border-radius: 16px 16px 4px 16px">{{m.text}}</span>
+                <span style="font-size: 11.5px; color: {{p.ink3}}">{{m.meta}}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding: 12px 16px 16px; border-top: 1px solid {{p.s2}}; display: flex; flex-direction: column; gap: 10px">
+            <div role="group" aria-label="Canal" style="display: flex; gap: 4px; padding: 4px; background: {{p.s1}}; border-radius: 999px">
+              <button type="button" aria-pressed="{{chanChat.pressed}}" onClick="{{chanChat.pick}}" style="{{chanChat.style}}">Chat</button>
+              <button type="button" aria-pressed="{{chanMail.pressed}}" onClick="{{chanMail.pick}}" style="{{chanMail.style}}">E-mail</button>
+            </div>
+            <div style="display: flex; align-items: flex-end; gap: 8px; position: relative">
+              <label for="chat-texto" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%)">Mensagem</label>
+              <textarea id="chat-texto" rows="2" placeholder="Escreva para sua assessora" value="{{chatText}}" onChange="{{onChatText}}" style="flex-grow: 1; min-width: 0; resize: none; background: {{p.s1}}; border: 1px solid {{p.line}}; border-radius: 14px; padding: 12px 14px; color: {{p.ink}}; font: 500 14px/1.4 'Manrope', sans-serif; outline: none"></textarea>
+              <button type="button" aria-label="Enviar mensagem" disabled="{{chatDisabled}}" onClick="{{submitChat}}" style="{{sendBtnStyle}}">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+              </button>
+            </div>
+            <span style="font: 500 11px/1.3 'JetBrains Mono', monospace; color: {{p.accText}}">simulação → message.received · canal {{channel}}</span>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isReclamacao}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; align-items: center; gap: 4px; padding: 8px 8px 0">
+            <button type="button" aria-label="{{backLabel}}" onClick="{{goHome}}" style="width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; background: none; color: {{p.ink}}; display: flex; align-items: center; justify-content: center">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{backIcon}}"></path></svg>
+            </button>
+            <h1 style="margin: 0; font: 700 17px/1.2 'Manrope', sans-serif">Abrir reclamação</h1>
+          </div>
+          <div style="flex-grow: 1; padding: 12px 20px 24px; display: flex; flex-direction: column; gap: 16px">
+            <p style="margin: 0; font-size: 14px; line-height: 1.5; color: {{p.ink2}}">Conte o que aconteceu. Sua assessora recebe na hora.</p>
+            <div role="group" aria-label="Motivos comuns" style="display: flex; flex-direction: column; gap: 8px">
+              <sc-for list="{{presets}}" as="pr" hint-placeholder-count="4">
+                <button type="button" aria-pressed="{{pr.pressed}}" onClick="{{pr.pick}}" style="{{pr.style}}">
+                  <span style="{{pr.radioStyle}}"></span>
+                  <span style="display: flex; flex-direction: column; gap: 4px">
+                    <span style="font-size: 14.5px; font-weight: 700">{{pr.title}}</span>
+                    <span style="font-size: 13px; line-height: 1.45; color: {{p.ink2}}">“{{pr.text}}”</span>
+                  </span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <label for="reclamacao-texto" style="font-size: 13px; color: {{p.ink2}}">Ou escreva com suas palavras</label>
+              <textarea id="reclamacao-texto" rows="3" placeholder="O que aconteceu?" value="{{text}}" onChange="{{onText}}" style="resize: none; background: {{p.s1}}; border: 1px solid {{p.line}}; border-radius: 12px; padding: 12px 14px; color: {{p.ink}}; font: 500 14px/1.45 'Manrope', sans-serif; outline: none"></textarea>
+            </div>
+            <div style="padding: 12px 14px; border: 1px dashed {{p.dash}}; border-radius: 12px; display: flex; flex-direction: column; gap: 6px">
+              <span style="font: 500 11.5px/1.3 'JetBrains Mono', monospace; color: {{p.accText}}">simulação → message.received · canal chat</span>
+              <span style="font-size: 12.5px; line-height: 1.5; color: {{p.ink2}}">A triagem decide intenção, frustração, risco de saída e pedido de atendimento humano.</span>
+            </div>
+            <span style="flex-grow: 1"></span>
+            <button type="button" disabled="{{reclamacaoDisabled}}" onClick="{{submitReclamacao}}" style="{{reclamacaoBtnStyle}}">Enviar reclamação</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isEnviado}}" hint-placeholder-val="{{false}}">
+          <div style="flex-grow: 1; padding: 36px 20px 24px; display: flex; flex-direction: column; gap: 24px">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center">
+              <span aria-hidden="true" style="width: 64px; height: 64px; border-radius: 50%; background: {{p.posSoft}}; color: {{p.pos}}; display: flex; align-items: center; justify-content: center">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+              </span>
+              <h1 style="margin: 0; font: 800 22px/1.2 'Manrope', sans-serif">{{sent.title}}</h1>
+              <p style="margin: 0; font-size: 14px; line-height: 1.5; color: {{p.ink2}}">{{sent.lead}}</p>
+              <span style="font: 500 12px/1 'JetBrains Mono', monospace; color: {{p.ink3}}">Protocolo 01A0E3A5-2F4C</span>
+            </div>
+
+            <section aria-label="Bastidores da simulação" style="background: #f5f3ec; color: #14191a; border: 1px solid #d9d6cc; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 14px; font-family: 'Albert Sans', system-ui, sans-serif">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <span aria-hidden="true" style="width: 20px; height: 20px; flex: none; border-radius: 3px; background: #14191a; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 4px; box-sizing: border-box">
+                  <span style="display: block; height: 2px; width: 11px; background: #6fbf8a"></span>
+                  <span style="display: block; height: 2px; width: 7px; background: #f5f3ec"></span>
+                  <span style="display: block; height: 2px; width: 4px; background: #f5f3ec"></span>
+                </span>
+                <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #3a4240">Bastidores · simulação</span>
+              </div>
+              <div style="display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 6px 10px; font-size: 12.5px">
+                <span style="color: #6b706c">Evento</span>
+                <span style="font: 500 12px/1.4 'JetBrains Mono', monospace">{{sent.routing}}</span>
+                <span style="color: #6b706c">Conteúdo</span>
+                <span style="font: 500 12px/1.4 'JetBrains Mono', monospace">{{sent.detail}}</span>
+                <span style="color: #6b706c">event_id</span>
+                <span style="font: 500 12px/1.4 'JetBrains Mono', monospace; word-break: break-all">01a0e3a5-2f4c-7b1e-9d3a-6c0b8e41f27a</span>
+                <span style="color: #6b706c">trace_id</span>
+                <span style="font: 500 12px/1.4 'JetBrains Mono', monospace; word-break: break-all">4bf92f3577b34da6a3ce929d0e0e4736</span>
+              </div>
+              <ol style="margin: 0; padding: 12px 0 0; list-style: none; border-top: 1px solid #d9d6cc; display: flex; flex-direction: column; gap: 10px">
+                <sc-for list="{{traceSteps}}" as="s" hint-placeholder-count="4">
+                  <li style="display: flex; align-items: center; gap: 10px">
+                    <span style="{{s.dotStyle}}">
+                      <sc-if value="{{s.done}}" hint-placeholder-val="{{true}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></sc-if>
+                    </span>
+                    <span style="{{s.labelStyle}}">{{s.label}}</span>
+                    <span style="{{s.statusStyle}}">{{s.status}}</span>
+                  </li>
+                </sc-for>
+              </ol>
+              <span style="font-size: 12px; color: #6b706c">Meta do produto: do evento à fila em menos de 2 s (p95).</span>
+            </section>
+
+            <span style="flex-grow: 1"></span>
+            <div style="display: flex; flex-direction: column; gap: 10px">
+              <button type="button" onClick="{{sentBack}}" style="min-height: 52px; width: 100%; border: none; border-radius: 999px; background: {{p.acc}}; color: {{p.accInk}}; font: 800 15px/1 'Manrope', sans-serif">{{sent.backLabel}}</button>
+              <a href="https://leohts.tech/advisor-radar/fila" style="min-height: 52px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1.5px solid {{p.line}}; border-radius: 999px; color: {{p.ink}}; text-decoration: none; font: 700 14px/1 'Manrope', sans-serif">Ver na fila do time
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"></path></svg>
+              </a>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{showTabs}}" hint-placeholder-val="{{true}}">
+    <nav aria-label="Navegação principal" style="flex: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px 8px 10px; background: {{p.nav}}; border-top: 1px solid {{p.s2}}">
+      <button type="button" aria-current="page" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: none; background: none; color: {{p.accText}}; font: 700 11px/1 'Manrope', sans-serif">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg>
+        Início
+      </button>
+      <button type="button" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: none; background: none; color: {{p.ink3}}; font: 600 11px/1 'Manrope', sans-serif">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"></path><path d="M15 7h6v6"></path></svg>
+        Investir
+      </button>
+      <button type="button" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: none; background: none; color: {{p.ink3}}; font: 600 11px/1 'Manrope', sans-serif">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12A9 9 0 1 1 12 3v9z"></path><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"></path></svg>
+        Carteira
+      </button>
+      <button type="button" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: none; background: none; color: {{p.ink3}}; font: 600 11px/1 'Manrope', sans-serif">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+        Perfil
+      </button>
+    </nav>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"client":{"editor":"enum","options":["mariana","thiago","fernanda"],"default":"mariana"},"screen":{"editor":"enum","options":["home","saque","aporte","chat","reclamacao","enviado"],"default":"home"},"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"layout":{"editor":"enum","options":["mobile","desktop"],"default":"mobile"},"amount":{"editor":null,"tsType":"string"},"preset":{"editor":null,"tsType":"string"},"trace":{"editor":null,"tsType":"string"},"$preview":{"width":390,"height":1000}}'>
+class Component extends DCLogic {
+  state = { screen: null, theme: null, hide: false, amount: null, dest: 'us', origin: 'br', preset: null, text: '', chatText: '', channel: 'chat', sent: null, trace: null, extraChat: [] };
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+  }
+
+  palette(theme) {
+    if (theme === 'light') {
+      return { bg: '#f4f6fa', s1: '#ffffff', s2: '#eaeef5', line: '#d6dce8', ink: '#0e1626', ink2: '#414c64', ink3: '#5c677d', acc: '#f2b544', accInk: '#1b1403', accText: '#7f5600', accSoft: 'rgba(242,181,68,.22)', pos: '#1b7f56', posSoft: 'rgba(27,127,86,.12)', neg: '#b8352a', dash: '#aeb8ca', nav: '#ffffff', scrim: 'rgba(14,22,38,.32)', shadow: 'rgba(14,22,38,.16)', alloc: ['#e0a12e', '#4d7fdb', '#2fa37a', '#9aa3b5'] };
+    }
+    return { bg: '#0b1220', s1: '#131c2e', s2: '#1b2640', line: '#26324d', ink: '#eef2f8', ink2: '#b9c2d3', ink3: '#8e98ad', acc: '#f2b544', accInk: '#1b1403', accText: '#f2b544', accSoft: 'rgba(242,181,68,.14)', pos: '#57d3a2', posSoft: 'rgba(87,211,162,.14)', neg: '#ff8f85', dash: '#3a4a6d', nav: '#0e1627', scrim: 'rgba(5,9,18,.55)', shadow: 'rgba(0,0,0,.5)', alloc: ['#f2b544', '#8ab4ff', '#57d3a2', '#5b6780'] };
+  }
+
+  clients() {
+    return {
+      mariana: {
+        name: 'Mariana Costa', first: 'Mariana', initials: 'MC', segment: 'Singular', since: '2021', aum: 248300, cash: 31450, advisor: 'Ana Paula Ribeiro',
+        alloc: [['Ações', 42], ['ETFs', 28], ['Renda fixa', 17], ['Caixa', 13]],
+        activity: [
+          { icon: 'msg', title: 'Mensagem para a assessoria', meta: 'há 12 min · chat', value: '', tone: '' },
+          { icon: 'msg', title: 'Mensagem para a assessoria', meta: 'ontem · e-mail', value: '', tone: '' },
+          { icon: 'out', title: 'Saque para conta nos EUA', meta: 'há 3 dias · final 4821', value: '− US$ 20.000,00', tone: 'neg' },
+        ],
+        chat: [
+          { text: 'A transferência que pedi na segunda ainda não caiu. Podem verificar?', meta: 'ontem · e-mail' },
+          { text: 'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.', meta: 'há 12 min · chat' },
+        ],
+      },
+      thiago: {
+        name: 'Thiago Azevedo', first: 'Thiago', initials: 'TA', segment: 'Advance', since: '2024', aum: 68000, cash: 60520, advisor: 'Ana Paula Ribeiro',
+        alloc: [['Ações', 3], ['ETFs', 8], ['Renda fixa', 0], ['Caixa', 89]],
+        activity: [
+          { icon: 'seg', title: 'Você agora é cliente Advance', meta: 'há 4 h', value: '', tone: '' },
+          { icon: 'in', title: 'Depósito via câmbio', meta: 'há 4 h', value: '+ US$ 60.000,00', tone: 'pos' },
+        ],
+        chat: [],
+      },
+      fernanda: {
+        name: 'Fernanda Lima', first: 'Fernanda', initials: 'FL', segment: 'Essencial', since: '2024', aum: 8200, cash: 1148, advisor: 'Ana Paula Ribeiro',
+        alloc: [['Ações', 20], ['ETFs', 45], ['Renda fixa', 21], ['Caixa', 14]],
+        activity: [],
+        chat: [],
+      },
+    };
+  }
+
+  presetList() {
+    return [
+      { title: 'Minha transferência está atrasada', text: 'Pedi uma transferência há dias e até agora não caiu. Preciso de uma posição hoje.' },
+      { title: 'Uma cobrança que não reconheço', text: 'Apareceu uma cobrança no meu extrato que eu não reconheço. Quero entender o que é.' },
+      { title: 'Quero falar com uma pessoa', text: 'Não quero mais resposta automática. Preciso que alguém da assessoria me ligue.' },
+      { title: 'Estou pensando em sair', text: 'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.' },
+    ];
+  }
+
+  parse(v) {
+    const s = String(v ?? '').replace(/[^0-9.,]/g, '').replace(/\./g, '').replace(',', '.');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  fmt(n) {
+    return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  go(screen) {
+    clearInterval(this.timer);
+    this.setState({ screen, amount: '', preset: -1, text: '' });
+  }
+
+  startTrace() {
+    clearInterval(this.timer);
+    this.timer = setInterval(() => {
+      const t = (this.state.trace ?? 0) + 1;
+      this.setState({ trace: t });
+      if (t >= 4) clearInterval(this.timer);
+    }, 900);
+  }
+
+  accountSteps() {
+    return ['Gravado na outbox do account-sim', 'Publicado no RabbitMQ', 'Avaliado pelas regras do advisory', 'Na fila da assessoria, se uma regra disparar'];
+  }
+
+  messageSteps() {
+    return ['Gravado na outbox do account-sim', 'Publicado no RabbitMQ', 'Classificado pela triagem', 'Na fila da assessoria'];
+  }
+
+  send(sent, extra) {
+    this.setState({ screen: 'enviado', sent, trace: 0, amount: '', preset: -1, text: '', chatText: '', ...extra });
+    this.startTrace();
+  }
+
+  renderVals() {
+    const clients = this.clients();
+    const c = clients[this.props.client ?? 'mariana'] ?? clients.mariana;
+    const theme = this.state.theme ?? this.props.theme ?? 'dark';
+    const p = this.palette(theme);
+    const desktop = (this.props.layout ?? 'mobile') === 'desktop';
+    const screen = this.state.screen ?? this.props.screen ?? 'home';
+    const home = screen === 'home';
+    const amount = this.state.amount ?? this.props.amount ?? '';
+    const amt = this.parse(amount);
+    const presetIdx = this.state.preset !== null ? this.state.preset : (this.props.preset != null ? Number(this.props.preset) : -1);
+    const presets = this.presetList();
+    const allocColor = { 'Ações': p.alloc[0], 'ETFs': p.alloc[1], 'Renda fixa': p.alloc[2], 'Caixa': p.alloc[3] };
+
+    const optStyle = (sel) => 'display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px; border-radius: 12px; background: ' + (sel ? p.s2 : p.s1) + '; border: 1.5px solid ' + (sel ? p.acc : p.line) + '; color: ' + p.ink + '; font-family: inherit;';
+    const radioStyle = (sel) => 'width: 20px; height: 20px; flex: none; border-radius: 50%; box-sizing: border-box; align-self: flex-start; margin-top: 1px; border: ' + (sel ? '6px solid ' + p.acc : '2px solid ' + p.ink3) + ';';
+    const primary = (on) => 'min-height: 52px; width: 100%; border: none; border-radius: 999px; font: 800 15px/1 \'Manrope\', sans-serif; background: ' + (on ? p.acc : p.s2) + '; color: ' + (on ? p.accInk : p.ink3) + ';';
+    const seg = (sel) => 'flex: 1 1 0; min-height: 40px; border: none; border-radius: 999px; font: 700 13px/1 \'Manrope\', sans-serif; background: ' + (sel ? p.ink : 'transparent') + '; color: ' + (sel ? p.bg : p.ink2) + ';';
+    const pill = (main) => 'min-height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; border-radius: 999px; font: 700 13.5px/1 \'Manrope\', sans-serif; ' + (main ? 'border: none; background: ' + p.acc + '; color: ' + p.accInk + ';' : 'border: 1.5px solid ' + p.line + '; background: ' + p.s1 + '; color: ' + p.ink + ';');
+    const icons = {
+      in: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM12 8v8M8 12h8',
+      out: 'M3 21h18M4 10h16M12 3l8 5H4zM6 10v8M10 10v8M14 10v8M18 10v8',
+      msg: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z',
+      seg: 'M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6-4.5-4.2 6.1-.7z',
+      flag: 'M5 21V4h11l-1.5 4L16 12H5',
+      deposit: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM12 8v8M8 12h8',
+      withdraw: 'M3 21h18M4 10h16M12 3l8 5H4zM6 10v8M10 10v8M14 10v8M18 10v8',
+    };
+
+    const over = amt > c.cash;
+    const saqueOk = amt > 0 && !over;
+    const aporteOk = amt > 0;
+    const complaintText = presetIdx >= 0 ? presets[presetIdx].text : this.state.text.trim();
+    const chatText = this.state.chatText.trim();
+    const chat = c.chat.concat(this.state.extraChat);
+
+    const defaultSent = { title: 'Reclamação registrada', lead: '“' + presets[3].text + '”', routing: 'message.received', detail: 'canal: chat', steps: this.messageSteps(), back: 'home', backLabel: 'Voltar ao início' };
+    const sent = this.state.sent ?? defaultSent;
+    const t = this.state.trace ?? (this.props.trace != null ? Number(this.props.trace) : 2);
+
+    const traceSteps = sent.steps.map((label, i) => {
+      const done = i < t;
+      const current = i === t;
+      return {
+        label,
+        done,
+        dotStyle: 'width: 22px; height: 22px; flex: none; border-radius: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; ' + (done ? 'background: #1d4d3a; color: #ffffff; border: none;' : current ? 'background: #f3e9cf; border: 2px solid #b9821c;' : 'background: #fbfaf6; border: 1.5px solid #d9d6cc;'),
+        labelStyle: 'flex-grow: 1; font-size: 13.5px; ' + (done || current ? 'color: #14191a; font-weight: 600;' : 'color: #6b706c;'),
+        status: done ? 'feito' : current ? 'agora' : 'aguardando',
+        statusStyle: 'font: 500 11px/1 \'JetBrains Mono\', monospace; color: ' + (done ? '#174a30' : current ? '#6f4a06' : '#6b706c') + ';',
+      };
+    });
+
+    const setAmount = (n) => () => this.setState({ amount: this.fmt(n) });
+    const destLabel = this.state.dest === 'us' ? 'para a conta nos EUA · final 4821' : 'para a conta no Brasil · final 0937';
+    const originLabel = this.state.origin === 'br' ? 'por câmbio a partir do Brasil' : 'por wire de outro banco';
+    const valueColor = (tone) => (tone === 'pos' ? p.pos : tone === 'neg' ? p.neg : p.ink);
+
+    return {
+      c,
+      p,
+      frameW: desktop ? '1440px' : '390px',
+      switchHref: desktop ? 'ClientPov-Desktop.dc.html' : 'ClientPov.dc.html',
+      isDesktop: desktop,
+      isMobile: !desktop,
+      isDark: theme === 'dark',
+      isLight: theme === 'light',
+      themeLabel: theme === 'dark' ? 'Tema claro' : 'Tema escuro',
+      toggleTheme: () => this.setState({ theme: theme === 'dark' ? 'light' : 'dark' }),
+
+      mainStyle: (!desktop && !home) ? 'display: none;' : 'flex: 1 1 0; min-width: 0; overflow-y: auto; display: flex; flex-direction: column;',
+      showPanel: !home,
+      showScrim: desktop && !home,
+      panelStyle: desktop
+        ? 'position: absolute; top: 0; right: 0; bottom: 0; z-index: 2; width: 440px; overflow-y: auto; display: flex; flex-direction: column; background: ' + p.bg + '; border-left: 1px solid ' + p.line + '; box-shadow: -24px 0 48px -24px ' + p.shadow + ';'
+        : 'flex: 1 1 0; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; background: ' + p.bg + ';',
+      showTabs: !desktop && home,
+      backLabel: desktop ? 'Fechar' : 'Voltar',
+      backIcon: desktop ? 'M6 6l12 12M18 6L6 18' : 'M15 6l-6 6 6 6',
+      isSaque: screen === 'saque',
+      isAporte: screen === 'aporte',
+      isChat: screen === 'chat',
+      isReclamacao: screen === 'reclamacao',
+      isEnviado: screen === 'enviado',
+
+      aumText: this.state.hide ? 'US$ ••••••' : 'US$ ' + this.fmt(c.aum),
+      aumPlain: 'US$ ' + this.fmt(c.aum),
+      cashText: 'US$ ' + this.fmt(c.cash),
+      eyeLabel: this.state.hide ? 'Mostrar valores' : 'Esconder valores',
+      toggleHide: () => this.setState((s) => ({ hide: !s.hide })),
+      alloc: c.alloc.filter((a) => a[1] > 0).map((a) => ({
+        label: a[0],
+        pct: a[1],
+        barStyle: 'flex: ' + a[1] + ' 1 0; background: ' + allocColor[a[0]] + ';',
+        dotStyle: 'width: 8px; height: 8px; flex: none; border-radius: 50%; background: ' + allocColor[a[0]] + ';',
+      })),
+      actions: [
+        { label: 'Depositar', icon: icons.deposit, go: () => this.go('aporte'), pillStyle: pill(true) },
+        { label: 'Sacar', icon: icons.withdraw, go: () => this.go('saque'), pillStyle: pill(false) },
+        { label: 'Mensagem', icon: icons.msg, go: () => this.go('chat'), pillStyle: pill(false) },
+        { label: 'Reclamar', icon: icons.flag, go: () => this.go('reclamacao'), pillStyle: pill(false) },
+      ],
+      activity: c.activity.map((a) => ({
+        ...a,
+        iconPath: icons[a.icon],
+        valueStyle: 'font-size: 14px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; color: ' + valueColor(a.tone) + ';',
+        valueStyleWide: 'width: 160px; text-align: right; font-size: 14.5px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; color: ' + valueColor(a.tone) + ';',
+      })),
+      hasActivity: c.activity.length > 0,
+      noActivity: c.activity.length === 0,
+      lastMsg: chat.length ? chat[chat.length - 1] : { text: '', meta: '' },
+      hasLastMsg: chat.length > 0,
+
+      goHome: () => this.go('home'),
+      goChat: () => this.go('chat'),
+      goReclamacao: () => this.go('reclamacao'),
+
+      amount,
+      onAmount: (e) => this.setState({ amount: e.target.value }),
+      amountLine: over ? p.neg : p.line,
+      saqueOver: over,
+      saqueUnder: !over,
+      saqueChips: [
+        { label: 'US$ 1.000', pick: setAmount(1000) },
+        { label: 'US$ 5.000', pick: setAmount(5000) },
+        { label: 'US$ 20.000', pick: setAmount(20000) },
+        { label: 'Tudo', pick: setAmount(c.cash) },
+      ],
+      aporteChips: [
+        { label: 'US$ 1.000', pick: setAmount(1000) },
+        { label: 'US$ 10.000', pick: setAmount(10000) },
+        { label: 'US$ 50.000', pick: setAmount(50000) },
+      ],
+      dests: [
+        { title: 'Conta nos EUA', sub: 'Banco fictício · final 4821', key: 'us' },
+        { title: 'Conta no Brasil', sub: 'Com câmbio para reais · final 0937', key: 'br' },
+      ].map((d) => ({ ...d, pressed: this.state.dest === d.key ? 'true' : 'false', style: optStyle(this.state.dest === d.key), radioStyle: radioStyle(this.state.dest === d.key), pick: () => this.setState({ dest: d.key }) })),
+      origins: [
+        { title: 'Câmbio a partir do Brasil', sub: 'Envie reais e receba em dólar', key: 'br' },
+        { title: 'Wire de outro banco', sub: 'De uma conta sua nos EUA', key: 'wire' },
+      ].map((d) => ({ ...d, pressed: this.state.origin === d.key ? 'true' : 'false', style: optStyle(this.state.origin === d.key), radioStyle: radioStyle(this.state.origin === d.key), pick: () => this.setState({ origin: d.key }) })),
+      saqueDisabled: !saqueOk,
+      saqueBtnStyle: primary(saqueOk),
+      aporteDisabled: !aporteOk,
+      aporteBtnStyle: primary(aporteOk),
+      submitSaque: () => this.send({ title: 'Saque solicitado', lead: 'US$ ' + this.fmt(amt) + ' ' + destLabel + '.', routing: 'account.event.recorded', detail: 'kind: saque · amount: ' + amt, steps: this.accountSteps(), back: 'home', backLabel: 'Voltar ao início' }),
+      submitAporte: () => this.send({ title: 'Depósito solicitado', lead: 'US$ ' + this.fmt(amt) + ' ' + originLabel + '.', routing: 'account.event.recorded', detail: 'kind: aporte · amount: ' + amt, steps: this.accountSteps(), back: 'home', backLabel: 'Voltar ao início' }),
+
+      chat,
+      noChat: chat.length === 0,
+      channel: this.state.channel,
+      chanChat: { pressed: this.state.channel === 'chat' ? 'true' : 'false', style: seg(this.state.channel === 'chat'), pick: () => this.setState({ channel: 'chat' }) },
+      chanMail: { pressed: this.state.channel === 'e-mail' ? 'true' : 'false', style: seg(this.state.channel === 'e-mail'), pick: () => this.setState({ channel: 'e-mail' }) },
+      chatText: this.state.chatText,
+      onChatText: (e) => this.setState({ chatText: e.target.value }),
+      chatDisabled: chatText === '',
+      sendBtnStyle: 'width: 48px; height: 48px; flex: none; padding: 0; border: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: ' + (chatText ? p.acc : p.s2) + '; color: ' + (chatText ? p.accInk : p.ink3) + ';',
+      submitChat: () => this.send(
+        { title: 'Mensagem enviada', lead: '“' + chatText + '”', routing: 'message.received', detail: 'canal: ' + this.state.channel, steps: this.messageSteps(), back: 'chat', backLabel: 'Voltar à conversa' },
+        { extraChat: this.state.extraChat.concat([{ text: chatText, meta: 'agora · ' + this.state.channel }]) }
+      ),
+
+      presets: presets.map((pr, i) => ({ ...pr, pressed: presetIdx === i ? 'true' : 'false', style: optStyle(presetIdx === i), radioStyle: radioStyle(presetIdx === i), pick: () => this.setState({ preset: i, text: '' }) })),
+      text: this.state.text,
+      onText: (e) => this.setState({ text: e.target.value, preset: -1 }),
+      reclamacaoDisabled: complaintText === '',
+      reclamacaoBtnStyle: primary(complaintText !== ''),
+      submitReclamacao: () => this.send({ title: 'Reclamação registrada', lead: '“' + complaintText + '”', routing: 'message.received', detail: 'canal: chat', steps: this.messageSteps(), back: 'home', backLabel: 'Voltar ao início' }),
+
+      sent,
+      traceSteps,
+      sentBack: () => this.go(sent.back),
+    };
+  }
+}
+</script>
+</body>
+</html>

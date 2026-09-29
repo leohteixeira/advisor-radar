@@ -23,6 +23,7 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/event"
 	"github.com/leohteixeira/advisor-radar/internal/jev"
 	"github.com/leohteixeira/advisor-radar/internal/resilience"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 	"github.com/leohteixeira/advisor-radar/internal/triage"
 	"github.com/leohteixeira/advisor-radar/internal/triagepipe"
 )
@@ -41,8 +42,17 @@ func main() {
 
 	logger.Info("service started", "service", "triage")
 
-	if err := run(ctx, logger); err != nil {
+	shutdown, err := telemetry.Setup(ctx, "triage")
+	if err != nil {
 		logger.Error("service failed", "error", err.Error())
+		os.Exit(1)
+	}
+	runErr := run(ctx, logger)
+	if err := telemetry.Stop(shutdown); err != nil {
+		logger.Warn("telemetry shutdown failed", "service", "triage", "error", err.Error())
+	}
+	if runErr != nil {
+		logger.Error("service failed", "error", runErr.Error())
 		os.Exit(1)
 	}
 }
@@ -78,7 +88,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("triage: grpc listen: %w", err)
 		}
-		grpcSrv = grpc.NewServer()
+		grpcSrv = grpc.NewServer(telemetry.GRPCServerOption())
 		triagev1.RegisterTriageServiceServer(grpcSrv, triagepipe.NewGRPCServer(reviewer))
 		workers++
 		go func() {

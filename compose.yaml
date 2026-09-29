@@ -49,6 +49,16 @@ services:
       timeout: 5s
       retries: 10
 
+  # Grafana, Tempo, Mimir (Prometheus), and Loki behind one OTLP collector.
+  # Services export to it when OTEL_EXPORTER_OTLP_ENDPOINT is set
+  # (http://127.0.0.1:4418). Grafana is on 3410: 3000 belongs to Cybersecurity.
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.34.0
+    ports:
+      - "3410:3000"
+      - "4417:4317"
+      - "4418:4318"
+
 volumes:
   advisor_radar_pg:
   advisor_radar_rabbitmq:

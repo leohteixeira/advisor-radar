@@ -12,11 +12,14 @@ import { apiPath } from './base';
 
 export class ApiError extends Error {
   readonly status: number;
+  /** The `error` code of a JSON error body (`insufficient`, `invalid`, …), or ''. */
+  readonly code: string;
 
-  constructor(status: number) {
+  constructor(status: number, code = '') {
     super(`http ${status}`);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 

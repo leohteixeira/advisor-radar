@@ -67,6 +67,28 @@ func TestEnvelope_ValidateAndMarshalBody(t *testing.T) {
 			wantErr: "schema_version",
 		},
 		{
+			name: "unsupported schema version 4",
+			env: event.Envelope{
+				Name:          event.NameAccountEventRecorded,
+				EventID:       "evt-1",
+				OccurredAt:    validTime,
+				CustomerID:    "cust-1",
+				SchemaVersion: 4,
+			},
+			wantErr: "schema_version",
+		},
+		{
+			name: "valid schema version 3",
+			env: event.Envelope{
+				Name:          event.NameAccountEventRecorded,
+				EventID:       "evt-1",
+				OccurredAt:    validTime,
+				CustomerID:    "cust-1",
+				SchemaVersion: event.SchemaVersionPositions,
+			},
+			wantOK: true,
+		},
+		{
 			name: "unknown name",
 			env: event.Envelope{
 				Name:          "message.reclassify.requested",
@@ -76,6 +98,17 @@ func TestEnvelope_ValidateAndMarshalBody(t *testing.T) {
 				SchemaVersion: event.SchemaVersionMVP,
 			},
 			wantErr: "unknown name",
+		},
+		{
+			name: "valid schema version 2",
+			env: event.Envelope{
+				Name:          event.NameAccountEventRecorded,
+				EventID:       "evt-1",
+				OccurredAt:    validTime,
+				CustomerID:    "cust-1",
+				SchemaVersion: event.SchemaVersionCents,
+			},
+			wantOK: true,
 		},
 	}
 
@@ -125,6 +158,13 @@ func TestEnvelope_ValidateAndMarshalBody(t *testing.T) {
 					if _, ok := fields[key]; !ok {
 						t.Fatalf("body missing %q", key)
 					}
+				}
+				gotVersion, ok := fields["schema_version"].(float64)
+				if !ok {
+					t.Fatalf("schema_version type = %T, want number", fields["schema_version"])
+				}
+				if int(gotVersion) != tt.env.SchemaVersion {
+					t.Fatalf("schema_version = %d, want %d", int(gotVersion), tt.env.SchemaVersion)
 				}
 				if _, ok := fields["name"]; ok {
 					t.Fatal("body must omit name")
@@ -185,5 +225,30 @@ func TestEnvelope_MarshalBody_WithPayload(t *testing.T) {
 	}
 	if payload["channel"] != "email" {
 		t.Fatalf("payload.channel = %v, want email", payload["channel"])
+	}
+}
+
+func TestKnownSchemaVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version int
+		want    bool
+	}{
+		{name: "zero", version: 0, want: false},
+		{name: "dollars", version: event.SchemaVersionMVP, want: true},
+		{name: "cents", version: event.SchemaVersionCents, want: true},
+		{name: "positions", version: event.SchemaVersionPositions, want: true},
+		{name: "future", version: 4, want: false},
+		{name: "negative", version: -1, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := event.KnownSchemaVersion(tt.version); got != tt.want {
+				t.Fatalf("KnownSchemaVersion(%d) = %v, want %v", tt.version, got, tt.want)
+			}
+		})
 	}
 }

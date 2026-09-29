@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Advisor Radar — escolha uma visão (celular)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&amp;family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f5f3ec;color:#14191a;font-family:'Albert Sans',system-ui,sans-serif}
+a{color:#1d4d3a}a:hover{color:#14191a}
+.row{transition:background-color .35s ease, border-color .35s ease}
+.row.on{background:#dfe8df;border-color:#1d4d3a}
+.pip{transition:background-color .35s ease, color .35s ease}
+.row.on .pip{background:#1d4d3a;color:#ffffff}
+</style>
+</helmet>
+<div style="width: 390px; height: 2000px; box-sizing: border-box; background: #f5f3ec; color: #14191a; font-family: 'Albert Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+  <header style="height: 52px; flex: none; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid #d9d6cc; background: #fbfaf6">
+    <span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 4px; background: #14191a; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 6px; box-sizing: border-box">
+      <span style="display: block; height: 3px; width: 16px; background: #6fbf8a"></span>
+      <span style="display: block; height: 3px; width: 10px; background: #f5f3ec"></span>
+      <span style="display: block; height: 3px; width: 5px; background: #f5f3ec"></span>
+    </span>
+    <span style="font-family: 'Literata', Georgia, serif; font-size: 18px; font-weight: 500">Advisor Radar</span>
+  </header>
+
+  <section style="padding: 28px 16px 0; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Escolha uma visão</span>
+      <h1 style="margin: 0; font: 500 28px/1.12 'Literata', Georgia, serif; letter-spacing: -0.01em">O mesmo sinal, visto dos dois lados da conversa.</h1>
+    </div>
+
+    <a href="https://leohts.tech/advisor-radar/fila" style="display: flex; flex-direction: column; gap: 10px; text-decoration: none; color: #14191a; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 6px; padding: 18px">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <span aria-hidden="true" style="width: 40px; height: 40px; flex: none; border-radius: 6px; background: #14191a; color: #f5f3ec; display: flex; align-items: center; justify-content: center">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1"></rect><rect x="10" y="4" width="5" height="11" rx="1"></rect><rect x="17" y="4" width="4" height="7" rx="1"></rect></svg>
+        </span>
+        <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1">
+          <span style="font: 500 21px/1.15 'Literata', Georgia, serif">Visão do time</span>
+          <span style="font-size: 12px; color: #6b706c">Assessor · Analista · Gestor</span>
+        </div>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+      </div>
+      <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #3a4240">Fila em tempo real com alertas e mensagens priorizadas, revisão da triagem e o painel com os SLAs em risco.</p>
+    </a>
+
+    <a href="ClientPov.dc.html" style="display: flex; flex-direction: column; gap: 10px; text-decoration: none; color: #14191a; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 6px; padding: 18px">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <span aria-hidden="true" style="width: 40px; height: 40px; flex: none; border-radius: 6px; background: #1d4d3a; color: #ffffff; display: flex; align-items: center; justify-content: center">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"></rect><path d="M10.5 18.5h3"></path></svg>
+        </span>
+        <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1">
+          <span style="font: 500 21px/1.15 'Literata', Georgia, serif">Visão do cliente</span>
+          <span style="font-size: 12px; color: #6b706c">Um cliente fictício por segmento</span>
+        </div>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+      </div>
+      <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #3a4240">Use o app de uma corretora fictícia. Saques, depósitos, mensagens e reclamações viram eventos e chegam à fila do time.</p>
+    </a>
+  </section>
+
+  <section style="margin: 32px 16px 0; padding-top: 24px; border-top: 1px solid #d9d6cc; display: flex; flex-direction: column; gap: 16px">
+    <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">O produto</span>
+    <p style="margin: 0; font: 400 18px/1.4 'Literata', Georgia, serif">Quem precisa de atenção agora, e por quê.</p>
+    <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #3a4240">O Advisor Radar junta o que acontece na conta do cliente e o que ele escreve, e transforma isso em ações priorizadas para a assessoria.</p>
+    <div style="display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-left: 14px; border-left: 2px solid #d9d6cc">
+        <span style="font-weight: 600; font-size: 14.5px">Alertas proativos</span>
+        <span style="font-size: 13.5px; line-height: 1.5; color: #3a4240">Saque relevante, queda de patrimônio, aporte grande, mudança de segmento e cliente sem contato.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-left: 14px; border-left: 2px solid #d9d6cc">
+        <span style="font-weight: 600; font-size: 14.5px">Triagem de mensagens</span>
+        <span style="font-size: 13.5px; line-height: 1.5; color: #3a4240">Intenção, frustração, risco de saída e pedido humano. Abaixo de 0,85 de certeza, uma pessoa revisa.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-left: 14px; border-left: 2px solid #d9d6cc">
+        <span style="font-weight: 600; font-size: 14.5px">Casos com SLA</span>
+        <span style="font-size: 13.5px; line-height: 1.5; color: #3a4240">SLA por segmento, com escalonamento por fila com TTL, sem cron.</span>
+      </div>
+    </div>
+  </section>
+
+  <section style="margin: 32px 16px 0; padding-top: 24px; border-top: 1px solid #d9d6cc; display: flex; flex-direction: column; gap: 14px">
+    <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Arquitetura</span>
+    <div style="display: flex; align-items: center; gap: 12px">
+      <h2 style="margin: 0; flex-grow: 1; font: 500 21px/1.2 'Literata', Georgia, serif">Como uma reclamação chega à fila</h2>
+      <button type="button" onClick="{{toggle}}" aria-label="{{toggleLabel}}" style="width: 44px; height: 44px; flex: none; padding: 0; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 6px; color: #14191a; display: flex; align-items: center; justify-content: center">
+        <sc-if value="{{paused}}" hint-placeholder-val="{{false}}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4l13 8-13 8z"></path></svg>
+        </sc-if>
+        <sc-if value="{{playing}}" hint-placeholder-val="{{true}}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"></path></svg>
+        </sc-if>
+      </button>
+    </div>
+    <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px">
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+        <li class="row {{r.cls}}" style="display: flex; gap: 12px; padding: 12px; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 6px">
+          <span class="pip" style="width: 26px; height: 26px; flex: none; border-radius: 50%; background: #efede5; color: #3a4240; font: 600 12px/26px 'Albert Sans', sans-serif; text-align: center">{{r.num}}</span>
+          <div style="display: flex; flex-direction: column; gap: 5px; min-width: 0">
+            <span style="font: 500 11px/1.2 'JetBrains Mono', monospace; color: #6b706c">{{r.where}}</span>
+            <span style="font-weight: 600; font-size: 14px; line-height: 1.35">{{r.title}}</span>
+            <sc-if value="{{r.active}}" hint-placeholder-val="{{false}}">
+              <span style="font-size: 13px; line-height: 1.5; color: #3a4240">{{r.detail}}</span>
+              <span style="align-self: flex-start; font: 500 11.5px/1.3 'JetBrains Mono', monospace; background: #f3e9cf; color: #6f4a06; border-radius: 3px; padding: 4px 7px; word-break: break-all">{{r.tag}}</span>
+            </sc-if>
+          </div>
+        </li>
+      </sc-for>
+    </ol>
+  </section>
+
+  <footer style="margin: 28px 16px 32px; display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; flex-wrap: wrap; gap: 6px">
+      <span style="font: 500 11.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 6px 10px">Go 1.26</span>
+      <span style="font: 500 11.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 6px 10px">React + Vite</span>
+      <span style="font: 500 11.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 6px 10px">PostgreSQL</span>
+      <span style="font: 500 11.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 6px 10px">RabbitMQ</span>
+      <span style="font: 500 11.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 6px 10px">Elasticsearch</span>
+      <span style="font: 500 11.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 6px 10px">gRPC</span>
+      <span style="font: 500 11.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 6px 10px">Jev</span>
+      <span style="font: 500 11.5px/1 'JetBrains Mono', monospace; border: 1px solid #d9d6cc; background: #fbfaf6; border-radius: 999px; padding: 6px 10px">OpenTelemetry</span>
+    </div>
+    <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #6b706c">Demo técnica com dados, nomes e marcas fictícios, sem vínculo com nenhuma instituição real.</p>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2000}}'>
+class Component extends DCLogic {
+  state = { step: 0, paused: false };
+
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      if (!this.state.paused) {
+        this.setState((s) => ({ step: (s.step + 1) % 8 }));
+      }
+    }, 2600);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+  }
+
+  renderVals() {
+    const steps = [
+      { where: 'web → bff · HTTP', title: 'O cliente abre uma reclamação no app', detail: 'O app React envia o pedido ao BFF por HTTP/JSON versionado.', tag: 'POST /api/v1/client-pov/{id}/complaints' },
+      { where: 'bff → account-sim · gRPC', title: 'O BFF entrega o comando', detail: 'Chamada gRPC com deadline propagado. O trace nasce no clique.', tag: 'gRPC · deadline' },
+      { where: 'account-sim · PostgreSQL', title: 'Mensagem e evento na mesma transação', detail: 'A outbox garante que nada se perde se o broker cair.', tag: 'transactional outbox' },
+      { where: 'account-sim → RabbitMQ', title: 'O relay publica o evento', detail: 'O contexto de trace vai nos headers da mensagem.', tag: 'message.received' },
+      { where: 'triage · Jev', title: 'A triagem classifica a mensagem', detail: 'Inbox idempotente por event_id. Se o modelo cair, a heurística responde e marca o resultado como degradado.', tag: 'Jev · fallback heurístico' },
+      { where: 'advisory · cases', title: 'Uma regra gera o alerta e o caso ganha SLA', detail: 'Regras pequenas, uma por interface. O vencimento escala por fila com TTL.', tag: 'message.triaged → alert.raised' },
+      { where: 'timeline-indexer · Elasticsearch', title: 'A visão 360 é atualizada', detail: 'Eventos, mensagens e casos entram na busca textual.', tag: 'Elasticsearch' },
+      { where: 'bff → web · SSE', title: 'O alerta aparece na fila do assessor', detail: 'Sem recarregar a página. Meta: p95 abaixo de 2 s.', tag: 'SSE · alert.raised' },
+    ];
+    const i = this.state.step;
+    return {
+      rows: steps.map((s, j) => ({ ...s, num: j + 1, active: j === i, cls: j === i ? 'on' : '' })),
+      paused: this.state.paused,
+      playing: !this.state.paused,
+      toggleLabel: this.state.paused ? 'Reproduzir animação' : 'Pausar animação',
+      toggle: () => this.setState((s) => ({ paused: !s.paused })),
+    };
+  }
+}
+</script>
+</body>
+</html>

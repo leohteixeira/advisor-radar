@@ -8,6 +8,7 @@ export const CID = {
   sergio: '018f2c1a-7b3e-7000-8000-000000000011',
   juliana: '018f2c1a-7b3e-7000-8000-000000000005',
   vanessa: '018f2c1a-7b3e-7000-8000-000000000018',
+  fernanda: '018f2c1a-7b3e-7000-8000-000000000003',
 } as const;
 
 export const SID = {
@@ -18,6 +19,7 @@ export const SID = {
   anaMsg: '018f2c1a-7b3e-7000-8000-000000000107',
   patriciaMsg: '018f2c1a-7b3e-7000-8000-000000000109',
   live: '018f2c1a-7b3e-7000-8000-000000000190',
+  fernandaPerfil: '018f2c1a-7b3e-7000-8000-000000000112',
 } as const;
 
 export const KID = {

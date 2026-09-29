@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/identity"
 	"github.com/leohteixeira/advisor-radar/internal/sim"
 	"github.com/leohteixeira/advisor-radar/internal/triage"
 	"github.com/leohteixeira/advisor-radar/internal/triagepipe"
@@ -283,6 +284,70 @@ func TestApply_HappyModel(t *testing.T) {
 	}
 	if payload.NeedsReview || payload.Classifier != "jev" || payload.Intent != "cambio" {
 		t.Fatalf("payload = %+v", payload)
+	}
+}
+
+func TestApply_CopiesMessageOrigin(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		origin     string
+		wantInBody bool
+	}{
+		{name: "client app message keeps its origin", origin: sim.OriginClientApp, wantInBody: true},
+		{name: "seeded message has no origin", origin: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := newMemStore()
+			clf := &fixedClassifier{result: triage.Result{Intent: triage.IntentReclamacao, IntentProb: 0.9, Classifier: "jev"}}
+			env := messageEnv("md-origin", "c18")
+			env.Payload = sim.MessagePayload{Channel: "chat", Text: "Cobrança indevida", Origin: tt.origin}
+			if err := triagepipe.Apply(context.Background(), store, clf, env); err != nil {
+				t.Fatal(err)
+			}
+			store.mu.Lock()
+			ob := store.outbox["tr-md-origin"]
+			store.mu.Unlock()
+			var body struct {
+				Payload map[string]any `json:"payload"`
+			}
+			if err := json.Unmarshal(ob.row.Payload, &body); err != nil {
+				t.Fatal(err)
+			}
+			got, ok := body.Payload["origin"]
+			if ok != tt.wantInBody || (ok && got != tt.origin) {
+				t.Fatalf("payload origin = %v (present %v), want %q (present %v)", got, ok, tt.origin, tt.wantInBody)
+			}
+		})
+	}
+}
+
+func TestApply_UUIDv7SourceStoresUUIDv7Result(t *testing.T) {
+	t.Parallel()
+
+	source := identity.MustNewV7()
+	store := newMemStore()
+	clf := &fixedClassifier{result: triage.Result{
+		Intent: triage.IntentReclamacao, IntentProb: 0.6, Classifier: "heuristic", Degraded: true,
+	}}
+	if err := triagepipe.Apply(context.Background(), store, clf, messageEnv(source, identity.MustNewV7())); err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.results) != 1 {
+		t.Fatalf("results = %d", len(store.results))
+	}
+	for id, row := range store.results {
+		if _, err := identity.ParseV7(id); err != nil {
+			t.Fatalf("triaged id %q: %v", id, err)
+		}
+		if row.SourceEventID != source {
+			t.Fatalf("source = %s, want %s", row.SourceEventID, source)
+		}
 	}
 }
 

@@ -6,9 +6,6 @@ import (
 	"slices"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
 	timelinev1 "github.com/leohteixeira/advisor-radar/gen/timeline/v1"
 )
 
@@ -21,6 +18,20 @@ type TimelineEntry struct {
 	Text       string `json:"text"`
 	Meta       string `json:"meta"`
 	Ago        int    `json:"ago"`
+	// Source is the routing key of the event the row came from.
+	Source string `json:"source,omitempty"`
+	// OccurredAt is the event time, zero when the indexer did not send it.
+	OccurredAt time.Time `json:"occurred_at,omitzero"`
+	// ProductID is the catalog product an account event names, such as the
+	// one an aplicacao bought.
+	ProductID string `json:"product_id,omitempty"`
+	// AmountCents is an account event's amount in integer USD cents.
+	AmountCents int64 `json:"amount_cents,omitempty"`
+	// SimDay and ProductChangeBP are a reavaliacao's simulated day and the
+	// signed day change in basis points of ProductID, the product that moved
+	// the most.
+	SimDay          int `json:"sim_day,omitempty"`
+	ProductChangeBP int `json:"product_change_bp,omitempty"`
 }
 
 // TimelineClient reads the customer 360. The BFF never stores the rows.
@@ -51,7 +62,7 @@ func NewTimelineClient(target string) (TimelineClient, func(), error) {
 	if target == "" {
 		return EmptyTimeline{}, func() {}, nil
 	}
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := DialGRPC(target)
 	if err != nil {
 		return nil, nil, fmt.Errorf("bff: dial timeline: %w", err)
 	}
@@ -75,14 +86,22 @@ func (g *GRPCTimeline) Search(ctx context.Context, customerID, query, kind strin
 	}
 	out := make([]TimelineEntry, 0, len(res.GetItems()))
 	for _, it := range res.GetItems() {
+		// An empty or unreadable occurred_at stays zero; readers then use Ago.
+		occurredAt, _ := time.Parse(time.RFC3339Nano, it.GetOccurredAt())
 		out = append(out, TimelineEntry{
-			EventID:    it.GetEventId(),
-			CustomerID: it.GetCustomerId(),
-			Kind:       it.GetKind(),
-			Title:      it.GetTitle(),
-			Text:       it.GetText(),
-			Meta:       it.GetMeta(),
-			Ago:        int(it.GetAgo()),
+			EventID:         it.GetEventId(),
+			CustomerID:      it.GetCustomerId(),
+			Kind:            it.GetKind(),
+			Title:           it.GetTitle(),
+			Text:            it.GetText(),
+			Meta:            it.GetMeta(),
+			Ago:             int(it.GetAgo()),
+			Source:          it.GetSource(),
+			OccurredAt:      occurredAt,
+			ProductID:       it.GetProductId(),
+			AmountCents:     it.GetAmountCents(),
+			SimDay:          int(it.GetSimDay()),
+			ProductChangeBP: int(it.GetProductChangeBp()),
 		})
 	}
 	return out, nil

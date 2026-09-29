@@ -7,35 +7,43 @@ INSERT INTO operators (id, name) VALUES
   ('01a0e3a4-9a44-755c-910e-1043a3fc1e60', 'Carla Menezes')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 
-INSERT INTO book (customer_id, name, segment, aum, advisor_id, since) VALUES
-  ('01a0e3a4-9a44-7566-b5de-eb2e365799f8', 'Mariana Costa', 'Singular', 248300, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2021'),
-  ('01a0e3a4-9a44-7571-9cd6-29d603ed75d1', 'Paulo Henrique Souza', 'Advance', 96400, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2022'),
-  ('01a0e3a4-9a44-757a-ac8f-dab7db5eb068', 'Fernanda Lima', 'Essencial', 8200, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2024'),
-  ('01a0e3a4-9a44-7585-bc68-ce1a803f76a7', 'Carlos Eduardo Ramos', 'Advance', 142000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2020'),
-  ('01a0e3a4-9a44-7590-b715-07e7c4798c60', 'Juliana Martins', 'Singular', 512900, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2019'),
-  ('01a0e3a4-9a44-7599-93ae-de61ea009668', 'Roberto Nascimento', 'Essencial', 7800, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2025'),
-  ('01a0e3a4-9a44-75a2-b139-40376b3a76ea', 'Ana Beatriz Oliveira', 'Advance', 190500, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2021'),
-  ('01a0e3a4-9a44-75ab-9a7d-ce6feb41b137', 'Lucas Pereira', 'Essencial', 6100, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2023'),
-  ('01a0e3a4-9a44-75b5-b359-8d4428470a99', 'Patrícia Gomes', 'Singular', 780000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2018'),
-  ('01a0e3a4-9a44-75be-a38e-f2f87b8089f1', 'Marcelo Ferreira', 'Advance', 88000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2022'),
-  ('01a0e3a4-9a44-75c7-91c3-f5c3250f406c', 'Sérgio Cardoso', 'Singular', 450000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2019'),
-  ('01a0e3a4-9a44-75d0-bb2f-41cc8876e922', 'Helena Barbosa', 'Advance', 108000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2023'),
-  ('01a0e3a4-9a44-75dd-b3a0-403a7a87836e', 'Thiago Azevedo', 'Advance', 68000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2024'),
-  ('01a0e3a4-9a44-75e6-a8e6-8bb9dcdda086', 'Camila Rodrigues', 'Advance', 175000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2020'),
-  ('01a0e3a4-9a44-75ee-ad63-ef224b47aaeb', 'Rafael Monteiro', 'Singular', 950000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2017'),
-  ('01a0e3a4-9a44-75fa-ac0a-25beade29a12', 'Beatriz Santana', 'Essencial', 7500, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2025'),
-  ('01a0e3a4-9a44-7603-bb01-1a44dd2d450c', 'Diego Carvalho', 'Essencial', 8900, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2024'),
-  ('01a0e3a4-9a44-760b-8bad-caa0bc7cab10', 'Vanessa Moreira', 'Advance', 119000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2021'),
-  ('01a0e3a4-9a44-7615-a44d-8902d124530a', 'Gustavo Teixeira', 'Advance', 141000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2022'),
-  ('01a0e3a4-9a44-7622-b16b-5c5dcfe5a501', 'Isabela Nunes', 'Essencial', 9400, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2025'),
-  ('01a0e3a4-9a44-762d-8db2-85b1e2c338af', 'Otávio Freitas', 'Essencial', 5800, '01a0e3a4-9a44-7552-8de2-e88e47b9affc', '2024'),
-  ('01a0e3a4-9a44-7636-8319-a6d8d039bfbe', 'Renata Albuquerque', 'Advance', 67000, '01a0e3a4-9a44-755c-910e-1043a3fc1e60', '2023')
+-- Investor profiles (migrations/advisory/003): Fernanda conservador
+-- 2026-03-12, Mariana moderado 2026-01-20, Thiago arrojado 2026-08-04. Every
+-- other book customer comes from one fixed-seed draw, kept here as literals:
+-- Go math/rand/v2 rand.New(rand.NewPCG(20260929, 8)), in book order, the
+-- profile from IntN(3) over (conservador, moderado, arrojado), then the date
+-- 2025-09-01 plus IntN(365) days.
+INSERT INTO book (customer_id, name, segment, aum, advisor_id, since, investor_profile, profile_assessed_on) VALUES
+  ('01a0e3a4-9a44-7566-b5de-eb2e365799f8', 'Mariana Costa', 'Singular', 248300, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2021', 'moderado', '2026-01-20'),
+  ('01a0e3a4-9a44-7571-9cd6-29d603ed75d1', 'Paulo Henrique Souza', 'Advance', 96400, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2022', 'conservador', '2026-01-26'),
+  ('01a0e3a4-9a44-757a-ac8f-dab7db5eb068', 'Fernanda Lima', 'Essencial', 8200, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2024', 'conservador', '2026-03-12'),
+  ('01a0e3a4-9a44-7585-bc68-ce1a803f76a7', 'Carlos Eduardo Ramos', 'Advance', 142000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2020', 'arrojado', '2025-10-23'),
+  ('01a0e3a4-9a44-7590-b715-07e7c4798c60', 'Juliana Martins', 'Singular', 512900, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2019', 'moderado', '2025-09-20'),
+  ('01a0e3a4-9a44-7599-93ae-de61ea009668', 'Roberto Nascimento', 'Essencial', 7800, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2025', 'moderado', '2025-11-05'),
+  ('01a0e3a4-9a44-75a2-b139-40376b3a76ea', 'Ana Beatriz Oliveira', 'Advance', 190500, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2021', 'moderado', '2026-07-27'),
+  ('01a0e3a4-9a44-75ab-9a7d-ce6feb41b137', 'Lucas Pereira', 'Essencial', 6100, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2023', 'moderado', '2025-09-07'),
+  ('01a0e3a4-9a44-75b5-b359-8d4428470a99', 'Patrícia Gomes', 'Singular', 780000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2018', 'arrojado', '2026-08-09'),
+  ('01a0e3a4-9a44-75be-a38e-f2f87b8089f1', 'Marcelo Ferreira', 'Advance', 88000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2022', 'conservador', '2026-05-02'),
+  ('01a0e3a4-9a44-75c7-91c3-f5c3250f406c', 'Sérgio Cardoso', 'Singular', 450000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2019', 'moderado', '2026-06-08'),
+  ('01a0e3a4-9a44-75d0-bb2f-41cc8876e922', 'Helena Barbosa', 'Advance', 108000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2023', 'arrojado', '2026-03-02'),
+  ('01a0e3a4-9a44-75dd-b3a0-403a7a87836e', 'Thiago Azevedo', 'Advance', 68000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2024', 'arrojado', '2026-08-04'),
+  ('01a0e3a4-9a44-75e6-a8e6-8bb9dcdda086', 'Camila Rodrigues', 'Advance', 175000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2020', 'moderado', '2025-12-26'),
+  ('01a0e3a4-9a44-75ee-ad63-ef224b47aaeb', 'Rafael Monteiro', 'Singular', 950000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2017', 'moderado', '2026-05-09'),
+  ('01a0e3a4-9a44-75fa-ac0a-25beade29a12', 'Beatriz Santana', 'Essencial', 7500, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2025', 'arrojado', '2026-04-05'),
+  ('01a0e3a4-9a44-7603-bb01-1a44dd2d450c', 'Diego Carvalho', 'Essencial', 8900, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2024', 'arrojado', '2025-09-22'),
+  ('01a0e3a4-9a44-760b-8bad-caa0bc7cab10', 'Vanessa Moreira', 'Advance', 119000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2021', 'moderado', '2025-10-17'),
+  ('01a0e3a4-9a44-7615-a44d-8902d124530a', 'Gustavo Teixeira', 'Advance', 141000, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2022', 'arrojado', '2026-07-29'),
+  ('01a0e3a4-9a44-7622-b16b-5c5dcfe5a501', 'Isabela Nunes', 'Essencial', 9400, '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', '2025', 'arrojado', '2026-03-10'),
+  ('01a0e3a4-9a44-762d-8db2-85b1e2c338af', 'Otávio Freitas', 'Essencial', 5800, '01a0e3a4-9a44-7552-8de2-e88e47b9affc', '2024', 'moderado', '2026-05-07'),
+  ('01a0e3a4-9a44-7636-8319-a6d8d039bfbe', 'Renata Albuquerque', 'Advance', 67000, '01a0e3a4-9a44-755c-910e-1043a3fc1e60', '2023', 'arrojado', '2026-08-19')
 ON CONFLICT (customer_id) DO UPDATE SET
   name = EXCLUDED.name,
   segment = EXCLUDED.segment,
   aum = EXCLUDED.aum,
   advisor_id = EXCLUDED.advisor_id,
-  since = EXCLUDED.since;
+  since = EXCLUDED.since,
+  investor_profile = EXCLUDED.investor_profile,
+  profile_assessed_on = EXCLUDED.profile_assessed_on;
 
 -- Queue message signals (reseed updates raised_at).
 INSERT INTO queue_signals (id, customer_id, kind, raised_at, payload)

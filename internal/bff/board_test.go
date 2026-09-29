@@ -87,3 +87,36 @@ func TestBoard_BadBody(t *testing.T) {
 		t.Fatal("want empty")
 	}
 }
+
+func TestBoard_PerfilAlert(t *testing.T) {
+	t.Parallel()
+	board := bff.NewBoard()
+	eid, cust := identity.MustNewV7(), identity.MustNewV7()
+	body := envelopeJSON(t, eid, cust, map[string]any{
+		"kind": "perfil", "rule": "Compra acima do perfil de investidor",
+		"amount": 1000.0, "before": 8200.0, "after": 8200.0,
+		"product_id": "cobalto", "asset_class": "acoes", "risk": 5, "profile": "conservador", "max_risk": 2,
+	})
+	if err := board.ApplyDelivery(context.Background(), "alert.raised", body); err != nil {
+		t.Fatal(err)
+	}
+	items := board.Items()
+	if len(items) != 1 {
+		t.Fatalf("items = %+v", items)
+	}
+	got := items[0]
+	if got.Kind != "alert" || got.Alert != "perfil" || got.Rule != "Compra acima do perfil de investidor" ||
+		got.Amount != 1000 || got.ProductID != "cobalto" || got.Risk != 5 || got.Profile != "conservador" || got.MaxRisk != 2 {
+		t.Fatalf("signal = %+v", got)
+	}
+}
+
+func TestBoard_UnknownAlertKindIsPermanent(t *testing.T) {
+	t.Parallel()
+	board := bff.NewBoard()
+	body := envelopeJSON(t, identity.MustNewV7(), identity.MustNewV7(), map[string]any{"kind": "suitability"})
+	err := board.ApplyDelivery(context.Background(), "alert.raised", body)
+	if err == nil || !bff.IsPermanent(err) {
+		t.Fatalf("err = %v, want permanent", err)
+	}
+}

@@ -1,6 +1,6 @@
 export type Segment = 'Essencial' | 'Advance' | 'Singular';
 
-export type AlertType = 'saque' | 'queda' | 'aporte' | 'segmento' | 'contato' | 'risco';
+export type AlertType = 'saque' | 'queda' | 'aporte' | 'segmento' | 'contato' | 'risco' | 'perfil';
 
 export type Intent =
   | 'Operacional'
@@ -43,6 +43,14 @@ export interface Signal {
   rule?: string;
   reason?: string;
   contacted_at?: string;
+  /** Catalog product of a `perfil` alert. */
+  product_id?: string;
+  /** Product risk (1–5) of a `perfil` alert. */
+  risk?: number;
+  /** Investor profile of a `perfil` alert. */
+  profile?: string;
+  /** Highest risk the profile allows. */
+  max_risk?: number;
 }
 
 export interface CaseHistoryEntry {
@@ -154,4 +162,5 @@ export const ALERT_LABELS: Record<string, string> = {
   segmento: 'Mudança de segmento',
   contato: 'Sem contato há muito tempo',
   risco: 'Mensagem com risco',
+  perfil: 'Compra acima do perfil',
 };

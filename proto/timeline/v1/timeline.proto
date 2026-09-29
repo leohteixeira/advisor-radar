@@ -23,6 +23,26 @@ message TimelineItem {
   string text = 5;
   string meta = 6;
   int32 ago = 7;
+  // source is the routing key of the event the row came from, such as
+  // account.event.recorded or alert.raised.
+  string source = 8;
+  // occurred_at is the event time in RFC 3339 (UTC). Empty for rows indexed
+  // before the field existed.
+  string occurred_at = 9;
+  // product_id is the catalog product an account event names, such as the
+  // one an aplicacao bought. Empty for every other row.
+  string product_id = 10;
+  // amount_cents is an account event's amount in integer USD cents, whatever
+  // its schema version (version 1 whole dollars are scaled). Zero for rows
+  // that are not account events, and for an account event whose amount is
+  // not a number or is past 2^53 cents.
+  int64 amount_cents = 11;
+  // sim_day is the simulated market day a reavaliacao revalued the account
+  // to. Zero for every other row.
+  int32 sim_day = 12;
+  // product_change_bp is the day change, in signed basis points, of the
+  // product that moved a reavaliacao the most. Zero for every other row.
+  int32 product_change_bp = 13;
 }
 
 message SearchResponse {

@@ -1,0 +1,68 @@
+- id: "1"
+  title: Record ADR 0008 and schema version 2
+  description: >-
+    Record ADR 0008, extending ADR 0001, before any POV command code: the BFF
+    delivers a client action to account-sim over gRPC, and account-sim publishes
+    through the outbox. schema_version 2 carries integer cents plus origin or
+    destination; schema_version 1 stays whole dollars, and consumers read amounts
+    by version.
+
+- id: "2"
+  title: Add the view-selection screen
+  description: >-
+    Cover CAP-1. /advisor-radar renders the selection screen instead of
+    redirecting to /advisor-radar/fila, with the two cards, the three pillars,
+    and the pausable eight-step walkthrough that honors prefers-reduced-motion.
+
+- id: "3"
+  title: Seed POV accounts and accept client commands
+  description: >-
+    Cover the account-sim half of CAP-3 and CAP-6. The three seeded accounts
+    store four class balances in cents, a withdrawal debits only caixa and total
+    assets, and each command writes state and the outbox event in one transaction
+    or refuses with no event.
+
+- id: "4"
+  title: Update the book from POV account events
+  description: >-
+    Cover CAP-5. advisory updates book.aum and book.segment from schema_version 2
+    account events, converting cents into the dollar book, so Fernanda's
+    USD 10,000 deposit and a large Mariana withdrawal raise the phase-1 alerts.
+
+- id: "5"
+  title: Serve POV commands from the BFF
+  description: >-
+    Cover the HTTP half of CAP-2 and CAP-3, and the counters in CAP-7. The BFF
+    exposes the versioned POV reads and posts, enforces Idempotency-Key and the
+    10-per-minute and 40-per-day limits, and returns 202 with event_id, 422, or
+    429 without a live progress stream.
+
+- id: "6"
+  title: Build the phone client list and app
+  description: >-
+    Cover the phone surfaces of CAP-2 and CAP-3 and the uncut part of CAP-4.
+    The list opens a seeded client, and the phone app can deposit, withdraw, and
+    send a preset complaint, then show the formatted protocol, the event_id, and
+    the link to /advisor-radar/fila.
+
+- id: "7"
+  title: Stream Bastidores progress over SSE
+  description: >-
+    Cover the live half of CAP-4. An in-memory hub on
+    GET /v1/client-pov/customers/{id}/stream advances Bastidores from the command
+    result and from account.event.recorded, message.received, message.triaged,
+    and alert.raised, and this story is the first cut in architecture.md.
+
+- id: "8"
+  title: Add desktop layout, light theme, and free message
+  description: >-
+    Cover the deferrable client-app surfaces in ux.md. Desktop actions use the
+    440px panel, the light theme toggles, and a free message can be sent on chat
+    or e-mail, which are cuts 2 through 4 in architecture.md.
+
+- id: "9"
+  title: Document the POV contract and the demo script
+  description: >-
+    Cover the written half of CAP-7. The README gains selection, the POV, and
+    the demo script, and the POV HTTP contract is written beside the current BFF
+    contract, without adding OpenTelemetry.

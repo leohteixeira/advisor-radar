@@ -16,10 +16,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
+	accountv1 "github.com/leohteixeira/advisor-radar/gen/account/v1"
 	advisoryv1 "github.com/leohteixeira/advisor-radar/gen/advisory/v1"
 	"github.com/leohteixeira/advisor-radar/internal/advisory"
+	"github.com/leohteixeira/advisor-radar/internal/envfile"
 	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/sim"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 )
 
 const amqpDialTimeout = 10 * time.Second
@@ -29,10 +34,24 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if err := envfile.Load(".env"); err != nil {
+		logger.Error("service failed", "error", err.Error())
+		os.Exit(1)
+	}
+
 	logger.Info("service started", "service", "advisory")
 
-	if err := run(ctx, logger); err != nil {
+	shutdown, err := telemetry.Setup(ctx, "advisory")
+	if err != nil {
 		logger.Error("service failed", "error", err.Error())
+		os.Exit(1)
+	}
+	runErr := run(ctx, logger)
+	if err := telemetry.Stop(shutdown); err != nil {
+		logger.Warn("telemetry shutdown failed", "service", "advisory", "error", err.Error())
+	}
+	if runErr != nil {
+		logger.Error("service failed", "error", runErr.Error())
 		os.Exit(1)
 	}
 }
@@ -42,6 +61,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	httpAddr := os.Getenv("ADVISORY_HTTP_ADDR")
 	grpcAddr := os.Getenv("ADVISORY_GRPC_ADDR")
 	brokerURL := os.Getenv("ADVISORY_BROKER_URL")
+	accountTarget := os.Getenv("ACCOUNT_SIM_GRPC_TARGET")
 
 	var actionStore advisory.ActionStore = advisory.NewMemoryActionStore()
 	var store *advisory.PGXStore
@@ -101,8 +121,24 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			cancel()
 			return fmt.Errorf("advisory: grpc listen: %w", err)
 		}
-		grpcSrv = grpc.NewServer()
-		advisoryv1.RegisterAdvisoryServiceServer(grpcSrv, advisory.NewGRPCServer(reader))
+		var opts []advisory.ServerOption
+		if accountTarget != "" {
+			conn, err := grpc.NewClient(accountTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), telemetry.GRPCClientOption())
+			if err != nil {
+				_ = lis.Close()
+				cancel()
+				if httpSrv != nil {
+					_ = httpSrv.Close()
+				}
+				return fmt.Errorf("advisory: account-sim client: %w", err)
+			}
+			defer func() { _ = conn.Close() }()
+			opts = append(opts, advisory.WithAccountReader(advisory.NewAccountSim(accountv1.NewAccountServiceClient(conn))))
+		} else {
+			logger.Warn("moment facts unavailable: ACCOUNT_SIM_GRPC_TARGET is not set", "service", "advisory")
+		}
+		grpcSrv = grpc.NewServer(telemetry.GRPCServerOption())
+		advisoryv1.RegisterAdvisoryServiceServer(grpcSrv, advisory.NewGRPCServer(reader, opts...))
 		workers++
 		go func() {
 			logger.Info("grpc listening", "service", "advisory", "addr", grpcAddr)
@@ -387,7 +423,22 @@ func handleDelivery(ctx context.Context, store *advisory.PGXStore, body []byte) 
 		return permanentDeliveryError{err: fmt.Errorf("advisory: validate delivery: %w", err)}
 	}
 	if err := advisory.Apply(ctx, store, env); err != nil {
-		return err
+		return classifyApplyError(err)
 	}
 	return nil
+}
+
+// classifyApplyError marks failures that redelivery cannot fix as permanent so
+// they do not requeue: a money-scale error, a customer outside the book, an
+// unknown investor profile, an invalid purchase, and an invalid revaluation.
+func classifyApplyError(err error) error {
+	switch {
+	case errors.Is(err, sim.ErrMoneyScale),
+		errors.Is(err, advisory.ErrUnknownCustomer),
+		errors.Is(err, advisory.ErrUnknownProfile),
+		errors.Is(err, advisory.ErrInvalidPurchase),
+		errors.Is(err, advisory.ErrInvalidRevaluation):
+		return permanentDeliveryError{err: err}
+	}
+	return err
 }

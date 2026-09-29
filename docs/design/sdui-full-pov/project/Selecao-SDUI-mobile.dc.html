@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Seleção no celular — faixa e seção Server-Driven UI</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&amp;family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&amp;family=JetBrains+Mono:wght@400;500&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0;background:#f5f3ec}</style>
+</helmet>
+<div style="width: 390px; height: 2080px; box-sizing: border-box; background: #f5f3ec; color: #14191a; font-family: 'Albert Sans', system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden">
+
+  <header style="height: 52px; flex: none; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid #d9d6cc; background: #fbfaf6">
+    <span aria-hidden="true" style="width: 24px; height: 24px; border-radius: 4px; background: #14191a; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 5px; box-sizing: border-box">
+      <span style="display: block; height: 3px; width: 13px; background: #6fbf8a"></span>
+      <span style="display: block; height: 3px; width: 8px; background: #f5f3ec"></span>
+      <span style="display: block; height: 3px; width: 4px; background: #f5f3ec"></span>
+    </span>
+    <span style="flex-grow: 1; font-family: 'Literata', Georgia, serif; font-size: 17px; font-weight: 500">Advisor Radar</span>
+    <a href="#sdui-m" style="min-height: 44px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #1d4d3a; text-decoration: none">SDUI
+      <span style="font: 700 10px/1 'Albert Sans', sans-serif; letter-spacing: .06em; text-transform: uppercase; background: #1d4d3a; color: #ffffff; border-radius: 999px; padding: 4px 6px">Novo</span>
+    </a>
+  </header>
+
+  <div style="padding: 20px 16px 0; display: flex; flex-direction: column; gap: 8px">
+    <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Escolha uma visão</span>
+    <h1 style="margin: 0; font: 500 28px/1.12 'Literata', Georgia, serif; letter-spacing: -0.02em">O mesmo sinal, visto dos dois lados da conversa.</h1>
+  </div>
+
+  <a href="#sdui-m" style="margin: 20px 16px 0; display: flex; flex-direction: column; gap: 10px; padding: 18px; background: #14191a; color: #f5f3ec; border-radius: 6px; text-decoration: none">
+    <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6fbf8a">Novo · Server-Driven UI</span>
+    <span style="font: 500 19px/1.3 'Literata', Georgia, serif">Três clientes, três inícios diferentes, nenhuma linha de front escrita para cada um.</span>
+    <span style="align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: 6px; background: #f2b544; color: #1b1403; font-weight: 700; font-size: 14px">Ver como funciona</span>
+  </a>
+
+  <section id="sdui-m" style="margin: 36px 16px 0; display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #1d4d3a">Server-Driven UI</span>
+      <h2 style="margin: 0; font: 500 24px/1.18 'Literata', Georgia, serif; letter-spacing: -0.01em">O backend monta a tela de cada cliente</h2>
+      <p style="margin: 0; font-size: 14.5px; line-height: 1.55; color: #3a4240">Cada tela chega numa única resposta do bff, já preenchida para o momento do cliente. O app só desenha um catálogo fixo de componentes.</p>
+    </div>
+
+    <div role="group" aria-label="Escolha um cliente" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; background: #efede5; border-radius: 8px">
+      <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+        <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
+      </sc-for>
+    </div>
+
+    <div style="box-sizing: border-box; background: #0b1220; border: 6px solid #26324d; border-radius: 28px; padding: 16px 14px; display: flex; flex-direction: column; gap: 12px; color: #eef2f8; font-family: 'Manrope', system-ui, sans-serif">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <span style="font: 800 17px/1 'Manrope', sans-serif; letter-spacing: -0.03em">orla<span style="color: #f2b544">.</span></span>
+        <span style="width: 30px; height: 30px; border-radius: 50%; background: #1b2640; color: #f2b544; display: flex; align-items: center; justify-content: center; font: 700 11px/1 'Manrope', sans-serif">{{sel.initials}}</span>
+      </div>
+      <span style="font: 700 16px/1.2 'Manrope', sans-serif">Olá, {{sel.first}}</span>
+      <div style="{{sel.cardStyle}}">
+        <span style="font: 600 10.5px/1.2 'Albert Sans', sans-serif; letter-spacing: .06em; text-transform: uppercase; color: {{sel.kickerColor}}">{{sel.kicker}}</span>
+        <span style="font: 700 15px/1.3 'Manrope', sans-serif">{{sel.title}}</span>
+        <span style="font-size: 12.5px; line-height: 1.45; color: #b9c2d3">{{sel.body}}</span>
+        <span style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border-radius: 8px; background: #f2b544; color: #1b1403; font: 700 12px/1 'Manrope', sans-serif">{{sel.action}}</span>
+      </div>
+      <div style="background: #131c2e; border: 1px solid #26324d; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 11px; color: #8e98ad">Patrimônio total</span>
+        <span style="font: 800 20px/1 'Manrope', sans-serif; letter-spacing: -0.02em">{{sel.total}}</span>
+        <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden">
+          <sc-for list="{{sel.alloc}}" as="a" hint-placeholder-count="4"><span style="{{a.style}}"></span></sc-for>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 0 8px">
+        <span style="height: 44px; border-radius: 50%; background: #1b2640"></span>
+        <span style="height: 44px; border-radius: 50%; background: #1b2640"></span>
+        <span style="height: 44px; border-radius: 50%; background: #1b2640"></span>
+        <span style="height: 44px; border-radius: 50%; background: #1b2640"></span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Resposta do bff · 1 requisição</span>
+      <pre style="margin: 0; box-sizing: border-box; padding: 14px; background: #14191a; color: #ecebe4; border-radius: 6px; font: 400 11px/1.55 'JetBrains Mono', monospace; white-space: pre-wrap; word-break: break-word">{{sel.json}}</pre>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid #d9d6cc; border-radius: 6px; background: #fbfaf6">
+      <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Regra que escolheu a variante</span>
+      <span style="font: 500 12.5px/1.4 'JetBrains Mono', monospace; color: #1d4d3a">{{sel.moment}}</span>
+      <span style="font-size: 14px; line-height: 1.45; color: #14191a">{{sel.rule}}</span>
+    </div>
+
+    <ol style="margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; border: 1px solid #d9d6cc; border-radius: 6px; background: #fbfaf6">
+      <li style="display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; padding: 14px 16px; border-bottom: 1px solid #d9d6cc">
+        <span style="font: 500 22px/1 'Literata', Georgia, serif; color: #1d4d3a">01</span>
+        <span style="display: flex; flex-direction: column; gap: 4px"><span style="font-weight: 600; font-size: 15px">Uma requisição por tela</span><span style="font-size: 13.5px; line-height: 1.5; color: #3a4240">O app pede a tela pelo slug. Nada de várias chamadas pela rede do celular.</span></span>
+      </li>
+      <li style="display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; padding: 14px 16px; border-bottom: 1px solid #d9d6cc">
+        <span style="font: 500 22px/1 'Literata', Georgia, serif; color: #1d4d3a">02</span>
+        <span style="display: flex; flex-direction: column; gap: 4px"><span style="font-weight: 600; font-size: 15px">Retrato do cliente em paralelo</span><span style="font-size: 13.5px; line-height: 1.5; color: #3a4240">Conta, momentos, casos e timeline por gRPC, com um deadline para a tela toda.</span></span>
+      </li>
+      <li style="display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; padding: 14px 16px; border-bottom: 1px solid #d9d6cc">
+        <span style="font: 500 22px/1 'Literata', Georgia, serif; color: #1d4d3a">03</span>
+        <span style="display: flex; flex-direction: column; gap: 4px"><span style="font-weight: 600; font-size: 15px">Uma variante por seção</span><span style="font-size: 13.5px; line-height: 1.5; color: #3a4240">Vence a primeira variante que casa com o momento; a padrão casa sempre.</span></span>
+      </li>
+      <li style="display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; padding: 14px 16px; border-bottom: 1px solid #d9d6cc">
+        <span style="font: 500 22px/1 'Literata', Georgia, serif; color: #1d4d3a">04</span>
+        <span style="display: flex; flex-direction: column; gap: 4px"><span style="font-weight: 600; font-size: 15px">Texto do catálogo</span><span style="font-size: 13.5px; line-height: 1.5; color: #3a4240">Copy versionada no Git, embutida no bff, com variáveis como nome e assessora.</span></span>
+      </li>
+      <li style="display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; padding: 14px 16px">
+        <span style="font: 500 22px/1 'Literata', Georgia, serif; color: #1d4d3a">05</span>
+        <span style="display: flex; flex-direction: column; gap: 4px"><span style="font-weight: 600; font-size: 15px">O app renderiza por type</span><span style="font-size: 13.5px; line-height: 1.5; color: #3a4240">Um type desconhecido ou quebrado some; o resto da tela fica.</span></span>
+      </li>
+    </ol>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 14px; padding-top: 4px">
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-left: 12px; border-left: 1px solid #d9d6cc">
+        <span style="font-weight: 600; font-size: 14px">Regra no backend</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #3a4240">Valores, avisos e SLA chegam prontos.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-left: 12px; border-left: 1px solid #d9d6cc">
+        <span style="font-weight: 600; font-size: 14px">Falha isolada</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #3a4240">Uma seção cai; a tela fica.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-left: 12px; border-left: 1px solid #d9d6cc">
+        <span style="font-weight: 600; font-size: 14px">Versão e beta</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #3a4240">Slug, revision e segmento beta.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-left: 12px; border-left: 1px solid #d9d6cc">
+        <span style="font-weight: 600; font-size: 14px">Observável</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #3a4240">Span por seção, métrica por variante.</span>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2080}}'>
+class Component extends DCLogic {
+  state = { who: 'thiago' };
+
+  json(variant, title, action) {
+    return [
+      '{',
+      '  "slug": "home", "revision": "v1",',
+      '  "sections": [',
+      '    { "id": "moment", "components": [{',
+      '      "type": "moment_card",',
+      '      "variant": "' + variant + '",',
+      '      "props": {',
+      '        "title": "' + title + '",',
+      '        "action": ' + action,
+      '      } }] },',
+      '    { "id": "wealth", … },',
+      '    { "id": "actions", … },',
+      '    { "id": "advisor", … },',
+      '    { "id": "activity", … }',
+      '  ]',
+      '}',
+    ].join('\n');
+  }
+
+  clients() {
+    return {
+      fernanda: {
+        label: 'Fernanda', first: 'Fernanda', initials: 'FL', total: 'US$ 8.200,00', alloc: [20, 45, 21, 14], tone: 'gold', kicker: 'Perto do Advance',
+        title: 'Fernanda, faltam US$ 1.800 para o Advance', body: 'A partir de US$ 10 mil, a assessoria responde em até 4 h.', action: 'Depositar',
+        actionJson: '{ "type": "panel", "target": "deposit" }', moment: 'segment_upgrade_near', rule: 'Patrimônio entre US$ 7.500 e US$ 10.000.',
+      },
+      thiago: {
+        label: 'Thiago', first: 'Thiago', initials: 'TA', total: 'US$ 68.000,00', alloc: [3, 8, 0, 89], tone: 'info', kicker: 'Caixa parado',
+        title: 'Thiago, 89% do seu patrimônio está em caixa', body: 'US$ 60.520,00 parados há 4 dias. Veja produtos para o seu perfil arrojado.', action: 'Ver produtos',
+        actionJson: '{ "type": "navigate", "target": "investir" }', moment: 'idle_cash', rule: 'Caixa igual ou acima de 50% do patrimônio.',
+      },
+      mariana: {
+        label: 'Mariana', first: 'Mariana', initials: 'MC', total: 'US$ 248.300,00', alloc: [37, 24, 15, 24], tone: 'neutral', kicker: 'Sua assessora',
+        title: 'Mariana, sua revisão de carteira está disponível', body: 'Ana Paula separou 30 minutos nesta semana para revisar a carteira com você.', action: 'Conversar',
+        actionJson: '{ "type": "panel", "target": "message" }', moment: 'portfolio_review', rule: 'Cliente Singular, sem caso aberto e sem momento de prioridade maior.',
+      },
+    };
+  }
+
+  renderVals() {
+    const all = this.clients();
+    const who = this.state.who;
+    const tabs = ['fernanda', 'thiago', 'mariana'].map((k) => ({
+      label: all[k].label,
+      pressed: k === who ? 'true' : 'false',
+      pick: () => this.setState({ who: k }),
+      style: 'min-height: 44px; border: none; border-radius: 6px; font: 600 14px/1 \'Albert Sans\', sans-serif; cursor: pointer; ' + (k === who ? 'background: #14191a; color: #f5f3ec;' : 'background: transparent; color: #3a4240;'),
+    }));
+    const s = all[who];
+    const tones = {
+      gold: { card: 'background: rgba(242,181,68,.14); border: 1px solid #f2b544;', kicker: '#f2b544' },
+      info: { card: 'background: rgba(138,180,255,.12); border: 1px solid #8ab4ff;', kicker: '#8ab4ff' },
+      neutral: { card: 'background: #131c2e; border: 1px solid #26324d;', kicker: '#57d3a2' },
+    };
+    const colors = ['#f2b544', '#8ab4ff', '#57d3a2', '#5b6780'];
+    return {
+      tabs,
+      sel: {
+        first: s.first, initials: s.initials, total: s.total, title: s.title, body: s.body, action: s.action, kicker: s.kicker, moment: s.moment, rule: s.rule,
+        kickerColor: tones[s.tone].kicker,
+        cardStyle: 'border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; ' + tones[s.tone].card,
+        alloc: s.alloc.map((v, j) => ({ style: 'width: ' + v + '%; background: ' + colors[j] + ';' })),
+        json: this.json(s.moment, s.title, s.actionJson),
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

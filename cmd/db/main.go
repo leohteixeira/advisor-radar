@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/leohteixeira/advisor-radar/internal/envfile"
 )
 
 var services = []string{"account_sim", "advisory", "triage", "cases"}
@@ -26,6 +28,10 @@ func main() {
 
 	root, err := repoRoot()
 	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err := envfile.Load(filepath.Join(root, ".env")); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -176,14 +182,26 @@ func seedService(ctx context.Context, root, service string) error {
 		}
 		return err
 	}
+	// One transaction per service: a failing file rolls back the files before
+	// it, so a reseed never leaves cash reset and positions stale.
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("db: begin seed %s: %w", service, err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	for _, name := range files {
 		body, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			return fmt.Errorf("db: read seed %s/%s: %w", service, name, err)
 		}
-		if _, err := pool.Exec(ctx, string(body)); err != nil {
+		if _, err := tx.Exec(ctx, string(body)); err != nil {
 			return fmt.Errorf("db: apply seed %s/%s: %w", service, name, err)
 		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: commit seed %s: %w", service, err)
+	}
+	for _, name := range files {
 		fmt.Printf("seeded %s/%s\n", service, name)
 	}
 	return nil

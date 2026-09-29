@@ -65,6 +65,23 @@ jobs:
   go:
     name: Go module
     runs-on: ubuntu-latest
+    services:
+      # Throwaway database for the gated internal/sim and internal/cases
+      # PostgreSQL tests. Test-only credentials; each test migrates and drops
+      # its own schema, so both packages share the database safely.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: citest
+          POSTGRES_PASSWORD: citest
+          POSTGRES_DB: account_sim_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U citest -d account_sim_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v5
 
@@ -94,4 +111,8 @@ jobs:
       - run: go build ./...
 
       - name: Test with the race detector
+        env:
+          ACCOUNT_SIM_TEST_DATABASE_URL: postgres://citest:citest@localhost:5432/account_sim_test?sslmode=disable
+          CASES_TEST_DATABASE_URL: postgres://citest:citest@localhost:5432/account_sim_test?sslmode=disable
+          ADVISORY_TEST_DATABASE_URL: postgres://citest:citest@localhost:5432/account_sim_test?sslmode=disable
         run: go test -race -shuffle=on ./...

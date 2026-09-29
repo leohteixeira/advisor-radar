@@ -217,3 +217,121 @@ func TestIndex_IdempotentApply(t *testing.T) {
 		t.Fatalf("second apply: %v %v", a2, err)
 	}
 }
+
+func TestIndex_ApplyDeliveryKeepsSourceAndTime(t *testing.T) {
+	t.Parallel()
+	idx := timeline.NewIndex()
+	cust := identity.MustNewV7()
+	at := time.Date(2026, 9, 28, 12, 30, 0, 0, time.FixedZone("BRT", -3*60*60))
+	body, _ := json.Marshal(map[string]any{
+		"event_id": identity.MustNewV7(), "occurred_at": at,
+		"customer_id": cust, "schema_version": 2,
+		"payload": map[string]any{"kind": "aporte"},
+	})
+	applied, entry, err := idx.ApplyDelivery(context.Background(), event.NameAccountEventRecorded, body)
+	if err != nil || !applied {
+		t.Fatalf("apply: %v %v", applied, err)
+	}
+	if entry.Source != event.NameAccountEventRecorded || !entry.OccurredAt.Equal(at) || entry.OccurredAt.Location() != time.UTC {
+		t.Errorf("entry source, occurred_at = %q, %v", entry.Source, entry.OccurredAt)
+	}
+	rows, err := idx.Search(context.Background(), cust, "", "")
+	if err != nil || len(rows) != 1 || rows[0].Source != event.NameAccountEventRecorded || !rows[0].OccurredAt.Equal(at) {
+		t.Errorf("search = %+v, %v", rows, err)
+	}
+}
+
+// Account events of every schema version index; an aplicacao and its perfil
+// alert get their titles and count under the "conta" chip. An unknown
+// version is refused, so the consumer dead-letters it.
+func TestIndex_ApplyDeliverySchemaVersions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		version   int
+		routing   string
+		payload   map[string]any
+		wantErr   bool
+		wantKind  string
+		wantTitle string
+		// wantProduct and wantCents are the product and the amount in cents
+		// the row carries.
+		wantProduct string
+		wantCents   int64
+		// wantDay and wantBP are the simulated day and product day change a
+		// reavaliacao row carries.
+		wantDay int
+		wantBP  int
+	}{
+		{name: "v1 saque", version: 1, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "saque", "amount": 100}, wantKind: "saque", wantTitle: "Saque", wantCents: 10000},
+		{name: "v2 aporte", version: 2, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte", "amount": 10000}, wantKind: "aporte", wantTitle: "Aporte", wantCents: 10000},
+		{name: "v2 amount that is not a number", version: 2, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte", "amount": "10"}, wantKind: "aporte", wantTitle: "Aporte"},
+		{name: "v2 amount past the exact range", version: 2, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte", "amount": 1e17}, wantKind: "aporte", wantTitle: "Aporte"},
+		{
+			name: "v3 aplicacao", version: 3, routing: event.NameAccountEventRecorded,
+			payload: map[string]any{
+				"kind": "aplicacao", "amount": 3000000, "before": 6800000, "after": 6800000,
+				"product_id": "acoesg", "asset_class": "etfs", "risk": 3,
+			},
+			wantKind: "aplicacao", wantTitle: "Aplicação", wantProduct: "acoesg", wantCents: 3000000,
+		},
+		{
+			name: "v3 reavaliacao", version: 3, routing: event.NameAccountEventRecorded,
+			payload: map[string]any{
+				"kind": "reavaliacao", "amount": -3852000, "before": 24830000, "after": 20978000,
+				"sim_day": 3, "product_id": "cobalto", "product_change_bp": -5350,
+			},
+			wantKind: "reavaliacao", wantTitle: "Reavaliação", wantProduct: "cobalto", wantCents: -3852000,
+			wantDay: 3, wantBP: -5350,
+		},
+		{
+			name: "v3 flat reavaliacao", version: 3, routing: event.NameAccountEventRecorded,
+			payload:  map[string]any{"kind": "reavaliacao", "amount": 0, "before": 820000, "after": 820000, "sim_day": 1, "product_id": ""},
+			wantKind: "reavaliacao", wantTitle: "Reavaliação", wantDay: 1,
+		},
+		{
+			name: "perfil alert", version: 1, routing: event.NameAlertRaised,
+			payload:  map[string]any{"kind": "perfil", "rule": "Compra acima do perfil de investidor", "product_id": "cobalto"},
+			wantKind: "perfil", wantTitle: "Compra acima do perfil",
+		},
+		{name: "v4 is refused", version: 4, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte"}, wantErr: true},
+		{name: "v0 is refused", version: 0, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			idx := timeline.NewIndex()
+			cust := identity.MustNewV7()
+			body, err := json.Marshal(map[string]any{
+				"event_id": identity.MustNewV7(), "occurred_at": time.Now().UTC(),
+				"customer_id": cust, "schema_version": tt.version, "payload": tt.payload,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			applied, entry, err := idx.ApplyDelivery(context.Background(), tt.routing, body)
+			if tt.wantErr {
+				if err == nil || applied {
+					t.Fatalf("apply = %v, %v, want an error", applied, err)
+				}
+				return
+			}
+			if err != nil || !applied {
+				t.Fatalf("apply = %v, %v", applied, err)
+			}
+			if entry.Kind != tt.wantKind || entry.Title != tt.wantTitle {
+				t.Fatalf("entry = %+v, want kind %s title %s", entry, tt.wantKind, tt.wantTitle)
+			}
+			if entry.ProductID != tt.wantProduct || entry.AmountCents != tt.wantCents {
+				t.Errorf("entry product, cents = %q, %d, want %q, %d", entry.ProductID, entry.AmountCents, tt.wantProduct, tt.wantCents)
+			}
+			if entry.SimDay != tt.wantDay || entry.ProductChangeBP != tt.wantBP {
+				t.Errorf("entry day, bp = %d, %d, want %d, %d", entry.SimDay, entry.ProductChangeBP, tt.wantDay, tt.wantBP)
+			}
+			conta, err := idx.Search(context.Background(), cust, "", timeline.KindConta)
+			if err != nil || len(conta) != 1 {
+				t.Fatalf("conta chip = %+v, %v, want the row", conta, err)
+			}
+		})
+	}
+}

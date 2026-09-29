@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Visão do cliente — escolha um cliente (desktop)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&amp;family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f5f3ec;color:#14191a;font-family:'Albert Sans',system-ui,sans-serif}
+a{color:#1d4d3a}a:hover{color:#14191a}
+.pick{transition:border-color .2s ease, box-shadow .2s ease, transform .2s ease}
+.pick:hover{border-color:#14191a;box-shadow:0 10px 30px -18px rgba(20,25,26,.45);transform:translateY(-2px)}
+.pick:focus-visible{outline:3px solid #6fbf8a;outline-offset:3px}
+@media (prefers-reduced-motion: reduce){.pick:hover{transform:none}}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; background: #f5f3ec; color: #14191a; font-family: 'Albert Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+  <header style="height: 56px; flex: none; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 80px; border-bottom: 1px solid #d9d6cc; background: #fbfaf6">
+    <span aria-hidden="true" style="width: 28px; height: 28px; border-radius: 4px; background: #14191a; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 6px; box-sizing: border-box">
+      <span style="display: block; height: 3px; width: 16px; background: #6fbf8a"></span>
+      <span style="display: block; height: 3px; width: 10px; background: #f5f3ec"></span>
+      <span style="display: block; height: 3px; width: 5px; background: #f5f3ec"></span>
+    </span>
+    <span style="font-family: 'Literata', Georgia, serif; font-size: 18px; font-weight: 500">Advisor Radar</span>
+    <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .06em; text-transform: uppercase; color: #1d4d3a; background: #dfe8df; border-radius: 999px; padding: 6px 10px; margin-left: 8px">Visão do cliente</span>
+    <span style="flex-grow: 1"></span>
+    <a href="Main.dc.html" style="min-height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; font-size: 13.5px; font-weight: 600; text-decoration: none; color: #14191a">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+      Trocar visão
+    </a>
+  </header>
+
+  <section style="padding: 56px 80px 0; display: flex; align-items: flex-end; gap: 48px">
+    <div style="display: flex; flex-direction: column; gap: 12px; flex-grow: 1; max-width: 720px">
+      <span style="font: 600 11px/1.2 'Albert Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6b706c">Um cliente fictício por segmento</span>
+      <h1 style="margin: 0; font: 500 40px/1.1 'Literata', Georgia, serif; letter-spacing: -0.02em">Entre como um cliente</h1>
+      <p style="margin: 0; font-size: 16px; line-height: 1.5; color: #3a4240">Cada um já tem histórico na visão 360. O que ele fizer no app vira evento no RabbitMQ e chega à fila da assessoria.</p>
+    </div>
+    <ol style="margin: 0; padding: 0; list-style: none; display: flex; gap: 24px; flex: none">
+      <li style="display: flex; flex-direction: column; gap: 6px; width: 150px">
+        <span style="font: 500 24px/1 'Literata', Georgia, serif; color: #1d4d3a">1</span>
+        <span style="font-size: 13.5px; line-height: 1.4; color: #3a4240">Escolha um cliente abaixo</span>
+      </li>
+      <li style="display: flex; flex-direction: column; gap: 6px; width: 150px">
+        <span style="font: 500 24px/1 'Literata', Georgia, serif; color: #1d4d3a">2</span>
+        <span style="font-size: 13.5px; line-height: 1.4; color: #3a4240">Saque, deposite, escreva ou reclame</span>
+      </li>
+      <li style="display: flex; flex-direction: column; gap: 6px; width: 150px">
+        <span style="font: 500 24px/1 'Literata', Georgia, serif; color: #1d4d3a">3</span>
+        <span style="font-size: 13.5px; line-height: 1.4; color: #3a4240">Veja o alerta chegar na fila do time</span>
+      </li>
+    </ol>
+  </section>
+
+  <nav aria-label="Clientes" style="padding: 40px 80px 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px">
+    <sc-for list="{{clients}}" as="c" hint-placeholder-count="3">
+      <a class="pick" href="ClientApp-Desktop.dc.html" style="display: flex; flex-direction: column; gap: 18px; text-decoration: none; color: #14191a; background: #fbfaf6; border: 1px solid #d9d6cc; border-radius: 6px; padding: 24px">
+        <div style="display: flex; align-items: center; gap: 14px">
+          <span aria-hidden="true" style="width: 52px; height: 52px; flex: none; border-radius: 50%; background: #14191a; color: #f5f3ec; display: flex; align-items: center; justify-content: center; font: 600 16px/1 'Albert Sans', sans-serif">{{c.initials}}</span>
+          <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1; min-width: 0">
+            <span style="font: 500 22px/1.2 'Literata', Georgia, serif">{{c.name}}</span>
+            <span style="font-size: 13px; color: #6b706c">Cliente desde {{c.since}} · {{c.advisor}}</span>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px 0; border-top: 1px solid #e6e3d9; border-bottom: 1px solid #e6e3d9">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 12px; color: #6b706c">Segmento</span>
+            <span style="{{c.badgeStyle}}">{{c.segment}}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 12px; color: #6b706c">Patrimônio</span>
+            <span style="font: 500 14px/1.2 'JetBrains Mono', monospace">US$ {{c.aum}}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 12px; color: #6b706c">SLA base</span>
+            <span style="font: 500 14px/1.2 'JetBrains Mono', monospace">{{c.sla}}</span>
+          </div>
+        </div>
+        <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #3a4240; flex-grow: 1">{{c.hint}}</p>
+        <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 6px; background: #1d4d3a; color: #ffffff; font-weight: 600; font-size: 14px">Entrar como {{c.first}}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+        </span>
+      </a>
+    </sc-for>
+  </nav>
+
+  <span style="flex-grow: 1"></span>
+  <p style="margin: 0; padding: 0 80px 40px; font-size: 12.5px; color: #6b706c">Demo técnica com dados, nomes e marcas fictícios. Nenhuma mensagem é enviada a pessoas reais.</p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const badge = (bg, fg) => 'align-self: flex-start; font: 600 11px/1.2 \'Albert Sans\', sans-serif; letter-spacing: .06em; text-transform: uppercase; background: ' + bg + '; color: ' + fg + '; border-radius: 3px; padding: 5px 8px;';
+    return {
+      clients: [
+        { initials: 'FL', name: 'Fernanda Lima', first: 'Fernanda', since: '2024', advisor: 'Ana Paula Ribeiro', segment: 'Essencial', aum: '8.200,00', sla: '24 h', badgeStyle: badge('#e6e3d9', '#3a4240'), hint: 'Perto do teto da faixa. Um depósito pode subir o segmento; uma reclamação mostra o SLA mais longo.' },
+        { initials: 'TA', name: 'Thiago Azevedo', first: 'Thiago', since: '2024', advisor: 'Ana Paula Ribeiro', segment: 'Advance', aum: '68.000,00', sla: '4 h', badgeStyle: badge('#dbe6ee', '#23465e'), hint: 'Acabou de subir de Essencial para Advance com um depósito grande.' },
+        { initials: 'MC', name: 'Mariana Costa', first: 'Mariana', since: '2021', advisor: 'Ana Paula Ribeiro', segment: 'Singular', aum: '248.300,00', sla: '1 h', badgeStyle: badge('#dfe8df', '#174a30'), hint: 'Já reclamou de uma transferência atrasada. Um saque grande ou uma ameaça de saída sobem a prioridade na hora.' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

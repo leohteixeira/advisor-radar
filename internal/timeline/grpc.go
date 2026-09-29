@@ -2,6 +2,8 @@ package timeline
 
 import (
 	"context"
+	"math"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -20,6 +22,12 @@ func NewGRPCServer(idx *Index) *GRPCServer {
 	return &GRPCServer{index: idx}
 }
 
+// clampInt32 narrows n to the int32 range of the proto fields; an event
+// cannot carry a day or a basis-point change beyond it.
+func clampInt32(n int) int32 {
+	return int32(max(min(n, math.MaxInt32), math.MinInt32))
+}
+
 // Search implements timeline.v1.TimelineService.
 func (s *GRPCServer) Search(ctx context.Context, req *timelinev1.SearchRequest) (*timelinev1.SearchResponse, error) {
 	if req == nil || req.GetCustomerId() == "" {
@@ -31,14 +39,24 @@ func (s *GRPCServer) Search(ctx context.Context, req *timelinev1.SearchRequest) 
 	}
 	out := make([]*timelinev1.TimelineItem, 0, len(items))
 	for _, e := range items {
+		var occurredAt string
+		if !e.OccurredAt.IsZero() {
+			occurredAt = e.OccurredAt.UTC().Format(time.RFC3339Nano)
+		}
 		out = append(out, &timelinev1.TimelineItem{
-			EventId:    e.EventID,
-			CustomerId: e.CustomerID,
-			Kind:       e.Kind,
-			Title:      e.Title,
-			Text:       e.Text,
-			Meta:       e.Meta,
-			Ago:        int32(e.Ago),
+			EventId:         e.EventID,
+			CustomerId:      e.CustomerID,
+			Kind:            e.Kind,
+			Title:           e.Title,
+			Text:            e.Text,
+			Meta:            e.Meta,
+			Ago:             int32(e.Ago),
+			Source:          e.Source,
+			OccurredAt:      occurredAt,
+			ProductId:       e.ProductID,
+			AmountCents:     e.AmountCents,
+			SimDay:          clampInt32(e.SimDay),
+			ProductChangeBp: clampInt32(e.ProductChangeBP),
 		})
 	}
 	return &timelinev1.SearchResponse{Items: out}, nil

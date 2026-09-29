@@ -1,0 +1,354 @@
+{
+  "version": 1,
+  "screens": {
+    "home": {
+      "revision": "v1",
+      "beta_revision": "v2",
+      "revisions": {
+        "v1": {
+          "title": "Olá{{if .FirstName}}, {{.FirstName}}{{end}}",
+          "subtitle": "Cliente {{.Segment}}{{if .Since}} desde {{.Since}}{{end}}",
+          "sections": [
+            {
+              "id": "moment",
+              "type": "moment_card",
+              "variants": [
+                "portfolio_drop",
+                "case_open",
+                "segment_upgraded",
+                "segment_upgrade_near",
+                "idle_cash",
+                "portfolio_review",
+                "welcome"
+              ]
+            },
+            { "id": "wealth", "type": "wealth_summary", "variants": ["with_day_change", "default"] },
+            { "id": "actions", "type": "action_grid", "variants": ["default"] },
+            { "id": "advisor", "type": "advisor_card", "variants": ["dedicated", "default"] },
+            { "id": "activity", "type": "activity_list", "variants": ["recent", "empty"] }
+          ]
+        },
+        "v2": {
+          "title": "Olá{{if .FirstName}}, {{.FirstName}}{{end}}",
+          "subtitle": "Cliente {{.Segment}}{{if .Since}} desde {{.Since}}{{end}}",
+          "sections": [
+            {
+              "id": "moment",
+              "type": "moment_card",
+              "variants": [
+                "portfolio_drop",
+                "case_open",
+                "segment_upgraded",
+                "segment_upgrade_near",
+                "idle_cash",
+                "portfolio_review",
+                "welcome"
+              ]
+            },
+            {
+              "id": "highlights",
+              "type": "product_rail",
+              "variants": ["profile_conservador", "profile_moderado", "profile_arrojado"]
+            },
+            { "id": "wealth", "type": "wealth_summary", "variants": ["with_day_change", "default"] },
+            { "id": "actions", "type": "action_grid", "variants": ["default"] },
+            { "id": "advisor", "type": "advisor_card", "variants": ["dedicated", "default"] },
+            { "id": "activity", "type": "activity_list", "variants": ["recent", "empty"] }
+          ]
+        }
+      }
+    },
+    "investir": {
+      "revision": "v1",
+      "revisions": {
+        "v1": {
+          "title": "Investir",
+          "subtitle": "Produtos fictícios · preço fixo da simulação",
+          "sections": [
+            { "id": "cash", "type": "invest_summary", "variants": ["default"] },
+            {
+              "id": "highlights",
+              "type": "product_rail",
+              "variants": ["profile_conservador", "profile_moderado", "profile_arrojado"]
+            },
+            { "id": "fixed_income", "type": "product_list", "variants": ["fixed_income"] },
+            { "id": "etfs", "type": "product_list", "variants": ["etf"] },
+            { "id": "stocks", "type": "product_list", "variants": ["stocks"] }
+          ]
+        }
+      }
+    },
+    "carteira": {
+      "revision": "v1",
+      "revisions": {
+        "v1": {
+          "title": "Carteira",
+          "subtitle": "Valores de mercado no dia simulado {{.Day}}",
+          "sections": [
+            { "id": "summary", "type": "portfolio_summary", "variants": ["with_day_change", "default"] },
+            { "id": "allocation", "type": "allocation_breakdown", "variants": ["default"] },
+            { "id": "positions_stocks", "type": "position_list", "variants": ["stocks"] },
+            { "id": "positions_etf", "type": "position_list", "variants": ["etf"] },
+            { "id": "positions_fixed_income", "type": "position_list", "variants": ["fixed_income"] },
+            { "id": "history", "type": "activity_list", "variants": ["history"] }
+          ]
+        }
+      }
+    },
+    "perfil": {
+      "revision": "v1",
+      "revisions": {
+        "v1": {
+          "title": "Perfil",
+          "subtitle": "Seus dados, seu perfil de investidor e suas preferências",
+          "sections": [
+            { "id": "header", "type": "profile_header", "variants": ["default"] },
+            { "id": "suitability", "type": "profile_scale", "variants": ["conservador", "moderado", "arrojado"] },
+            { "id": "registration", "type": "profile_field_list", "variants": ["default"] },
+            { "id": "preferences", "type": "preference_list", "variants": ["default"] },
+            { "id": "advisor", "type": "advisor_card", "variants": ["dedicated", "default"] }
+          ]
+        }
+      }
+    }
+  },
+  "copy": {
+    "moment_card": {
+      "portfolio_drop": {
+        "kicker": "Sua carteira hoje",
+        "title": "{{if .FirstName}}{{.FirstName}}, sua{{else}}Sua{{end}} carteira caiu {{.DropPct}} hoje",
+        "body": "{{.Product}} recuou {{.ProductPct}} no dia simulado {{.Day}}. A {{.AdvisorName}} já foi avisada e vai falar com você.",
+        "action": "Ver carteira"
+      },
+      "case_open": {
+        "kicker": "Atendimento em andamento",
+        "title": "Sua reclamação está com a {{.AdvisorName}}",
+        "body": "Como cliente {{.Segment}}, você recebe resposta em até {{.SLA}}.",
+        "meta": "Protocolo {{.Protocol}} · aberto {{.Age}}",
+        "action": "Ver conversa"
+      },
+      "segment_upgraded": {
+        "kicker": "Novo segmento",
+        "title": "{{if .FirstName}}{{.FirstName}}, você{{else}}Você{{end}} agora é cliente {{.Segment}}",
+        "body": "Sua assessoria passa a responder em até {{.SLA}}.",
+        "action": "Ver produtos"
+      },
+      "segment_upgrade_near": {
+        "kicker": "Perto do Advance",
+        "title": "{{if .FirstName}}{{.FirstName}}, faltam{{else}}Faltam{{end}} {{.Gap}} para o Advance",
+        "body": "A partir de {{.Threshold}} você vira cliente Advance, com resposta da assessoria em até {{.SLA}}.",
+        "action": "Depositar"
+      },
+      "idle_cash": {
+        "kicker": "Caixa parado",
+        "title": "{{if .FirstName}}{{.FirstName}}, {{end}}{{.CashShare}} do seu patrimônio está em caixa",
+        "body": "{{.Cash}} parados há {{.IdleDays}}. Veja produtos para o seu perfil {{.Profile}}.",
+        "body_undated": "{{.Cash}} parados em caixa. Veja produtos para o seu perfil {{.Profile}}.",
+        "action": "Ver produtos"
+      },
+      "portfolio_review": {
+        "kicker": "Sua assessora",
+        "title": "{{if .FirstName}}{{.FirstName}}, sua{{else}}Sua{{end}} revisão de carteira está disponível",
+        "body": "A {{.AdvisorName}} separou 30 minutos nesta semana para revisar a carteira com você.",
+        "action": "Conversar"
+      },
+      "welcome": {
+        "kicker": "Tudo em dia",
+        "title": "Olá{{if .FirstName}}, {{.FirstName}}{{end}}. Sua conta está em dia.",
+        "body": "Quando algo mudar na sua carteira, você vê aqui primeiro."
+      }
+    },
+    "wealth_summary": {
+      "default": {
+        "total_label": "Patrimônio total",
+        "cash_label": "Disponível para saque",
+        "stocks": "Ações",
+        "etfs": "ETFs",
+        "fixed_income": "Renda fixa",
+        "cash": "Caixa"
+      },
+      "with_day_change": {
+        "day_change": "{{.Amount}} ({{.Percent}}) no dia {{.Day}}"
+      }
+    },
+    "action_grid": {
+      "default": {
+        "deposit": "Depositar",
+        "withdraw": "Sacar",
+        "message": "Mensagem",
+        "complaint": "Reclamar"
+      }
+    },
+    "advisor_card": {
+      "dedicated": {
+        "kicker": "Sua assessora dedicada",
+        "meta": "Resposta em até {{.SLA}} · cliente {{.Segment}}",
+        "action": "Conversar"
+      },
+      "default": {
+        "kicker": "Sua assessora",
+        "meta": "Resposta em até {{.SLA}} · cliente {{.Segment}}",
+        "action": "Conversar"
+      }
+    },
+    "activity_list": {
+      "recent": {
+        "title": "Atividade recente"
+      },
+      "empty": {
+        "title": "Atividade recente",
+        "empty_text": "Suas movimentações aparecem aqui assim que acontecerem."
+      },
+      "history": {
+        "title": "Movimentações",
+        "empty_text": "Nenhuma movimentação ainda."
+      }
+    },
+    "activity_row": {
+      "default": {
+        "aplicacao": "Compra · {{.Product}}",
+        "aplicacao_unnamed": "Compra",
+        "reavaliacao": "Reavaliação diária",
+        "reavaliacao_meta": "dia simulado {{.Day}} · {{.Product}} {{.Percent}}",
+        "reavaliacao_meta_unnamed": "dia simulado {{.Day}}"
+      }
+    },
+    "portfolio_summary": {
+      "default": {
+        "total_label": "Patrimônio total",
+        "applied": "Valor aplicado",
+        "return": "Rentabilidade",
+        "return_value": "{{.Amount}} ({{.Percent}})",
+        "cash": "Caixa",
+        "day": "Dia simulado"
+      },
+      "with_day_change": {
+        "day_change": "{{.Amount}} ({{.Percent}}) no dia {{.Day}}"
+      }
+    },
+    "allocation_breakdown": {
+      "default": {
+        "title": "Alocação",
+        "stocks": "Ações",
+        "etfs": "ETFs",
+        "fixed_income": "Renda fixa",
+        "cash": "Caixa"
+      }
+    },
+    "position_list": {
+      "stocks": { "title": "Ações", "applied_label": "Aplicado" },
+      "etf": { "title": "ETFs", "applied_label": "Aplicado" },
+      "fixed_income": { "title": "Renda fixa", "applied_label": "Aplicado" }
+    },
+    "invest_summary": {
+      "default": {
+        "cash_label": "Disponível para investir",
+        "profile_chip": "Perfil {{.Profile}}"
+      }
+    },
+    "product_rail": {
+      "profile_conservador": {
+        "title": "Para o seu perfil {{.Profile}}",
+        "subtitle": "Escolhidos pelo backend a partir do seu perfil de investidor."
+      },
+      "profile_moderado": {
+        "title": "Para o seu perfil {{.Profile}}",
+        "subtitle": "Escolhidos pelo backend a partir do seu perfil de investidor."
+      },
+      "profile_arrojado": {
+        "title": "Para o seu perfil {{.Profile}}",
+        "subtitle": "Escolhidos pelo backend a partir do seu perfil de investidor."
+      }
+    },
+    "product_list": {
+      "fixed_income": { "title": "Renda fixa" },
+      "etf": { "title": "ETFs" },
+      "stocks": { "title": "Ações" }
+    },
+    "product": {
+      "default": {
+        "class_renda_fixa": "Renda fixa",
+        "class_etfs": "ETF",
+        "class_acoes": "Ação",
+        "risk_label": "Risco {{.Risk}} de 5",
+        "minimum": "Mínimo {{.Minimum}}",
+        "badge": "Acima do seu perfil",
+        "warning": "Este produto tem risco {{.Risk}}. Seu perfil é {{.Profile}}, que vai até risco {{.MaxRisk}}. Você pode investir mesmo assim, e a sua assessora será avisada.",
+        "action": "Investir"
+      }
+    },
+    "profile_header": {
+      "default": {
+        "subtitle": "Cliente {{.Segment}}{{if .Since}} desde {{.Since}}{{end}}"
+      }
+    },
+    "profile_scale": {
+      "conservador": {
+        "title": "Seu perfil de investidor",
+        "subtitle": "Define os destaques de Investir e quando uma compra recebe aviso.",
+        "current_label": "Seu perfil",
+        "limit": "Produtos até risco {{.MaxRisk}}",
+        "footer": "Última avaliação em {{.AssessedOn}}. Para refazer o questionário, fale com a sua assessora."
+      },
+      "moderado": {
+        "title": "Seu perfil de investidor",
+        "subtitle": "Define os destaques de Investir e quando uma compra recebe aviso.",
+        "current_label": "Seu perfil",
+        "limit": "Produtos até risco {{.MaxRisk}}",
+        "footer": "Última avaliação em {{.AssessedOn}}. Para refazer o questionário, fale com a sua assessora."
+      },
+      "arrojado": {
+        "title": "Seu perfil de investidor",
+        "subtitle": "Define os destaques de Investir e quando uma compra recebe aviso.",
+        "current_label": "Seu perfil",
+        "limit": "Produtos até risco {{.MaxRisk}}",
+        "footer": "Última avaliação em {{.AssessedOn}}. Para refazer o questionário, fale com a sua assessora."
+      }
+    },
+    "profile_level": {
+      "conservador": {
+        "label": "Conservador",
+        "description": "Prioriza preservar o patrimônio. Aceita pouca oscilação."
+      },
+      "moderado": {
+        "label": "Moderado",
+        "description": "Aceita oscilação moderada em busca de mais retorno."
+      },
+      "arrojado": {
+        "label": "Arrojado",
+        "description": "Aceita oscilação alta no curto prazo para buscar retorno maior."
+      }
+    },
+    "profile_field_list": {
+      "default": {
+        "title": "Dados cadastrais",
+        "name": "Nome",
+        "email": "E-mail",
+        "phone": "Telefone",
+        "city": "Cidade",
+        "segment": "Segmento",
+        "since": "Cliente desde",
+        "footnote": "Dados fictícios. Alterar cadastro fica fora da simulação."
+      }
+    },
+    "preference_list": {
+      "default": {
+        "title": "Preferências",
+        "theme_label": "Tema",
+        "theme_hint": "Fica salvo só neste navegador",
+        "channel_label": "Canal preferido",
+        "channel_hint": "Por onde a assessoria fala com você",
+        "channel_chat": "Chat",
+        "channel_email": "E-mail",
+        "beta_label": "Programa beta",
+        "beta_hint_off": "Veja antes as novas versões das telas.",
+        "beta_hint_on": "Ligado. Você recebe a revision v2 do início antes dos outros clientes."
+      }
+    }
+  },
+  "segments": {
+    "Essencial": { "sla": "24 h" },
+    "Advance": { "sla": "4 h" },
+    "Singular": { "sla": "1 h" }
+  }
+}
