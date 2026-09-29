@@ -16,7 +16,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
+	accountv1 "github.com/leohteixeira/advisor-radar/gen/account/v1"
 	advisoryv1 "github.com/leohteixeira/advisor-radar/gen/advisory/v1"
 	"github.com/leohteixeira/advisor-radar/internal/advisory"
 	"github.com/leohteixeira/advisor-radar/internal/envfile"
@@ -49,6 +51,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	httpAddr := os.Getenv("ADVISORY_HTTP_ADDR")
 	grpcAddr := os.Getenv("ADVISORY_GRPC_ADDR")
 	brokerURL := os.Getenv("ADVISORY_BROKER_URL")
+	accountTarget := os.Getenv("ACCOUNT_SIM_GRPC_TARGET")
 
 	var actionStore advisory.ActionStore = advisory.NewMemoryActionStore()
 	var store *advisory.PGXStore
@@ -108,8 +111,24 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			cancel()
 			return fmt.Errorf("advisory: grpc listen: %w", err)
 		}
+		var opts []advisory.ServerOption
+		if accountTarget != "" {
+			conn, err := grpc.NewClient(accountTarget, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				_ = lis.Close()
+				cancel()
+				if httpSrv != nil {
+					_ = httpSrv.Close()
+				}
+				return fmt.Errorf("advisory: account-sim client: %w", err)
+			}
+			defer func() { _ = conn.Close() }()
+			opts = append(opts, advisory.WithAccountReader(advisory.NewAccountSim(accountv1.NewAccountServiceClient(conn))))
+		} else {
+			logger.Warn("moment facts unavailable: ACCOUNT_SIM_GRPC_TARGET is not set", "service", "advisory")
+		}
 		grpcSrv = grpc.NewServer()
-		advisoryv1.RegisterAdvisoryServiceServer(grpcSrv, advisory.NewGRPCServer(reader))
+		advisoryv1.RegisterAdvisoryServiceServer(grpcSrv, advisory.NewGRPCServer(reader, opts...))
 		workers++
 		go func() {
 			logger.Info("grpc listening", "service", "advisory", "addr", grpcAddr)

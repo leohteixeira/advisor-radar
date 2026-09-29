@@ -19,10 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AdvisoryService_GetCustomer_FullMethodName    = "/advisory.v1.AdvisoryService/GetCustomer"
-	AdvisoryService_ListOperators_FullMethodName  = "/advisory.v1.AdvisoryService/ListOperators"
-	AdvisoryService_ListQueue_FullMethodName      = "/advisory.v1.AdvisoryService/ListQueue"
-	AdvisoryService_ContactMetrics_FullMethodName = "/advisory.v1.AdvisoryService/ContactMetrics"
+	AdvisoryService_GetCustomer_FullMethodName        = "/advisory.v1.AdvisoryService/GetCustomer"
+	AdvisoryService_ListOperators_FullMethodName      = "/advisory.v1.AdvisoryService/ListOperators"
+	AdvisoryService_ListQueue_FullMethodName          = "/advisory.v1.AdvisoryService/ListQueue"
+	AdvisoryService_ContactMetrics_FullMethodName     = "/advisory.v1.AdvisoryService/ContactMetrics"
+	AdvisoryService_GetInvestorProfile_FullMethodName = "/advisory.v1.AdvisoryService/GetInvestorProfile"
+	AdvisoryService_GetMomentFacts_FullMethodName     = "/advisory.v1.AdvisoryService/GetMomentFacts"
 )
 
 // AdvisoryServiceClient is the client API for AdvisoryService service.
@@ -33,6 +35,13 @@ type AdvisoryServiceClient interface {
 	ListOperators(ctx context.Context, in *ListOperatorsRequest, opts ...grpc.CallOption) (*ListOperatorsResponse, error)
 	ListQueue(ctx context.Context, in *ListQueueRequest, opts ...grpc.CallOption) (*ListQueueResponse, error)
 	ContactMetrics(ctx context.Context, in *ContactMetricsRequest, opts ...grpc.CallOption) (*ContactMetricsResponse, error)
+	// GetInvestorProfile returns the client's investor profile, NotFound for a
+	// customer outside the book.
+	GetInvestorProfile(ctx context.Context, in *GetInvestorProfileRequest, opts ...grpc.CallOption) (*InvestorProfile, error)
+	// GetMomentFacts returns the home moment conditions, each evaluated by
+	// advisory. NotFound for a customer outside the book; Unavailable when the
+	// account-sim balance cannot be read.
+	GetMomentFacts(ctx context.Context, in *GetMomentFactsRequest, opts ...grpc.CallOption) (*MomentFacts, error)
 }
 
 type advisoryServiceClient struct {
@@ -83,6 +92,26 @@ func (c *advisoryServiceClient) ContactMetrics(ctx context.Context, in *ContactM
 	return out, nil
 }
 
+func (c *advisoryServiceClient) GetInvestorProfile(ctx context.Context, in *GetInvestorProfileRequest, opts ...grpc.CallOption) (*InvestorProfile, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvestorProfile)
+	err := c.cc.Invoke(ctx, AdvisoryService_GetInvestorProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *advisoryServiceClient) GetMomentFacts(ctx context.Context, in *GetMomentFactsRequest, opts ...grpc.CallOption) (*MomentFacts, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MomentFacts)
+	err := c.cc.Invoke(ctx, AdvisoryService_GetMomentFacts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdvisoryServiceServer is the server API for AdvisoryService service.
 // All implementations must embed UnimplementedAdvisoryServiceServer
 // for forward compatibility.
@@ -91,6 +120,13 @@ type AdvisoryServiceServer interface {
 	ListOperators(context.Context, *ListOperatorsRequest) (*ListOperatorsResponse, error)
 	ListQueue(context.Context, *ListQueueRequest) (*ListQueueResponse, error)
 	ContactMetrics(context.Context, *ContactMetricsRequest) (*ContactMetricsResponse, error)
+	// GetInvestorProfile returns the client's investor profile, NotFound for a
+	// customer outside the book.
+	GetInvestorProfile(context.Context, *GetInvestorProfileRequest) (*InvestorProfile, error)
+	// GetMomentFacts returns the home moment conditions, each evaluated by
+	// advisory. NotFound for a customer outside the book; Unavailable when the
+	// account-sim balance cannot be read.
+	GetMomentFacts(context.Context, *GetMomentFactsRequest) (*MomentFacts, error)
 	mustEmbedUnimplementedAdvisoryServiceServer()
 }
 
@@ -112,6 +148,12 @@ func (UnimplementedAdvisoryServiceServer) ListQueue(context.Context, *ListQueueR
 }
 func (UnimplementedAdvisoryServiceServer) ContactMetrics(context.Context, *ContactMetricsRequest) (*ContactMetricsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ContactMetrics not implemented")
+}
+func (UnimplementedAdvisoryServiceServer) GetInvestorProfile(context.Context, *GetInvestorProfileRequest) (*InvestorProfile, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetInvestorProfile not implemented")
+}
+func (UnimplementedAdvisoryServiceServer) GetMomentFacts(context.Context, *GetMomentFactsRequest) (*MomentFacts, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMomentFacts not implemented")
 }
 func (UnimplementedAdvisoryServiceServer) mustEmbedUnimplementedAdvisoryServiceServer() {}
 func (UnimplementedAdvisoryServiceServer) testEmbeddedByValue()                         {}
@@ -206,6 +248,42 @@ func _AdvisoryService_ContactMetrics_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdvisoryService_GetInvestorProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInvestorProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdvisoryServiceServer).GetInvestorProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdvisoryService_GetInvestorProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdvisoryServiceServer).GetInvestorProfile(ctx, req.(*GetInvestorProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdvisoryService_GetMomentFacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMomentFactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdvisoryServiceServer).GetMomentFacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdvisoryService_GetMomentFacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdvisoryServiceServer).GetMomentFacts(ctx, req.(*GetMomentFactsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdvisoryService_ServiceDesc is the grpc.ServiceDesc for AdvisoryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -228,6 +306,14 @@ var AdvisoryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ContactMetrics",
 			Handler:    _AdvisoryService_ContactMetrics_Handler,
+		},
+		{
+			MethodName: "GetInvestorProfile",
+			Handler:    _AdvisoryService_GetInvestorProfile_Handler,
+		},
+		{
+			MethodName: "GetMomentFacts",
+			Handler:    _AdvisoryService_GetMomentFacts_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

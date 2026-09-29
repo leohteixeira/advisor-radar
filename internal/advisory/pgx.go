@@ -69,11 +69,12 @@ WHERE customer_id = $1::uuid`
 	return nil
 }
 
-// InsertAlert stages one alert row. Conflicts on id are ignored.
+// InsertAlert stages one alert row. Conflicts on id are ignored. A zero
+// SourceSchemaVersion is stored as NULL.
 func (t *pgxTx) InsertAlert(ctx context.Context, row AlertRow) error {
 	const q = `
-INSERT INTO alerts (id, customer_id, kind, rule, source_event_id, raised_at, payload)
-VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+INSERT INTO alerts (id, customer_id, kind, rule, source_event_id, raised_at, payload, source_schema_version)
+VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NULLIF($8::integer, 0))
 ON CONFLICT (id) DO NOTHING`
 	_, err := t.tx.Exec(
 		ctx,
@@ -85,6 +86,7 @@ ON CONFLICT (id) DO NOTHING`
 		row.SourceEventID,
 		row.RaisedAt,
 		row.Payload,
+		row.SourceSchemaVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("advisory pgx: insert alert: %w", err)

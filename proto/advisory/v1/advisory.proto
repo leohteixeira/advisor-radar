@@ -9,6 +9,13 @@ service AdvisoryService {
   rpc ListOperators(ListOperatorsRequest) returns (ListOperatorsResponse);
   rpc ListQueue(ListQueueRequest) returns (ListQueueResponse);
   rpc ContactMetrics(ContactMetricsRequest) returns (ContactMetricsResponse);
+  // GetInvestorProfile returns the client's investor profile, NotFound for a
+  // customer outside the book.
+  rpc GetInvestorProfile(GetInvestorProfileRequest) returns (InvestorProfile);
+  // GetMomentFacts returns the home moment conditions, each evaluated by
+  // advisory. NotFound for a customer outside the book; Unavailable when the
+  // account-sim balance cannot be read.
+  rpc GetMomentFacts(GetMomentFactsRequest) returns (MomentFacts);
 }
 
 message GetCustomerRequest {
@@ -22,6 +29,8 @@ message Customer {
   double aum = 4;
   string advisor = 5;
   string since = 6;
+  // advisor_id is the operator id of the book advisor.
+  string advisor_id = 7;
 }
 
 message ListOperatorsRequest {}
@@ -56,4 +65,43 @@ message ContactMetricsRequest {}
 message ContactMetricsResponse {
   int32 avg_first_contact_min = 1;
   int32 avg_first_contact_yesterday = 2;
+}
+
+message GetInvestorProfileRequest {
+  string customer_id = 1;
+}
+
+// InvestorProfile is the suitability profile of one client. max_risk is the
+// highest product risk (1-5) the profile accepts; assessed_on is YYYY-MM-DD.
+message InvestorProfile {
+  // profile is "conservador", "moderado", or "arrojado".
+  string profile = 1;
+  int32 max_risk = 2;
+  string assessed_on = 3;
+}
+
+message GetMomentFactsRequest {
+  string customer_id = 1;
+}
+
+// MomentFacts are the home moment conditions of one client. Money is integer
+// USD cents.
+message MomentFacts {
+  // segment_upgraded is true when a segment upgrade was raised in the last
+  // 24 h from an account event of schema_version 2 or later.
+  bool segment_upgraded = 1;
+  // upgraded_segment is the segment of that upgrade.
+  string upgraded_segment = 2;
+  // segment_upgrade_near is true when 750000 <= patrimony_cents < 1000000.
+  bool segment_upgrade_near = 3;
+  // upgrade_gap_cents is 1000000 - patrimony_cents when segment_upgrade_near.
+  int64 upgrade_gap_cents = 4;
+  // idle_cash is true when patrimony is above 0 and cash is at least half of it.
+  bool idle_cash = 5;
+  int64 cash_cents = 6;
+  int64 patrimony_cents = 7;
+  // portfolio_review is true when the book segment is Singular.
+  bool portfolio_review = 8;
+  // portfolio_drop is always false until the drop moment is evaluated.
+  bool portfolio_drop = 9;
 }

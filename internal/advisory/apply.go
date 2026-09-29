@@ -21,14 +21,17 @@ type OutboxRow struct {
 }
 
 // AlertRow is the local alert write that pairs with an outbox row.
+// SourceSchemaVersion is the schema version of the account event that raised
+// the alert, or 0 when the alert does not come from one.
 type AlertRow struct {
-	ID            string
-	CustomerID    string
-	Kind          string
-	Rule          string
-	SourceEventID string
-	RaisedAt      time.Time
-	Payload       []byte
+	ID                  string
+	CustomerID          string
+	Kind                string
+	Rule                string
+	SourceEventID       string
+	RaisedAt            time.Time
+	Payload             []byte
+	SourceSchemaVersion int
 }
 
 // AlertPayload is the domain payload on alert.raised.
@@ -87,6 +90,7 @@ func Apply(ctx context.Context, store Store, env event.Envelope) error {
 	decisions := EvaluateAccount(dollars)
 	in := raiseInput{
 		sourceEventID: env.EventID,
+		schemaVersion: env.SchemaVersion,
 		customerID:    env.CustomerID,
 		occurredAt:    env.OccurredAt,
 		decisions:     decisions,
@@ -188,6 +192,8 @@ func RunPublisher(ctx context.Context, store Store, broker Broker, every time.Du
 
 type raiseInput struct {
 	sourceEventID string
+	// schemaVersion is the source account event's; 0 for a silence fact.
+	schemaVersion int
 	customerID    string
 	occurredAt    time.Time
 	decisions     []Decision
@@ -269,13 +275,14 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 			}
 
 			if err := tx.InsertAlert(ctx, AlertRow{
-				ID:            alertID,
-				CustomerID:    in.customerID,
-				Kind:          d.Kind,
-				Rule:          d.Rule,
-				SourceEventID: in.sourceEventID,
-				RaisedAt:      in.occurredAt,
-				Payload:       payloadBytes,
+				ID:                  alertID,
+				CustomerID:          in.customerID,
+				Kind:                d.Kind,
+				Rule:                d.Rule,
+				SourceEventID:       in.sourceEventID,
+				RaisedAt:            in.occurredAt,
+				Payload:             payloadBytes,
+				SourceSchemaVersion: in.schemaVersion,
 			}); err != nil {
 				return fmt.Errorf("advisory: insert alert %s: %w", alertID, err)
 			}
