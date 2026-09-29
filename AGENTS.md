@@ -88,6 +88,9 @@ repository and must stay off the portfolio assignments (Fleet Pulse uses 3300, 8
 | RabbitMQ management | 15673 |
 | PostgreSQL | 5435 |
 | Elasticsearch | 9201 |
+| Grafana (otel-lgtm) | 3410 |
+| OTLP gRPC (otel-lgtm) | 4417 |
+| OTLP HTTP (otel-lgtm) | 4418 |
 
 ## Language
 

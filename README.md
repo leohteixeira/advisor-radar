@@ -50,6 +50,7 @@ Services read their settings from environment variables, loaded from the local r
 | `ACCOUNT_SIM_BROKER_URL` | `amqp://…@127.0.0.1:5673/` | RabbitMQ the outbox relay publishes to. Unset, the relay does not run. |
 | `ACCOUNT_SIM_GRPC_ADDR` | `0.0.0.0:8460` | account-sim gRPC listen address. The server starts only when `ACCOUNT_SIM_DATABASE_URL` is also set. |
 | `ACCOUNT_SIM_GRPC_TARGET` | `127.0.0.1:8460` | account-sim target the BFF and advisory dial. The BFF requires it for the client POV; unset, the POV home is `404` and POV commands are `502`. advisory reads each client's balance through it for `GetMomentFacts`, with the caller's deadline or 2 s; unset, advisory logs a warning and `GetMomentFacts` answers `Unavailable`, so the home moment falls back to `welcome`. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://127.0.0.1:4418` | OTLP/HTTP collector every service exports traces and metrics to; `4418` is the `otel-lgtm` Compose service. Unset, OpenTelemetry stays off: no exporter, no dial, no export errors. Only OTLP over HTTP is supported, so point it at an HTTP port (`4418`), not the gRPC one (`4417`). |
 
 `ACCOUNT_SIM_TEST_DATABASE_URL` points the gated `internal/sim` PostgreSQL tests at a database; each test migrates and drops its own schema. Unset, those tests skip. `CASES_TEST_DATABASE_URL` and `ADVISORY_TEST_DATABASE_URL` do the same for the gated `internal/cases` and `internal/advisory` tests.
 
@@ -61,8 +62,15 @@ After `go run ./cmd/db migrate` applies `advisory/003_investor_profile.sql`, run
 
 Deploy advisory before cases. Cases intake reads the advisor from advisory `GetCustomer.advisor_id`; against an advisory that does not send it yet, cases drops every qualifying message as `ErrUnusableCustomer` (dead-lettered, no case opened).
 
+### Observability
+
+`docker compose up -d otel-lgtm` starts Grafana with Tempo, Mimir, and Loki behind one OpenTelemetry collector. Grafana is on <http://127.0.0.1:3410> (user `admin`, password `admin`, local only); OTLP is on `4417` (gRPC) and `4418` (HTTP) of the host. With `OTEL_EXPORTER_OTLP_ENDPOINT` set, each service (`account-sim`, `advisory`, `triage`, `cases`, `timeline-indexer`, `bff`) exports under its own `service.name`, set in code; `OTEL_SERVICE_NAME` exported in the shell overrides it for one process and never goes in `.env`. The standard `OTEL_*` exporter variables apply, for example `OTEL_METRIC_EXPORT_INTERVAL=5000` to export metrics every 5 s instead of every 60 s. Shutdown flushes the last batch within 5 s.
+
+- **Traces.** BFF HTTP requests are server spans named after the route pattern (`GET /v1/client-pov/customers/{id}/screens/{slug}`). Every gRPC client and server carries the `otelgrpc` stats handler, so a query from the BFF continues in advisory, cases, account-sim, or timeline. A screen build is one `sdui.screen` span (`sdui.slug`, `sdui.revision`) with one `sdui.snapshot.<source>` child per Snapshot source and one `sdui.section` child per section (`sdui.section`, `sdui.variant`, and `sdui.omitted_reason` when omitted). Trace context does not cross RabbitMQ yet.
+- **Metrics.** `sdui_variant_served_total{slug,section,variant}`, `sdui_component_dropped_total{slug,type,reason}`, and `sdui_screen_build_seconds{slug}` from the BFF screen engine; `pov_purchases_total{asset_class}` from account-sim when a purchase (`aplicacao`) commits, so replays and refusals do not count; `advisory_suitability_alerts_total` from advisory when the suitability-mismatch (`perfil`) rule raises an alert. Labels are bounded: catalog keys, source names, and catalog asset classes, never customer ids or copy.
+
 `scripts/gen-proto.sh` regenerates every `proto/*/v1/*.proto` into `gen/`. It requires protoc 29.3, protoc-gen-go v1.36.5, and protoc-gen-go-grpc 1.5.1, and adds the Go install directory (`GOBIN`, else `$(go env GOPATH)/bin`) to `PATH` for the plugins.
 
 ## Contract
 
-The BFF HTTP contract, including the POV routes, is in [specs/http/bff.md](specs/http/bff.md). Client commands are recorded in [specs/adr/0008-client-command-grpc-outbox.md](specs/adr/0008-client-command-grpc-outbox.md). OpenTelemetry is not instrumented.
+The BFF HTTP contract, including the POV routes, is in [specs/http/bff.md](specs/http/bff.md). Client commands are recorded in [specs/adr/0008-client-command-grpc-outbox.md](specs/adr/0008-client-command-grpc-outbox.md). OpenTelemetry is described under [Observability](#observability).

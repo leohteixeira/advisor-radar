@@ -2,7 +2,7 @@
 
 The browser talks only to the BFF. Paths below are the BFF paths. The Vite app prefixes them with `/advisor-radar`.
 
-The BFF stores nothing durable. POV progress lives in an in-memory hub. OpenTelemetry is not instrumented; Bastidores shows `event_id` and the steps the hub has observed, not a live `trace_id`.
+The BFF stores nothing durable. POV progress lives in an in-memory hub. Requests are traced with OpenTelemetry (README "Observability"), but no response carries a `trace_id`: trace context does not cross RabbitMQ yet, so Bastidores shows `event_id` and the steps the hub has observed.
 
 ## Team routes
 
