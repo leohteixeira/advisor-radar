@@ -18,6 +18,7 @@ import (
 
 	casesv1 "github.com/leohteixeira/advisor-radar/gen/cases/v1"
 	"github.com/leohteixeira/advisor-radar/internal/cases"
+	"github.com/leohteixeira/advisor-radar/internal/envfile"
 )
 
 const amqpDialTimeout = 10 * time.Second
@@ -26,6 +27,11 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	if err := envfile.Load(".env"); err != nil {
+		logger.Error("service failed", "error", err.Error())
+		os.Exit(1)
+	}
 
 	logger.Info("service started", "service", "cases")
 

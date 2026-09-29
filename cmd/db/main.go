@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/leohteixeira/advisor-radar/internal/envfile"
 )
 
 var services = []string{"account_sim", "advisory", "triage", "cases"}
@@ -26,6 +28,10 @@ func main() {
 
 	root, err := repoRoot()
 	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err := envfile.Load(filepath.Join(root, ".env")); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
