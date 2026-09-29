@@ -18,10 +18,11 @@ portfolios. None of these fit four class totals.
   asset").
 - account-sim stores positions per fictional product. Each position belongs to
   one product of the fictional catalog and holds units and an applied value in
-  integer USD cents. Its current value is `units × price(product, sim_day)`,
-  where the price is the fixed catalog price times the product's scripted factor
-  for that day. A purchase buys units at the current day's price, and its applied
-  value is the cash spent.
+  integer USD cents. Units are expressed in day-0 cents: the fixed catalog price
+  is normalized to one cent per unit, so there is no price column. Its current
+  value is `units × factor(product, sim_day)`, where the factor is 1 except on
+  the scripted shocks. A purchase buys units at the current day's price, and its
+  applied value is the cash spent.
 - The four phase-2 classes become an aggregate: stocks, ETFs, and fixed income
   are the sum of the positions of that class, and cash stays its own balance.
 - Patrimony is positions at market value plus cash, everywhere: the client app,

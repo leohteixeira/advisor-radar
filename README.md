@@ -53,6 +53,8 @@ Services read their settings from environment variables, loaded from the local r
 
 `ACCOUNT_SIM_TEST_DATABASE_URL` points the gated `internal/sim` PostgreSQL tests at a database; each test migrates and drops its own schema. Unset, those tests skip.
 
+After `go run ./cmd/db migrate` applies `account_sim/004_pov_positions.sql`, run `go run ./cmd/db seed` (reseed): 004 drops the per-class balance columns and leaves the product catalog, positions, and registration tables empty until the seed loads them.
+
 `scripts/gen-proto.sh` regenerates every `proto/*/v1/*.proto` into `gen/`. It requires protoc 29.3, protoc-gen-go v1.36.5, and protoc-gen-go-grpc 1.5.1, and adds the Go install directory (`GOBIN`, else `$(go env GOPATH)/bin`) to `PATH` for the plugins.
 
 ## Contract
