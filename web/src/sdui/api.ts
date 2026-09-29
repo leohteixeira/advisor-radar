@@ -50,6 +50,13 @@ function asOmitted(value: unknown): Omitted[] {
 /** How long web waits for one screen before it treats the request as failed. */
 export const SCREEN_TIMEOUT_MS = 3000;
 
+/** A screen, the HTTP status, and the JSON body the BFF answered, as parsed before normalizing. */
+export interface ScreenResponse {
+  screen: Screen;
+  status: number;
+  body: unknown;
+}
+
 /**
  * Fetches one SDUI screen. A non-2xx answer throws ApiError; a 200 whose body
  * is not JSON, not an envelope, or an envelope of another slug throws
@@ -58,6 +65,14 @@ export const SCREEN_TIMEOUT_MS = 3000;
  * dropped.
  */
 export async function fetchScreen(customerID: string, slug: Slug, signal: AbortSignal): Promise<Screen> {
+  return (await fetchScreenResponse(customerID, slug, signal)).screen;
+}
+
+/**
+ * Like fetchScreen, and also returns the body as the BFF sent it, for the
+ * selection screen that shows the live response next to the rendered screen.
+ */
+export async function fetchScreenResponse(customerID: string, slug: Slug, signal: AbortSignal): Promise<ScreenResponse> {
   const res = await fetch(apiPath(`v1/client-pov/customers/${encodeURIComponent(customerID)}/screens/${slug}`), {
     signal: AbortSignal.any([signal, AbortSignal.timeout(SCREEN_TIMEOUT_MS)]),
   });
@@ -73,7 +88,7 @@ export async function fetchScreen(customerID: string, slug: Slug, signal: AbortS
   if (!isScreen(body) || body.slug !== slug) {
     throw new InvalidScreenError();
   }
-  return {
+  const screen: Screen = {
     schema_version: body.schema_version,
     slug,
     revision: typeof body.revision === 'string' ? body.revision : '',
@@ -82,4 +97,5 @@ export async function fetchScreen(customerID: string, slug: Slug, signal: AbortS
     sections: body.sections.map(asSection).filter((s): s is Section => s !== null),
     omitted: asOmitted(body.omitted),
   };
+  return { screen, status: res.status, body };
 }

@@ -52,8 +52,8 @@ async function read<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function fetchPOVClients(): Promise<POVClient[]> {
-  const body = await read<{ items: POVClient[] }>(await fetch(apiPath('v1/client-pov/customers')));
+export async function fetchPOVClients(signal?: AbortSignal): Promise<POVClient[]> {
+  const body = await read<{ items: POVClient[] }>(await fetch(apiPath('v1/client-pov/customers'), { signal }));
   return body.items.map((item) => ({
     ...item,
     since: item.since ?? '',

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Boundary } from './Boundary';
 import { lookup } from './registry';
 import type { Component, Screen, Slug } from './types';
+import { OmittedPlaceholder, sectionLabel, XrayBanner, XrayLabel, type XrayOptions } from './Xray';
 
 /**
  * Web owns the grid: one column on the phone, two on desktop, and the span of
@@ -39,23 +40,37 @@ function Slot({ component }: { component: Component }) {
 
 /**
  * Renders a screen envelope: the heading, then each section in array order,
- * each component through the registry. Omitted sections render nothing.
+ * each component through the registry. Omitted sections render nothing unless
+ * Raio-X is on (`xray`): then every section is outlined and labelled, a banner
+ * shows the request and envelope metadata, and each omitted section is drawn
+ * as a dashed placeholder after the rendered ones, in `omitted` order (web has
+ * no catalog to place it). With `xray` absent nothing of Raio-X is rendered.
  */
-export function SduiScreen({ screen }: { screen: Screen }) {
+export function SduiScreen({ screen, xray }: { screen: Screen; xray?: XrayOptions }) {
+  const on = xray !== undefined;
   return (
-    <div className="sdui-screen" data-slug={screen.slug} data-revision={screen.revision}>
+    <div className="sdui-screen" data-slug={screen.slug} data-revision={screen.revision} data-xray={on ? 'on' : undefined}>
       <div className="sdui-screen__head">
         <h1>{screen.title}</h1>
         {screen.subtitle ? <span>{screen.subtitle}</span> : null}
       </div>
+      {on ? <XrayBanner screen={screen} customerID={xray.customerID} /> : null}
       <div className="sdui-grid">
         {screen.sections.map((section, index) => (
           <div key={`${index}-${section.id}`} className="sdui-section" data-section={section.id} data-span={spanOf(screen.slug, section.id)}>
+            {on ? <XrayLabel text={sectionLabel(section)} /> : null}
             {section.components.map((component, slot) => (
               <Slot key={`${slot}-${component.type}`} component={component} />
             ))}
           </div>
         ))}
+        {on
+          ? screen.omitted.map((row, index) => (
+              <div key={`omitted-${index}-${row.id}`} className="sdui-section sdui-section--omitted" data-section={row.id} data-span={spanOf(screen.slug, row.id)}>
+                <OmittedPlaceholder row={row} />
+              </div>
+            ))
+          : null}
       </div>
     </div>
   );

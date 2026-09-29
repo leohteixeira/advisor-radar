@@ -167,6 +167,25 @@ function storeLightTheme(light: boolean) {
   }
 }
 
+/** Raio-X SDUI is a demo tool; remembering it is a per-browser convenience. */
+const XRAY_KEY = 'advisor-radar.pov-xray';
+
+function readXray(): boolean {
+  try {
+    return localStorage.getItem(XRAY_KEY) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+function storeXray(on: boolean) {
+  try {
+    localStorage.setItem(XRAY_KEY, on ? 'on' : 'off');
+  } catch {
+    // Keep the in-memory toggle when storage is unavailable.
+  }
+}
+
 /** The canonical client app route of one tab; home has no tab segment. */
 function clientPath(id: string, slug: TabSlug): string {
   const base = `/client-pov/${encodeURIComponent(id)}`;
@@ -186,6 +205,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const navigate = useNavigate();
   const wide = useWide();
   const [light, setLight] = useState(readLightTheme);
+  const [xray, setXray] = useState(readXray);
   const [hide, setHide] = useState(false);
   const [channel, setChannel] = useState<'chat' | 'e-mail'>('chat');
   const [text, setText] = useState('');
@@ -269,6 +289,14 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     setPanel(next);
   }
 
+  function toggleXray() {
+    setXray((value) => {
+      const next = !value;
+      storeXray(next);
+      return next;
+    });
+  }
+
   function toggleTheme() {
     setLight((value) => {
       const next = !value;
@@ -332,18 +360,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     // then shows the new screen, or switches to the fallback if it failed.
     return (
       <main className={light ? 'pov-app pov-app--light' : 'pov-app'} data-layout={wide ? 'desktop' : 'phone'}>
-        <div className="pov-app__strip">
-          <span className="pov-app__mark" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span>
-            <strong>Simulação</strong>
-            {home ? ` · vendo como ${home.name}` : null}
-          </span>
-          <Link to="/client-pov">Trocar cliente</Link>
-        </div>
+        <Strip name={home?.name} wide={wide} xray={xray} onXray={undefined} />
         <div className="pov-app__body">
           <div className="pov-app__main">
             {wide ? null : <PhoneBar light={light} themeLabel={themeLabel} onTheme={toggleTheme} initials={home ? initials(home.name) : ''} />}
@@ -377,6 +394,8 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     .filter((row) => row.pct > 0);
   const complaintText = preset >= 0 ? PRESETS[preset]?.text ?? '' : text.trim();
   const aumText = hide ? 'US$ ••••••' : formatCents(home.assets);
+  // Raio-X only has something to outline while an SDUI screen is on view.
+  const sduiOnView = showHome && tab === 'home' && homeScreen.status === 'ready';
   const sdui: SduiContextValue = {
     onNavigate: pickNav,
     masked: hide,
@@ -386,17 +405,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
 
   return (
     <main className={light ? 'pov-app pov-app--light' : 'pov-app'} data-layout={wide ? 'desktop' : 'phone'}>
-      <div className="pov-app__strip">
-        <span className="pov-app__mark" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
-        <span>
-          <strong>Simulação</strong> · vendo como {home.name}
-        </span>
-        <Link to="/client-pov">Trocar cliente</Link>
-      </div>
+      <Strip name={home.name} wide={wide} xray={xray} onXray={sduiOnView ? toggleXray : undefined} />
       <div className="pov-app__body">
         {wide ? (
           <aside className="pov-app__side">
@@ -437,7 +446,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
             <div className="sdui-main">
               <NavNote name={navNote} />
               <SduiContext value={sdui}>
-                <SduiScreen screen={homeScreen.screen} />
+                <SduiScreen screen={homeScreen.screen} xray={xray && sduiOnView ? { customerID: id } : undefined} />
               </SduiContext>
             </div>
             <p className="pov-app__fine">Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</p>
@@ -715,6 +724,33 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
       </div>
       {!wide && panel === 'home' ? <TabBar tab={tab} onPick={pickNav} /> : null}
     </main>
+  );
+}
+
+/**
+ * The simulation strip. "Raio-X SDUI" ("Raio-X" on the phone) toggles the
+ * demo X-ray of the SDUI screen; without `onXray` (loading, the phase-2
+ * fallback home, a tab with no SDUI screen) the toggle is not shown.
+ */
+function Strip({ name, wide, xray, onXray }: { name?: string; wide: boolean; xray: boolean; onXray?: () => void }) {
+  return (
+    <div className="pov-app__strip">
+      <span className="pov-app__mark" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span>
+        <strong>Simulação</strong>
+        {name ? ` · vendo como ${name}` : null}
+      </span>
+      {onXray ? (
+        <button type="button" className="pov-app__xray" aria-pressed={xray} onClick={onXray}>
+          <span>{wide ? 'Raio-X SDUI' : 'Raio-X'}</span>
+        </button>
+      ) : null}
+      <Link to="/client-pov">Trocar cliente</Link>
+    </div>
   );
 }
 
