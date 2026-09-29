@@ -41,8 +41,29 @@ func TestParseCatalog_Embedded(t *testing.T) {
 	if want := []string{"moment_card", "wealth_summary", "action_grid", "advisor_card", "activity_list"}; !slices.Equal(types, want) {
 		t.Errorf("home types = %v, want %v", types, want)
 	}
-	if len(cat.screens) != 1 {
-		t.Errorf("catalog serves %d screens, want only home in this story", len(cat.screens))
+	investir, ok := cat.screens["investir"]
+	if !ok {
+		t.Fatal("catalog has no investir screen")
+	}
+	ids, types = nil, nil
+	for _, s := range investir.sections {
+		ids = append(ids, s.id)
+		types = append(types, s.typ+"/"+strings.Join(s.variants, ","))
+	}
+	if want := []string{"cash", "highlights", "fixed_income", "etfs", "stocks"}; investir.revision != "v1" || !slices.Equal(ids, want) {
+		t.Errorf("investir %s sections = %v, want v1 %v", investir.revision, ids, want)
+	}
+	if want := []string{
+		"invest_summary/default",
+		"product_rail/profile_conservador,profile_moderado,profile_arrojado",
+		"product_list/fixed_income",
+		"product_list/etf",
+		"product_list/stocks",
+	}; !slices.Equal(types, want) {
+		t.Errorf("investir variants = %v, want %v", types, want)
+	}
+	if len(cat.screens) != 2 {
+		t.Errorf("catalog serves %d screens, want home and investir", len(cat.screens))
 	}
 }
 
@@ -55,7 +76,7 @@ func TestCatalog_EveryTemplateExecutes(t *testing.T) {
 	full := Fields{
 		FirstName: "Thiago", AdvisorName: "Ana Paula Ribeiro", Segment: "Advance", Since: "2024", SLA: "4 h",
 		Gap: "US$ 1.800,00", Threshold: "US$ 10.000,00", Cash: "US$ 60.520,00", CashShare: "89%", IdleDays: "4 dias", Profile: "arrojado",
-		Protocol: "01A0E3A5-2F4C", Age: "há 3 min",
+		Protocol: "01A0E3A5-2F4C", Age: "há 3 min", Risk: "5", MaxRisk: "2", Minimum: "US$ 10",
 	}
 	for key, tmpl := range cat.copy {
 		for _, f := range []Fields{full, {}} {
@@ -95,6 +116,17 @@ func TestCatalog_Heading(t *testing.T) {
 	// back to the plain greeting.
 	if got, err := execute(home.title, Fields{}); err != nil || got != "Olá" {
 		t.Errorf("fallback title = %q, %v; want %q", got, err, "Olá")
+	}
+	if home.staticSubtitle {
+		t.Error("home subtitle reads advisory fields but is marked static")
+	}
+
+	investir := embedded(t).screens["investir"]
+	if got, err := execute(investir.title, Fields{}); err != nil || got != "Investir" {
+		t.Errorf("investir title = %q, %v; want Investir", got, err)
+	}
+	if got, err := execute(investir.subtitle, Fields{}); err != nil || got != "Produtos fictícios · preço fixo da simulação" || !investir.staticSubtitle {
+		t.Errorf("investir subtitle = %q, %v, static %t", got, err, investir.staticSubtitle)
 	}
 }
 

@@ -147,3 +147,144 @@ export function thiagoPhase2() {
     messages: [],
   };
 }
+
+/** The phase-2 home JSON for Fernanda (GET /v1/client-pov/customers/{id}). */
+export function fernandaPhase2() {
+  return {
+    customer_id: SEED.fernanda,
+    name: 'Fernanda Lima',
+    segment: 'Essencial',
+    advisor: 'Ana Paula Ribeiro',
+    sla: '24 h',
+    since: '2024',
+    assets: 820000,
+    caixa: 114800,
+    allocation: { acoes: 164000, etfs: 369000, renda_fixa: 172200, caixa: 114800 },
+    activity: [],
+    messages: [],
+  };
+}
+
+/** Thiago's home while his cash is idle: the moment points to Investir. */
+export function thiagoIdleCashHome(): Screen {
+  const screen = thiagoHome();
+  screen.sections[0] = {
+    id: 'moment',
+    components: [
+      {
+        type: 'moment_card',
+        variant: 'idle_cash',
+        props: {
+          kicker: 'Caixa parado',
+          title: 'Thiago, 89% do seu patrimônio está em caixa',
+          body: 'US$ 60.520,00 parados há 4 dias. Veja produtos para o seu perfil arrojado.',
+          tone: 'info',
+          icon: 'cash',
+          action: { type: 'navigate', label: 'Ver produtos', target: 'investir' },
+        },
+      },
+    ],
+  };
+  return screen;
+}
+
+/** The account-sim catalog as story 4 seeds it, with the BFF display strings. */
+const CATALOG = [
+  { id: 'tbill', name: 'Orla T-Bill 6 meses', cls: 'Renda fixa', risk: 1, ret: '4,9% a.a.', min: 'Mínimo US$ 100', minCents: 10000 },
+  { id: 'corp', name: 'Orla Corporate IG 2029', cls: 'Renda fixa', risk: 2, ret: '5,6% a.a.', min: 'Mínimo US$ 1.000', minCents: 100000 },
+  { id: 'renda', name: 'Maré Renda Global ETF', cls: 'ETF', risk: 2, ret: '+3,8% em 12 meses', min: 'Mínimo US$ 50', minCents: 5000 },
+  { id: 'acoesg', name: 'Maré Ações Globais ETF', cls: 'ETF', risk: 3, ret: '+11,2% em 12 meses', min: 'Mínimo US$ 50', minCents: 5000 },
+  { id: 'farol', name: 'Farol Saúde', cls: 'Ação', risk: 4, ret: '+9,4% em 12 meses', min: 'Mínimo US$ 10', minCents: 1000 },
+  { id: 'cobalto', name: 'Cobalto Semicondutores', cls: 'Ação', risk: 5, ret: '+27,1% em 12 meses', min: 'Mínimo US$ 10', minCents: 1000 },
+] as const;
+
+export type ProductID = (typeof CATALOG)[number]['id'];
+
+export interface InvestorProfile {
+  name: 'conservador' | 'moderado' | 'arrojado';
+  max: number;
+}
+
+/** One product as the BFF shapes it for `profile` (internal/screen/investir.go); null is an unknown profile. */
+export function product(id: ProductID, profile: InvestorProfile | null) {
+  const p = CATALOG.find((item) => item.id === id);
+  if (!p) {
+    throw new Error(`fixture: unknown product ${id}`);
+  }
+  const above = profile !== null && p.risk > profile.max;
+  return {
+    product_id: p.id,
+    name: p.name,
+    class_label: p.cls,
+    risk: p.risk,
+    risk_label: `Risco ${p.risk} de 5`,
+    return_label: p.ret,
+    minimum: p.min,
+    minimum_cents: p.minCents,
+    above_profile: above,
+    ...(above && profile
+      ? {
+          badge: 'Acima do seu perfil',
+          warning: `Este produto tem risco ${p.risk}. Seu perfil é ${profile.name}, que vai até risco ${profile.max}. Você pode investir mesmo assim, e a sua assessora será avisada.`,
+        }
+      : {}),
+    action: { type: 'panel', label: 'Investir', target: 'purchase', product_id: p.id },
+  };
+}
+
+const PICKS: Record<InvestorProfile['name'], ProductID[]> = {
+  conservador: ['tbill', 'corp'],
+  moderado: ['acoesg', 'corp'],
+  arrojado: ['cobalto', 'acoesg'],
+};
+
+function investir(cash: string, cashCents: number, profile: InvestorProfile): Screen {
+  const list = (ids: ProductID[]) => ids.map((id) => product(id, profile));
+  return {
+    schema_version: 1,
+    slug: 'investir',
+    revision: 'v1',
+    title: 'Investir',
+    subtitle: 'Produtos fictícios · preço fixo da simulação',
+    sections: [
+      {
+        id: 'cash',
+        components: [
+          {
+            type: 'invest_summary',
+            variant: 'default',
+            props: { cash_label: 'Disponível para investir', cash, cash_cents: cashCents, profile_chip: `Perfil ${profile.name}` },
+          },
+        ],
+      },
+      {
+        id: 'highlights',
+        components: [
+          {
+            type: 'product_rail',
+            variant: `profile_${profile.name}`,
+            props: {
+              title: `Para o seu perfil ${profile.name}`,
+              subtitle: 'Escolhidos pelo backend a partir do seu perfil de investidor.',
+              products: list(PICKS[profile.name]),
+            },
+          },
+        ],
+      },
+      { id: 'fixed_income', components: [{ type: 'product_list', variant: 'fixed_income', props: { title: 'Renda fixa', products: list(['tbill', 'corp']) } }] },
+      { id: 'etfs', components: [{ type: 'product_list', variant: 'etf', props: { title: 'ETFs', products: list(['renda', 'acoesg']) } }] },
+      { id: 'stocks', components: [{ type: 'product_list', variant: 'stocks', props: { title: 'Ações', products: list(['farol', 'cobalto']) } }] },
+    ],
+    omitted: [],
+  };
+}
+
+/** Thiago's Investir envelope: arrojado, nothing above his profile. */
+export function thiagoInvestir(): Screen {
+  return investir('US$ 60.520,00', 6052000, { name: 'arrojado', max: 5 });
+}
+
+/** Fernanda's Investir envelope: conservador (max 2), so acoesg, farol, and cobalto are above it. */
+export function fernandaInvestir(): Screen {
+  return investir('US$ 1.148,00', 114800, { name: 'conservador', max: 2 });
+}

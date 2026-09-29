@@ -4,12 +4,24 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { ROUTER_BASENAME } from '../test/fixtures';
+import { fernandaHome, fernandaInvestir, fernandaPhase2, SEED } from '../test/sduiFixtures';
 
-const FERNANDA = '01a0e3a4-9a44-757a-ac8f-dab7db5eb068';
+const FERNANDA = SEED.fernanda;
 const EVENT = '01a0e3a5-2f4c-7b1e-9d3a-6c0b8e41f27a';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+/** A GET the client app sends: an SDUI screen, or the phase-2 customer read the panels use. */
+function answerGet(url: string): Response {
+  if (url.endsWith('/screens/home')) {
+    return json(fernandaHome());
+  }
+  if (url.endsWith('/screens/investir')) {
+    return json(fernandaInvestir());
+  }
+  return json(fernandaPhase2());
 }
 
 function renderAt(path: string) {
@@ -47,18 +59,7 @@ describe('phone client pov', () => {
             ],
           });
         }
-        return json({
-          customer_id: FERNANDA,
-          name: 'Fernanda Lima',
-          segment: 'Essencial',
-          advisor: 'Ana Paula Ribeiro',
-          sla: '24 h',
-          assets: 820000,
-          caixa: 114800,
-          allocation: { acoes: 164000, etfs: 369000, renda_fixa: 172200, caixa: 114800 },
-          activity: [],
-          messages: [],
-        });
+        return answerGet(url);
       }),
     );
     renderAt('/client-pov');
@@ -66,7 +67,7 @@ describe('phone client pov', () => {
     expect(screen.getByText(/Perto do teto da faixa/)).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: /Fernanda Lima/ }));
     expect(await screen.findByRole('heading', { name: 'Olá, Fernanda' })).toBeInTheDocument();
-    expect(screen.getByText('Nenhuma movimentação nos últimos 30 dias.')).toBeInTheDocument();
+    expect(screen.getByText('Suas movimentações aparecem aqui assim que acontecerem.')).toBeInTheDocument();
   });
 
   it('shows a list error', async () => {
@@ -98,18 +99,7 @@ describe('phone client pov', () => {
           }
           return json({ event_id: EVENT });
         }
-        return json({
-          customer_id: FERNANDA,
-          name: 'Fernanda Lima',
-          segment: 'Essencial',
-          advisor: 'Ana Paula Ribeiro',
-          sla: '24 h',
-          assets: 820000,
-          caixa: 114800,
-          allocation: { acoes: 1, etfs: 1, renda_fixa: 1, caixa: 114800 },
-          activity: [],
-          messages: [],
-        });
+        return answerGet(String(url));
       }),
     );
     renderAt(`/client-pov/${FERNANDA}`);
@@ -159,18 +149,7 @@ describe('phone client pov', () => {
           posts.push({ url: String(url), body: String(init.body) });
           return json({ event_id: EVENT });
         }
-        return json({
-          customer_id: FERNANDA,
-          name: 'Fernanda Lima',
-          segment: 'Essencial',
-          advisor: 'Ana Paula Ribeiro',
-          sla: '24 h',
-          assets: 820000,
-          caixa: 114800,
-          allocation: { acoes: 1, etfs: 1, renda_fixa: 1, caixa: 114800 },
-          activity: [],
-          messages: [],
-        });
+        return answerGet(String(url));
       }),
     );
     vi.stubGlobal(
@@ -183,10 +162,14 @@ describe('phone client pov', () => {
     );
     const view = renderAt(`/client-pov/${FERNANDA}`);
     expect(await screen.findByRole('button', { name: 'Tema claro' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Carteira' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Carteira não entra nesta simulação');
     await user.click(screen.getByRole('button', { name: 'Investir' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Investir não entra nesta simulação');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Investir' })).toBeInTheDocument();
+    expect(screen.queryByText(/não entra nesta simulação/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Início' }));
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Fernanda' })).toBeInTheDocument();
+    expect(screen.queryByText(/não entra nesta simulação/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Tema claro' }));
     expect(screen.getByRole('button', { name: 'Tema escuro' })).toBeInTheDocument();
     expect(document.querySelector('.pov-app--light')).not.toBeNull();

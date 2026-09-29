@@ -18,7 +18,7 @@ describe('resolveAction', () => {
     ['withdraw', { type: 'panel', label: 'Sacar', target: 'withdraw' }, { kind: 'panel', label: 'Sacar', panel: 'withdraw' }],
     ['message', { type: 'panel', label: 'Mensagem', target: 'message' }, { kind: 'panel', label: 'Mensagem', panel: 'message' }],
     ['complaint', { type: 'panel', label: 'Reclamar', target: 'complaint' }, { kind: 'panel', label: 'Reclamar', panel: 'complaint' }],
-    ['purchase', { type: 'panel', label: 'Investir', target: 'purchase', product_id: 'p1' }, { kind: 'hidden', problem: null }],
+    ['purchase', { type: 'panel', label: 'Investir', target: 'purchase', product_id: 'p1' }, { kind: 'purchase', label: 'Investir', productID: 'p1' }],
     ['note', { type: 'note', label: 'Saiba mais', text: 'Texto' }, { kind: 'note', label: 'Saiba mais', text: 'Texto' }],
     ['https link', { type: 'link', label: 'Site', href: 'https://example.com/a' }, { kind: 'link', label: 'Site', href: 'https://example.com/a' }],
   ])('resolves %s', (_name, action, expected) => {
@@ -32,6 +32,9 @@ describe('resolveAction', () => {
     ['an empty label', { type: 'panel', label: '', target: 'deposit' }, 'sdui: action panel has no label'],
     ['an unknown slug', { type: 'navigate', label: 'x', target: 'extrato' }, 'sdui: unknown navigate target extrato'],
     ['an unknown panel', { type: 'panel', label: 'x', target: 'transfer' }, 'sdui: unknown panel target transfer'],
+    ['a purchase without product_id', { type: 'panel', label: 'Investir', target: 'purchase' }, 'sdui: purchase panel has no product_id'],
+    ['a purchase with an empty product_id', { type: 'panel', label: 'Investir', target: 'purchase', product_id: '' }, 'sdui: purchase panel has no product_id'],
+    ['a purchase with a numeric product_id', { type: 'panel', label: 'Investir', target: 'purchase', product_id: 7 }, 'sdui: purchase panel has no product_id'],
     ['a note without text', { type: 'note', label: 'x' }, 'sdui: note action has no text'],
     ['an http link', { type: 'link', label: 'x', href: 'http://example.com' }, 'sdui: link refused, href is not https'],
     ['a javascript link', { type: 'link', label: 'x', href: 'javascript:alert(1)' }, 'sdui: link refused, href is not https'],
@@ -56,6 +59,14 @@ describe('ActionControl', () => {
     const { value } = renderSdui(<ActionControl action={{ type: 'panel', label: 'Depositar', target: 'deposit' }} className="x" />);
     await user.click(screen.getByRole('button', { name: 'Depositar' }));
     expect(value.onPanel).toHaveBeenCalledWith('deposit');
+  });
+
+  it('opens the purchase form for its product', async () => {
+    const user = userEvent.setup();
+    const { value } = renderSdui(<ActionControl action={{ type: 'panel', label: 'Investir', target: 'purchase', product_id: 'acoesg' }} className="x" />);
+    await user.click(screen.getByRole('button', { name: 'Investir' }));
+    expect(value.onPurchase).toHaveBeenCalledWith('acoesg');
+    expect(value.onPanel).not.toHaveBeenCalled();
   });
 
   it('shows a note in place', async () => {
@@ -85,6 +96,7 @@ describe('ActionControl', () => {
     ['an unknown action', { type: 'teleport', label: 'Ir' }],
     ['a non-https link', { type: 'link', label: 'Ir', href: 'http://example.com' }],
     ['an unknown panel', { type: 'panel', label: 'Ir', target: 'transfer' }],
+    ['a purchase without product_id', { type: 'panel', label: 'Investir', target: 'purchase' }],
   ])('hides %s and reports it once', (_name, action) => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { container, rerenderWith } = renderSdui(<ActionControl action={action} className="x" />);
@@ -93,12 +105,5 @@ describe('ActionControl', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(error).toHaveBeenCalledTimes(1);
-  });
-
-  it('hides a purchase panel without reporting it', () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    renderSdui(<ActionControl action={{ type: 'panel', label: 'Investir', target: 'purchase', product_id: 'p1' }} className="x" />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(error).not.toHaveBeenCalled();
   });
 });

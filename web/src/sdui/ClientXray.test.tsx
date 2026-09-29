@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { ROUTER_BASENAME } from '../test/fixtures';
-import { marianaHome, SEED, thiagoHome, thiagoPhase2 } from '../test/sduiFixtures';
+import { marianaHome, SEED, thiagoHome, thiagoInvestir, thiagoPhase2 } from '../test/sduiFixtures';
 import type { Screen } from './types';
 
 const XRAY_KEY = 'advisor-radar.pov-xray';
@@ -39,6 +39,9 @@ function stubBFF(home: () => Screen | Response) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
+      if (url.endsWith('/screens/investir')) {
+        return json(thiagoInvestir());
+      }
       if (url.includes('/screens/')) {
         const body = home();
         return body instanceof Response ? body : json(body);
@@ -134,19 +137,35 @@ describe('Raio-X SDUI toggle in the simulation strip', () => {
     expect(screen.queryByRole('button', { name: /Raio-X/ })).not.toBeInTheDocument();
   });
 
-  it('hides the toggle on the phase-2 fallback home', async () => {
+  it('hides the toggle on the error state', async () => {
     localStorage.setItem(XRAY_KEY, 'on');
     stubBFF(() => new Response('bad gateway', { status: 502 }));
     renderAt(`/client-pov/${SEED.thiago}`);
-    expect(await screen.findByText('Nenhuma movimentação nos últimos 30 dias.')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível montar sua tela.');
     expect(screen.queryByRole('button', { name: /Raio-X/ })).not.toBeInTheDocument();
+  });
+
+  it('labels the Investir sections', async () => {
+    localStorage.setItem(XRAY_KEY, 'on');
+    stubBFF(thiagoHome);
+    renderAt(`/client-pov/${SEED.thiago}/investir`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Investir' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Raio-X' })).toHaveAttribute('aria-pressed', 'true');
+    expect(Array.from(document.querySelectorAll('.sdui-xray-label')).map((node) => node.textContent)).toEqual([
+      'cash · invest_summary · default',
+      'highlights · product_rail · profile_arrojado',
+      'fixed_income · product_list · fixed_income',
+      'etfs · product_list · etf',
+      'stocks · product_list · stocks',
+    ]);
+    expect(screen.getByRole('region', { name: 'Raio-X SDUI' })).toHaveTextContent(`customers/${SEED.thiago}/screens/investir`);
   });
 
   it('hides the toggle and the X-ray on a tab with no SDUI screen', async () => {
     const user = userEvent.setup();
     localStorage.setItem(XRAY_KEY, 'on');
     stubBFF(thiagoHome);
-    renderAt(`/client-pov/${SEED.thiago}/investir`);
+    renderAt(`/client-pov/${SEED.thiago}/carteira`);
     expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Thiago' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Raio-X/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Raio-X SDUI' })).not.toBeInTheDocument();

@@ -16,12 +16,21 @@ import (
 )
 
 type fakePOV struct {
-	mu       sync.Mutex
-	accounts []bff.POVAccount
-	applied  []bff.POVCommand
-	eventID  string
-	replay   bool
-	err      error
+	mu          sync.Mutex
+	accounts    []bff.POVAccount
+	applied     []bff.POVCommand
+	eventID     string
+	replay      bool
+	err         error
+	products    []bff.POVProduct
+	productsErr error
+}
+
+func (f *fakePOV) Products(context.Context) ([]bff.POVProduct, error) {
+	if f.productsErr != nil {
+		return nil, f.productsErr
+	}
+	return f.products, nil
 }
 
 func (f *fakePOV) List(context.Context) ([]bff.POVAccount, error) {

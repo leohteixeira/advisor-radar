@@ -75,6 +75,9 @@ func (failingPOV) Get(context.Context, string) (bff.POVAccount, error) {
 func (failingPOV) Apply(context.Context, bff.POVCommand) (bff.POVResult, error) {
 	return bff.POVResult{}, errAccountSimDown
 }
+func (failingPOV) Products(context.Context) ([]bff.POVProduct, error) {
+	return nil, errAccountSimDown
+}
 
 // syncBuffer is a bytes.Buffer safe for the concurrent writes of a logger.
 type syncBuffer struct {
@@ -409,7 +412,9 @@ func TestGetScreen_Status(t *testing.T) {
 		expected int
 	}{
 		{name: "non-v7 id", id: "not-a-uuid", slug: "home", expected: http.StatusBadRequest},
-		{name: "investir not served yet", id: sim.CustomerThiago, slug: "investir", expected: http.StatusNotFound},
+		{name: "investir", id: sim.CustomerThiago, slug: "investir", expected: http.StatusOK},
+		{name: "carteira not served yet", id: sim.CustomerThiago, slug: "carteira", expected: http.StatusNotFound},
+		{name: "perfil not served yet", id: sim.CustomerThiago, slug: "perfil", expected: http.StatusNotFound},
 		{name: "unknown slug", id: sim.CustomerThiago, slug: "x", expected: http.StatusNotFound},
 		{name: "unknown customer", id: "01a0e3a4-9a44-7000-8000-000000000001", slug: "home", expected: http.StatusNotFound},
 	}

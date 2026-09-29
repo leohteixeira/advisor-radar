@@ -179,9 +179,12 @@ func TestEngine_Build_TracesTheHome(t *testing.T) {
 		sources = append(sources, src)
 	}
 	slices.Sort(sources)
+	// home reads every source but the catalog.
 	want := make([]string, 0, len(allSources))
 	for _, src := range allSources {
-		want = append(want, string(src))
+		if src != SourceCatalog {
+			want = append(want, string(src))
+		}
 	}
 	slices.Sort(want)
 	if !slices.Equal(sources, want) {

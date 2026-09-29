@@ -4,8 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { ROUTER_BASENAME } from '../test/fixtures';
-import { SEED, thiagoHome, thiagoPhase2 } from '../test/sduiFixtures';
-import type { Screen } from './types';
+import { SEED, thiagoHome, thiagoIdleCashHome, thiagoInvestir, thiagoPhase2 } from '../test/sduiFixtures';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -38,13 +37,19 @@ function useDesktop() {
     }) as MediaQueryList;
 }
 
-/** Serves the screen route with `screenResponse` and every other GET with the phase-2 home. */
+/**
+ * Serves the home screen with `screenResponse`, the Investir screen with
+ * Thiago's envelope, and every other GET with the phase-2 home.
+ */
 function stubBFF(screenResponse: (init?: RequestInit) => Response | Promise<Response>) {
   const calls: string[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(url);
+      if (url.endsWith('/screens/investir')) {
+        return json(thiagoInvestir());
+      }
       if (url.includes('/screens/')) {
         return screenResponse(init);
       }
@@ -54,27 +59,7 @@ function stubBFF(screenResponse: (init?: RequestInit) => Response | Promise<Resp
   return calls;
 }
 
-function idleCashHome(): Screen {
-  const home = thiagoHome();
-  home.sections[0] = {
-    id: 'moment',
-    components: [
-      {
-        type: 'moment_card',
-        variant: 'idle_cash',
-        props: {
-          kicker: 'Caixa parado',
-          title: 'Thiago, 89% do seu patrimônio está em caixa',
-          body: 'US$ 60.520,00 parados há 4 dias. Veja produtos para o seu perfil arrojado.',
-          tone: 'info',
-          icon: 'cash',
-          action: { type: 'navigate', label: 'Ver produtos', target: 'investir' },
-        },
-      },
-    ],
-  };
-  return home;
-}
+const idleCashHome = thiagoIdleCashHome;
 
 beforeEach(() => {
   window.matchMedia = undefined as unknown as typeof window.matchMedia;
@@ -111,12 +96,37 @@ describe('client app home from the screen route', () => {
   it.each([
     ['a 502', () => new Response('bad gateway', { status: 502 })],
     ['a 200 that is not an envelope', () => json(thiagoPhase2())],
-  ])('falls back to the phase-2 home on %s', async (_name, response) => {
+    ['an envelope of another slug', () => json(thiagoInvestir())],
+  ])('shows the error state on %s and keeps the shell', async (_name, response) => {
     stubBFF(response);
     renderAt(`/client-pov/${SEED.thiago}`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Thiago' })).toBeInTheDocument();
-    expect(screen.getByText('Nenhuma movimentação nos últimos 30 dias.')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível montar sua tela.');
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
+    expect(screen.getByText(/vendo como Thiago Azevedo/)).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Navegação principal' })).toBeInTheDocument();
     expect(document.querySelector('.sdui-screen')).toBeNull();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Olá, Thiago' })).not.toBeInTheDocument();
+  });
+
+  it('retries the screen request from the error state', async () => {
+    const user = userEvent.setup();
+    const answers = [new Response('bad gateway', { status: 502 }), json(thiagoHome())];
+    const calls = stubBFF(() => answers.shift() ?? json(thiagoHome()));
+    renderAt(`/client-pov/${SEED.thiago}`);
+    await user.click(await screen.findByRole('button', { name: 'Tentar de novo' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Thiago' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(calls.filter((url) => url.endsWith('/screens/home'))).toHaveLength(2);
+  });
+
+  it('keeps the tabs working from the error state', async () => {
+    const user = userEvent.setup();
+    stubBFF(() => new Response('bad gateway', { status: 502 }));
+    renderAt(`/client-pov/${SEED.thiago}`);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível montar sua tela.');
+    await user.click(screen.getByRole('button', { name: 'Carteira' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível montar sua tela.');
+    expect(screen.getByRole('status')).toHaveTextContent('Carteira não entra nesta simulação');
   });
 
   it('opens the coded deposit panel from a panel action', async () => {
@@ -129,13 +139,15 @@ describe('client app home from the screen route', () => {
 
   it('routes a navigate action to its screen route', async () => {
     const user = userEvent.setup();
-    stubBFF(() => json(idleCashHome()));
+    const calls = stubBFF(() => json(idleCashHome()));
     renderAt(`/client-pov/${SEED.thiago}`);
     await user.click(await screen.findByRole('button', { name: 'Ver produtos' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Investir não entra nesta simulação');
-    expect(screen.getByRole('button', { name: 'Investir' })).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Investir' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent(`/client-pov/${SEED.thiago}/investir`);
+    expect(within(screen.getByRole('navigation', { name: 'Navegação principal' })).getByRole('button', { name: 'Investir' })).toHaveAttribute('aria-current', 'page');
+    expect(calls.filter((url) => url.endsWith('/screens/investir'))).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Início' }));
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Thiago' })).toBeInTheDocument();
   });
 
   it('masks money with the eye toggle', async () => {
@@ -149,7 +161,7 @@ describe('client app home from the screen route', () => {
     expect(screen.getByText('US$ 68.000,00')).toBeInTheDocument();
   });
 
-  it('falls back to the phase-2 home when the screen request times out', async () => {
+  it('shows the error state when the screen request times out', async () => {
     const timer = new AbortController();
     vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timer.signal);
     stubBFF(
@@ -162,7 +174,7 @@ describe('client app home from the screen route', () => {
     expect(await screen.findByText(/vendo como Thiago Azevedo/)).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Montando sua tela…');
     timer.abort(new DOMException('timed out', 'TimeoutError'));
-    expect(await screen.findByText('Nenhuma movimentação nos últimos 30 dias.')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível montar sua tela.');
     expect(screen.queryByText('Montando sua tela…')).not.toBeInTheDocument();
   });
 

@@ -83,6 +83,37 @@ func TestScreenAccounts_DisabledIsAFailedSource(t *testing.T) {
 	}
 }
 
+// catalogPOV answers Products with products or err.
+type catalogPOV struct {
+	emptyPOV
+	products []POVProduct
+	err      error
+}
+
+func (p catalogPOV) Products(context.Context) ([]POVProduct, error) { return p.products, p.err }
+
+func TestScreenProducts_Products(t *testing.T) {
+	t.Parallel()
+	pov := catalogPOV{products: []POVProduct{
+		{ID: "acoesg", Name: "Maré Ações Globais ETF", AssetClass: "etfs", Risk: 3, ReturnLabel: "+11,2% em 12 meses", MinimumCents: 5_000},
+	}}
+	got, err := screenProducts{pov: pov}.Products(t.Context())
+	want := []screen.Product{
+		{ID: "acoesg", Name: "Maré Ações Globais ETF", AssetClass: "etfs", Risk: 3, ReturnLabel: "+11,2% em 12 meses", MinimumCents: 5_000},
+	}
+	if err != nil || !slices.Equal(got, want) {
+		t.Errorf("Products = %+v, %v; want %+v", got, err, want)
+	}
+
+	down := errors.New("unavailable")
+	if _, err := (screenProducts{pov: catalogPOV{err: down}}).Products(t.Context()); !errors.Is(err, down) {
+		t.Errorf("failed catalog error = %v, want it to wrap %v", err, down)
+	}
+	if _, err := (screenProducts{pov: emptyPOV{}}).Products(t.Context()); !errors.Is(err, errPOVDisabled) {
+		t.Errorf("disabled catalog error = %v, want %v", err, errPOVDisabled)
+	}
+}
+
 func TestFailureClass(t *testing.T) {
 	t.Parallel()
 	if got := failureClass(errors.New("screen: no sla for segment \"X\"")); got != "build_error" {

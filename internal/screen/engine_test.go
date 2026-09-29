@@ -109,7 +109,9 @@ func TestMustNew_Panics(t *testing.T) {
 }
 
 // TestEngine_EverySectionEndsInDefault checks that the last variant of every
-// section matches whatever the snapshot holds.
+// section matches whatever the snapshot holds. The highlights rail is the
+// exception specs/http/bff.md names: its default is the variant of the
+// customer's profile, which TestProductRail_OneVariantPerProfile covers.
 func TestEngine_EverySectionEndsInDefault(t *testing.T) {
 	t.Parallel()
 	e := newTestEngine(t, thiagoFixture().sources())
@@ -127,6 +129,9 @@ func TestEngine_EverySectionEndsInDefault(t *testing.T) {
 	}
 	for slug, p := range e.plans {
 		for _, sec := range p.sections {
+			if slug == "investir" && sec.id == "highlights" {
+				continue
+			}
 			last := sec.variants[len(sec.variants)-1]
 			for i, snap := range snaps {
 				if !last.variant.Matches(snap) {
@@ -369,7 +374,7 @@ func TestEngine_Build_UnknownCustomer(t *testing.T) {
 func TestEngine_Build_UnknownScreen(t *testing.T) {
 	t.Parallel()
 	e := newTestEngine(t, thiagoFixture().sources())
-	for _, slug := range []string{"investir", "carteira", "perfil", "x", ""} {
+	for _, slug := range []string{"carteira", "perfil", "x", ""} {
 		t.Run("slug "+strconv.Quote(slug), func(t *testing.T) {
 			t.Parallel()
 			if _, err := e.Build(t.Context(), slug, "id"); !errors.Is(err, ErrUnknownScreen) {

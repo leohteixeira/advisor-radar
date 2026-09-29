@@ -35,6 +35,29 @@ func TestMoney(t *testing.T) {
 	}
 }
 
+func TestCompactMoney(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		cents    int64
+		expected string
+	}{
+		{name: "whole dollars drop the cents", cents: 100_000, expected: "US$ 1.000"},
+		{name: "ten dollars", cents: 1_000, expected: "US$ 10"},
+		{name: "zero", cents: 0, expected: "US$ 0"},
+		{name: "cents stay", cents: 1_250, expected: "US$ 12,50"},
+		{name: "negative whole", cents: -5_000, expected: "− US$ 50"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := CompactMoney(tt.cents); got != tt.expected {
+				t.Errorf("CompactMoney(%d) = %q, want %q", tt.cents, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestPercent(t *testing.T) {
 	t.Parallel()
 	if got := Percent(62); got != "62%" {

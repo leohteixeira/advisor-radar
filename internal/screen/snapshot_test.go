@@ -123,6 +123,35 @@ func (f fakeCases) OpenCases(ctx context.Context, _ string) ([]OpenCase, error) 
 	return f.cases, nil
 }
 
+type fakeProducts struct {
+	products []Product
+	err      error
+	delay    time.Duration
+}
+
+func (f fakeProducts) Products(ctx context.Context) ([]Product, error) {
+	if err := wait(ctx, f.delay); err != nil {
+		return nil, err
+	}
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.products, nil
+}
+
+// testCatalog is the account-sim product catalog seed (architecture.md
+// "Products"), deliberately out of risk order.
+func testCatalog() []Product {
+	return []Product{
+		{ID: "cobalto", Name: "Cobalto Semicondutores", AssetClass: "acoes", Risk: 5, ReturnLabel: "+27,1% em 12 meses", MinimumCents: 1_000},
+		{ID: "tbill", Name: "Orla T-Bill 6 meses", AssetClass: "renda_fixa", Risk: 1, ReturnLabel: "4,9% a.a.", MinimumCents: 10_000},
+		{ID: "acoesg", Name: "Maré Ações Globais ETF", AssetClass: "etfs", Risk: 3, ReturnLabel: "+11,2% em 12 meses", MinimumCents: 5_000},
+		{ID: "corp", Name: "Orla Corporate IG 2029", AssetClass: "renda_fixa", Risk: 2, ReturnLabel: "5,6% a.a.", MinimumCents: 100_000},
+		{ID: "farol", Name: "Farol Saúde", AssetClass: "acoes", Risk: 4, ReturnLabel: "+9,4% em 12 meses", MinimumCents: 1_000},
+		{ID: "renda", Name: "Maré Renda Global ETF", AssetClass: "etfs", Risk: 2, ReturnLabel: "+3,8% em 12 meses", MinimumCents: 5_000},
+	}
+}
+
 // testNow is the request clock of the engine tests.
 var testNow = time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
 
@@ -197,6 +226,7 @@ func (f fixture) sources() Sources {
 		Moments:   fakeMoments{facts: f.moments},
 		Profiles:  fakeProfiles{profile: f.profile},
 		Cases:     fakeCases{cases: f.cases},
+		Products:  fakeProducts{products: testCatalog()},
 	}
 }
 
@@ -210,6 +240,7 @@ func (f fixture) snapshot() Snapshot {
 		Moments:    Fetched[MomentFacts]{Value: f.moments},
 		Profile:    Fetched[InvestorProfile]{Value: f.profile},
 		Cases:      Fetched[[]OpenCase]{Value: f.cases},
+		Products:   Fetched[[]Product]{Value: testCatalog()},
 	}
 }
 
@@ -247,6 +278,8 @@ func TestSnapshot_failed(t *testing.T) {
 			snap.Profile.Err = errDown
 		case SourceCases:
 			snap.Cases.Err = errDown
+		case SourceCatalog:
+			snap.Products.Err = errDown
 		}
 		for _, src := range allSources {
 			err := snap.failed(src)
@@ -266,7 +299,7 @@ func TestSnapshot_failed(t *testing.T) {
 func TestFetchSnapshot_AllSourcesAnswer(t *testing.T) {
 	t.Parallel()
 	f := thiagoFixture()
-	snap := fetchSnapshot(t.Context(), noopTracer, f.sources(), f.id, testNow, DefaultDeadline)
+	snap := fetchSnapshot(t.Context(), noopTracer, f.sources(), allSources, f.id, testNow, DefaultDeadline)
 	for _, src := range allSources {
 		if err := snap.failed(src); err != nil {
 			t.Fatalf("%s error = %v", src, err)
@@ -275,8 +308,8 @@ func TestFetchSnapshot_AllSourcesAnswer(t *testing.T) {
 	if snap.CustomerID != f.id || !snap.Now.Equal(testNow) || snap.Account.Value.Patrimony != 6_800_000 || snap.Customer.Value.Name != "Thiago Azevedo" || len(snap.Activity.Value) != 2 {
 		t.Errorf("snapshot = %+v", snap)
 	}
-	if !snap.Moments.Value.IdleCash || snap.Profile.Value.Profile != "arrojado" || snap.Cases.Value == nil {
-		t.Errorf("moments %+v, profile %+v, cases %v", snap.Moments.Value, snap.Profile.Value, snap.Cases.Value)
+	if !snap.Moments.Value.IdleCash || snap.Profile.Value.Profile != "arrojado" || snap.Cases.Value == nil || len(snap.Products.Value) != 6 {
+		t.Errorf("moments %+v, profile %+v, cases %v, products %v", snap.Moments.Value, snap.Profile.Value, snap.Cases.Value, snap.Products.Value)
 	}
 }
 
@@ -291,10 +324,11 @@ func TestFetchSnapshot_FailureDoesNotCancelOthers(t *testing.T) {
 			Moments:   fakeMoments{facts: f.moments, delay: 300 * time.Millisecond},
 			Profiles:  fakeProfiles{profile: f.profile, delay: 400 * time.Millisecond},
 			Cases:     fakeCases{err: errDown, delay: 50 * time.Millisecond},
+			Products:  fakeProducts{err: errDown, delay: 10 * time.Millisecond},
 		}
-		snap := fetchSnapshot(t.Context(), noopTracer, src, f.id, testNow, DefaultDeadline)
-		if !errors.Is(snap.Account.Err, errDown) || !errors.Is(snap.Cases.Err, errDown) {
-			t.Errorf("account error = %v, cases error = %v, want %v", snap.Account.Err, snap.Cases.Err, errDown)
+		snap := fetchSnapshot(t.Context(), noopTracer, src, allSources, f.id, testNow, DefaultDeadline)
+		if !errors.Is(snap.Account.Err, errDown) || !errors.Is(snap.Cases.Err, errDown) || !errors.Is(snap.Products.Err, errDown) {
+			t.Errorf("account error = %v, cases error = %v, catalog error = %v, want %v", snap.Account.Err, snap.Cases.Err, snap.Products.Err, errDown)
 		}
 		if !snap.Customer.OK() || !snap.Activity.OK() || !snap.Moments.OK() || !snap.Profile.OK() {
 			t.Errorf("slower sources were cancelled: customer %v, activity %v, moments %v, profile %v",
@@ -311,7 +345,7 @@ func TestFetchSnapshot_Deadline(t *testing.T) {
 		src.Activity = fakeActivity{rows: f.activity, delay: time.Hour}
 		src.Cases = fakeCases{delay: time.Hour}
 		start := time.Now()
-		snap := fetchSnapshot(t.Context(), noopTracer, src, f.id, testNow, DefaultDeadline)
+		snap := fetchSnapshot(t.Context(), noopTracer, src, allSources, f.id, testNow, DefaultDeadline)
 		if elapsed := time.Since(start); elapsed != DefaultDeadline {
 			t.Errorf("snapshot took %v, want the %v deadline", elapsed, DefaultDeadline)
 		}
@@ -334,8 +368,9 @@ func TestFetchSnapshot_ErrorNamesSource(t *testing.T) {
 		Moments:   fakeMoments{err: errDown},
 		Profiles:  fakeProfiles{err: errDown},
 		Cases:     fakeCases{err: errDown},
+		Products:  fakeProducts{err: errDown},
 	}
-	snap := fetchSnapshot(t.Context(), noopTracer, src, "id", testNow, DefaultDeadline)
+	snap := fetchSnapshot(t.Context(), noopTracer, src, allSources, "id", testNow, DefaultDeadline)
 	for name, err := range map[Source]error{
 		SourceAccount:  snap.Account.Err,
 		SourceAdvisory: snap.Customer.Err,
@@ -343,6 +378,7 @@ func TestFetchSnapshot_ErrorNamesSource(t *testing.T) {
 		SourceMoments:  snap.Moments.Err,
 		SourceProfile:  snap.Profile.Err,
 		SourceCases:    snap.Cases.Err,
+		SourceCatalog:  snap.Products.Err,
 	} {
 		if !errors.Is(err, errDown) {
 			t.Errorf("%s error = %v, want it to wrap %v", name, err, errDown)
@@ -363,7 +399,7 @@ func TestFetchSnapshot_SourcePanicIsThatSourceError(t *testing.T) {
 	f := thiagoFixture()
 	src := f.sources()
 	src.Customers = panicCustomers{}
-	snap := fetchSnapshot(t.Context(), noopTracer, src, f.id, testNow, DefaultDeadline)
+	snap := fetchSnapshot(t.Context(), noopTracer, src, allSources, f.id, testNow, DefaultDeadline)
 	if !errors.Is(snap.Customer.Err, ErrPanic) || !strings.Contains(snap.Customer.Err.Error(), "screen: advisory:") {
 		t.Errorf("customer error = %v, want an advisory panic", snap.Customer.Err)
 	}
