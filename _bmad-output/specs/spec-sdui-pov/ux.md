@@ -67,6 +67,10 @@ The only team-side change is a new alert card kind, `perfil`, with the rule text
 | `portfolio_review` | neutral | Sua assessora | {{first}}, sua revisão de carteira está disponível | A {{advisor}} separou 30 minutos nesta semana para revisar a carteira com você. | Conversar → `panel message` |
 | `welcome` | neutral | Tudo em dia | Olá, {{first}}. Sua conta está em dia. | Quando algo mudar na sua carteira, você vê aqui primeiro. | none |
 
+- As served, `idle_cash` fills `{{idle_days}}` with the unit, "1 dia" or "4 dias", so the body template reads "{{cash}} parados há {{idle_days}}.". When the timeline cannot date the idle cash, the body is "{{cash}} parados em caixa. Veja produtos para o seu perfil {{profile}}."
+- As served, the `segment_upgrade_near` body reads the threshold and the SLA from the backend: "A partir de US$ 10.000,00 você vira cliente Advance, com resposta da assessoria em até 4 h."
+- As served, the `case_open` meta template is "Protocolo {{protocol}} · aberto {{age}}", where `{{age}}` is the relative time with its own "há" ("há 3 min"), so a case opened under a minute ago reads "aberto agora".
+
 - `wealth_summary` shows total patrimony, cash, and the allocation bar with percentages. `with_day_change` adds the pill "{{signed_delta}} ({{signed_pct}}) no dia {{day}}".
 - The eye toggle masks values as "US$ ••••••" in web. This is presentation only.
 - `activity_list` `empty` reads "Suas movimentações aparecem aqui assim que acontecerem."

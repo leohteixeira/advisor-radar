@@ -57,7 +57,7 @@ The client app gets each screen from the BFF as a page of sections and component
 
 ### Envelope
 
-Thiago's home with the timeline down. Only the `moment` section is shown; `wealth`, `actions`, and `advisor` follow it in the real response, and `activity` is the one omitted section. The `idle_cash` moment arrives with the moment-facts story.
+Thiago's home with the timeline down. Only the `moment` section is shown; `wealth`, `actions`, and `advisor` follow it in the real response, and `activity` is the one omitted section. Without the timeline, the `idle_cash` body cannot date the idle cash and leaves the days out.
 
 ```json
 {
@@ -71,8 +71,9 @@ Thiago's home with the timeline down. Only the `moment` section is shown; `wealt
       { "type": "moment_card", "variant": "idle_cash",
         "props": { "kicker": "Caixa parado",
                    "title": "Thiago, 89% do seu patrimônio está em caixa",
-                   "body": "US$ 60.520,00 parados há 4 dias. Veja produtos para o seu perfil arrojado.",
+                   "body": "US$ 60.520,00 parados em caixa. Veja produtos para o seu perfil arrojado.",
                    "tone": "info",
+                   "icon": "cash",
                    "action": { "type": "navigate", "label": "Ver produtos", "target": "investir" } } } ] }
   ],
   "omitted": [
@@ -83,7 +84,7 @@ Thiago's home with the timeline down. Only the `moment` section is shown; `wealt
 
 - `schema_version` is an integer, the version of this envelope and of the component table below.
 - A section object has `id` and `components`, an array of `{type, variant, props}`.
-- `omitted` is always present: one `{id, type, reason}` per catalog section this response left out, in catalog order, so Raio-X can draw a placeholder. `reason` is the failed source (`account-sim`, `advisory`, `timeline`, or later `cases`) or `build_error`. Web renders nothing for an omitted section outside Raio-X.
+- `omitted` is always present: one `{id, type, reason}` per catalog section this response left out, in catalog order, so Raio-X can draw a placeholder. `reason` is the failed source (`account-sim`, `advisory`, `timeline`, `moments`, `profile`, or `cases`) or `build_error`. `advisory` is the customer read; `moments` and `profile` are the advisory moment facts and investor profile. Web renders nothing for an omitted section outside Raio-X.
 - `title` and `subtitle?` are the screen heading, filled from the catalog: home "Olá, {{first}}" / "Cliente {{segment}} desde {{since}}", investir "Investir" / "Produtos fictícios · preço fixo da simulação", carteira "Carteira" / "Valores de mercado no dia simulado {{day}}", perfil "Perfil" / "Seus dados, seu perfil de investidor e suas preferências".
 - `revision` names the catalog revision of the screen. A client outside the beta gets `v1`. A beta client gets home `v2`, which inserts the `highlights` section right after `moment`. Investir, Carteira, and Perfil stay at `v1`.
 - Section order in the array is the render order. Web owns style, the breakpoint grid, and the span of each section.
@@ -120,12 +121,14 @@ The `deposit`, `withdraw`, `message`, and `complaint` panels submit through the 
 
 ### Failure policy
 
-- The BFF reads account-sim, advisory, cases, and timeline in parallel under one screen deadline. One source failing never cancels the others.
+- The BFF reads account-sim, advisory (customer, moment facts, and investor profile, each its own source), cases, and timeline in parallel under one screen deadline. One source failing never cancels the others.
 - A section whose source failed or ran past the deadline falls back to its default variant when the default does not need that source. Example: `moment` becomes `welcome` when moment facts fail.
 - A section that depends only on the failed source is omitted, and so is a section whose default also needs the failed source. Example: `activity` without timeline.
 - When cases fails, `case_open` does not match and moment evaluation continues down the priority list.
+- When the advisory customer read fails, the moments whose copy names the advisor (`case_open` and `portfolio_review`) do not match and evaluation continues.
+- When the moment facts fail, only `case_open` and `welcome` can match.
 - When the beta flag is unavailable, the BFF serves revision `v1`.
-- When the investor profile fact fails, the sections whose variant depends on it (`highlights` and `suitability`) are omitted.
+- When the investor profile fact fails, `idle_cash` does not match, and the sections whose variant depends on it (`highlights` and `suitability`) are omitted.
 - `title` and `subtitle` fall back to "Olá" and no subtitle when their source fails.
 - A `Build` error drops only that component. A section left with zero components is omitted with reason `build_error`.
 - Every omitted section is listed in `omitted` with its reason.
@@ -139,13 +142,13 @@ Advisory evaluates each moment condition and returns the result as a moment fact
 |---:|---|---|---|
 | 1 | `portfolio_drop` | The latest `reavaliacao` loss is above 15% of patrimony before the revaluation | advisory |
 | 2 | `case_open` | The client has an open case (cases, filtered by customer) | cases |
-| 3 | `segment_upgraded` | A live POV account event (`schema_version` 2 or later) raised a segment upgrade for the client in the last 24 h | advisory |
-| 4 | `segment_upgrade_near` | `750000 ≤ patrimony_cents < 1000000` | advisory |
+| 3 | `segment_upgraded` | A live POV account event (`schema_version` 2 or later) raised a segment upgrade for the client in the last 24 h, to the segment the book holds now | advisory |
+| 4 | `segment_upgrade_near` | The book segment is Essencial and `750000 ≤ patrimony_cents ≤ 1000000` (at or below US$ 10.000,00 a client is still Essencial); the gap is `1000000 − patrimony_cents`, at least 1 | advisory |
 | 5 | `idle_cash` | Patrimony is above 0 and cash is at or above 50% of patrimony | advisory |
 | 6 | `portfolio_review` | The client is Singular | advisory |
 | 7 | `welcome` | Default, including when moment facts fail | none |
 
-A segment downgrade has no variant and falls through the list.
+A segment downgrade has no variant and falls through the list. The most recent live segment alert in the window decides, so a later live downgrade cancels an earlier upgrade, and so does a reseed that moved the book back.
 
 Moment tones: `portfolio_drop` is `neg`; `case_open` and `idle_cash` are `info`; `segment_upgraded` and `segment_upgrade_near` are `gold`; `portfolio_review` and `welcome` are `neutral`.
 
@@ -160,17 +163,24 @@ The catalog's starting order. The server may change it without a web change.
 
 ### Home `v1` served now
 
-The BFF serves home `v1` with `moment` fixed on `welcome` until the moment facts arrive; the other moment variants, `with_day_change`, and revision `v2` come with their stories. The screen deadline is 800 ms.
+The BFF serves home `v1` with every moment variant of the priority list except `portfolio_drop`, which comes with the market-day story, as do `with_day_change` and revision `v2`. The screen deadline is 800 ms.
 
 | Section | Type | Variants in evaluation order | Source | When the source fails |
 |---|---|---|---|---|
-| `moment` | `moment_card` | `welcome` | none | always rendered |
+| `moment` | `moment_card` | `case_open`, `segment_upgraded`, `segment_upgrade_near`, `idle_cash`, `portfolio_review`, `welcome` | cases, advisory, moments, profile, timeline (per variant, below) | the variant is skipped; `welcome` needs nothing, so the section is always rendered |
 | `wealth` | `wealth_summary` | `default` | account-sim | omitted, reason `account-sim` |
 | `actions` | `action_grid` | `default` | none | always rendered |
 | `advisor` | `advisor_card` | `dedicated` (Singular), `default` | advisory | omitted, reason `advisory` |
 | `activity` | `activity_list` | `recent` (at least one row), `empty` | timeline | omitted, reason `timeline` |
 
-- `moment` `welcome`: kicker "Tudo em dia", title "Olá, {{first}}. Sua conta está em dia." ("Olá. Sua conta está em dia." without advisory), body "Quando algo mudar na sua carteira, você vê aqui primeiro.", `tone` `neutral`, `icon` `spark`, no action.
+- `moment`: one card, the first variant of the list whose sources answered and whose fact holds. Every `{{first}}` title has a form without the name for when the advisory customer read fails ("Faltam …", "Você agora é …", "Sua revisão …", "89% do seu …").
+  - `case_open` (cases and advisory): kicker "Atendimento em andamento", title "Sua reclamação está com a {{advisor}}", body "Como cliente {{segment}}, você recebe resposta em até {{sla}}." with the book segment's catalog SLA (a segment without one skips the variant), meta "Protocolo {{protocol}} · aberto {{age}}", `tone` `info`, `icon` `inbox`, action "Ver conversa" → `panel` `message`. It shows the most recently opened case that is not "Resolvido". `protocol` is the first 13 characters of the case id, uppercased (`01A0E3A5-2F4C`); `age` is the relative time since the case opened ("há 3 min").
+  - `segment_upgraded` (moments): kicker "Novo segmento", title "{{first}}, você agora é cliente {{segment}}", body "Sua assessoria passa a responder em até {{sla}}." with the upgraded segment and its SLA (a segment without one skips the variant), `tone` `gold`, `icon` `segment`, action "Ver produtos" → `navigate` `investir`.
+  - `segment_upgrade_near` (moments): kicker "Perto do Advance", title "{{first}}, faltam {{gap}} para o Advance" with the advisory gap in cents formatted as money, body "A partir de {{threshold}} você vira cliente Advance, com resposta da assessoria em até {{sla}}." with the Essencial bound formatted as money ("US$ 10.000,00") and the Advance catalog SLA, `tone` `gold`, `icon` `segment`, action "Depositar" → `panel` `deposit`.
+  - `idle_cash` (moments and profile): kicker "Caixa parado", title "{{first}}, {{cash_share}} do seu patrimônio está em caixa", body "{{cash}} parados há {{idle_days}}. Veja produtos para o seu perfil {{profile}}.", `tone` `info`, `icon` `cash`, action "Ver produtos" → `navigate` `investir`. `cash_share` is the largest-remainder share of cash in the advisory patrimony, `profile` is lowercase, and `idle_days` ("1 dia", "4 dias") is the whole days since the newest `account.event.recorded` row of the timeline, at least 1. When the timeline failed or has no such row, the body is "{{cash}} parados em caixa. Veja produtos para o seu perfil {{profile}}."
+  - `portfolio_review` (moments and advisory): kicker "Sua assessora", title "{{first}}, sua revisão de carteira está disponível", body "A {{advisor}} separou 30 minutos nesta semana para revisar a carteira com você.", `tone` `neutral`, `icon` `calendar`, action "Conversar" → `panel` `message`.
+  - `welcome` (none): kicker "Tudo em dia", title "Olá, {{first}}. Sua conta está em dia." ("Olá. Sua conta está em dia." without advisory), body "Quando algo mudar na sua carteira, você vê aqui primeiro.", `tone` `neutral`, `icon` `spark`, no action.
+  - On day 0 of the seed, Fernanda gets `segment_upgrade_near`, Thiago `idle_cash`, and Mariana `portfolio_review`. After Fernanda deposits US$ 10.000 she gets `segment_upgraded`; after Mariana files a complaint she gets `case_open`.
 - `wealth`: `total_label` "Patrimônio total" with the patrimony account-sim reports, `cash_label` "Disponível para saque", and one allocation row per non-zero class in the order Ações (`stocks`), ETFs (`etfs`), Renda fixa (`fixed_income`), Caixa (`cash`). `bar_width` equals the rounded share.
 - `actions`: Depositar (`deposit` icon), Sacar (`withdraw`), Mensagem (`msg`), and Reclamar (`alert`), each a `panel` action.
 - `advisor`: `name` is the advisory book advisor, `initials` its first two name initials, `meta` "Resposta em até {{sla}} · cliente {{segment}}" with the catalog SLA per segment (Essencial 24 h, Advance 4 h, Singular 1 h), and action "Conversar" → `panel` `message`. An unknown segment is a `build_error`.
