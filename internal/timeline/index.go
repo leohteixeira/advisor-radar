@@ -36,6 +36,10 @@ type Entry struct {
 	Text       string `json:"text"`
 	Meta       string `json:"meta"`
 	Ago        int    `json:"ago"`
+	// Source is the routing key of the event the row came from.
+	Source string `json:"source,omitempty"`
+	// OccurredAt is the event time; Ago is frozen at index time.
+	OccurredAt time.Time `json:"occurred_at,omitzero"`
 }
 
 // Index is an in-memory customer timeline. It has no database.
@@ -122,6 +126,8 @@ func (idx *Index) ApplyDelivery(ctx context.Context, routingKey string, body []b
 	if err != nil {
 		return false, Entry{}, err
 	}
+	entry.Source = routingKey
+	entry.OccurredAt = raw.OccurredAt.UTC()
 
 	idx.byEvent[raw.EventID] = struct{}{}
 	idx.byCust[raw.CustomerID] = append(idx.byCust[raw.CustomerID], entry)

@@ -21,6 +21,10 @@ type TimelineEntry struct {
 	Text       string `json:"text"`
 	Meta       string `json:"meta"`
 	Ago        int    `json:"ago"`
+	// Source is the routing key of the event the row came from.
+	Source string `json:"source,omitempty"`
+	// OccurredAt is the event time, zero when the indexer did not send it.
+	OccurredAt time.Time `json:"occurred_at,omitzero"`
 }
 
 // TimelineClient reads the customer 360. The BFF never stores the rows.
@@ -75,6 +79,8 @@ func (g *GRPCTimeline) Search(ctx context.Context, customerID, query, kind strin
 	}
 	out := make([]TimelineEntry, 0, len(res.GetItems()))
 	for _, it := range res.GetItems() {
+		// An empty or unreadable occurred_at stays zero; readers then use Ago.
+		occurredAt, _ := time.Parse(time.RFC3339Nano, it.GetOccurredAt())
 		out = append(out, TimelineEntry{
 			EventID:    it.GetEventId(),
 			CustomerID: it.GetCustomerId(),
@@ -83,6 +89,8 @@ func (g *GRPCTimeline) Search(ctx context.Context, customerID, query, kind strin
 			Text:       it.GetText(),
 			Meta:       it.GetMeta(),
 			Ago:        int(it.GetAgo()),
+			Source:     it.GetSource(),
+			OccurredAt: occurredAt,
 		})
 	}
 	return out, nil

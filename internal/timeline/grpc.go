@@ -2,6 +2,7 @@ package timeline
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -31,6 +32,10 @@ func (s *GRPCServer) Search(ctx context.Context, req *timelinev1.SearchRequest) 
 	}
 	out := make([]*timelinev1.TimelineItem, 0, len(items))
 	for _, e := range items {
+		var occurredAt string
+		if !e.OccurredAt.IsZero() {
+			occurredAt = e.OccurredAt.UTC().Format(time.RFC3339Nano)
+		}
 		out = append(out, &timelinev1.TimelineItem{
 			EventId:    e.EventID,
 			CustomerId: e.CustomerID,
@@ -39,6 +44,8 @@ func (s *GRPCServer) Search(ctx context.Context, req *timelinev1.SearchRequest) 
 			Text:       e.Text,
 			Meta:       e.Meta,
 			Ago:        int32(e.Ago),
+			Source:     e.Source,
+			OccurredAt: occurredAt,
 		})
 	}
 	return &timelinev1.SearchResponse{Items: out}, nil

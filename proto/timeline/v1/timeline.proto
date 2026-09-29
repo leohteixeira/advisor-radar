@@ -23,6 +23,12 @@ message TimelineItem {
   string text = 5;
   string meta = 6;
   int32 ago = 7;
+  // source is the routing key of the event the row came from, such as
+  // account.event.recorded or alert.raised.
+  string source = 8;
+  // occurred_at is the event time in RFC 3339 (UTC). Empty for rows indexed
+  // before the field existed.
+  string occurred_at = 9;
 }
 
 message SearchResponse {
