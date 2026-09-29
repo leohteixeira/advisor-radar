@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	accountv1 "github.com/leohteixeira/advisor-radar/gen/account/v1"
 	"github.com/leohteixeira/advisor-radar/internal/identity"
@@ -267,6 +268,163 @@ func TestReseed_RestoresPositionsAndCash(t *testing.T) {
 		t.Fatalf("Withdraw: %v", err)
 	}
 	if err := sim.Reseed(context.Background(), memory); err != nil {
+		t.Fatalf("Reseed: %v", err)
+	}
+	assertSeedState(t, client)
+}
+
+// assertPurchases checks the purchase matrix rows against any seeded store:
+// Thiago buys acoesg, the replay, the refusals, and a first position.
+// payloadOf returns the outbox body of one event; events counts outbox rows.
+func assertPurchases(
+	t *testing.T,
+	client accountv1.AccountServiceClient,
+	payloadOf func(eventID string) []byte,
+	events func() int,
+) {
+	t.Helper()
+	ctx := t.Context()
+	get := func(customerID string) *accountv1.Account {
+		t.Helper()
+		account, err := client.GetAccount(ctx, &accountv1.GetAccountRequest{CustomerId: customerID})
+		if err != nil {
+			t.Fatalf("GetAccount: %v", err)
+		}
+		return account
+	}
+	position := func(a *accountv1.Account, productID string) (positionCents, bool) {
+		for _, p := range positionsOf(a) {
+			if p.productID == productID {
+				return p, true
+			}
+		}
+		return positionCents{}, false
+	}
+	startEvents := events()
+
+	buy := &accountv1.PurchaseRequest{
+		CustomerId: sim.CustomerThiago, IdempotencyKey: "buy-acoesg", ProductId: "acoesg",
+		AmountCents: 3_000_000, CommandId: "cmd-buy-acoesg",
+	}
+	reply, err := client.Purchase(ctx, buy)
+	if err != nil {
+		t.Fatalf("Purchase: %v", err)
+	}
+	if reply.GetEventId() == "" || reply.GetReplay() {
+		t.Fatalf("reply = %+v", reply)
+	}
+	thiago := get(sim.CustomerThiago)
+	if thiago.GetCaixaCents() != 3_052_000 || thiago.GetPatrimonyCents() != 6_800_000 || thiago.GetEtfsCents() != 3_544_000 {
+		t.Fatalf("after purchase = %+v, want cash 3052000, etfs 3544000, patrimony 6800000", totalsOf(thiago))
+	}
+	if got, _ := position(thiago, "acoesg"); got != (positionCents{"acoesg", sim.ClassETFs, 3_520_000, 3_544_000}) {
+		t.Fatalf("acoesg = %+v, want applied 3520000 value 3544000", got)
+	}
+	env, body, err := sim.DecodeOutboxAccount(payloadOf(reply.GetEventId()))
+	if err != nil {
+		t.Fatalf("decode event: %v", err)
+	}
+	wantBody := sim.AccountPayload{
+		Kind: sim.KindAplicacao, Amount: 3_000_000, Before: 6_800_000, After: 6_800_000,
+		ProductID: "acoesg", AssetClass: sim.ClassETFs, Risk: 3,
+	}
+	if env.SchemaVersion != 3 || env.CustomerID != sim.CustomerThiago || body != wantBody {
+		t.Fatalf("event v%d %+v, want v3 %+v", env.SchemaVersion, body, wantBody)
+	}
+
+	replay, err := client.Purchase(ctx, buy)
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if !replay.GetReplay() || replay.GetEventId() != reply.GetEventId() {
+		t.Fatalf("replay = %+v, want replay of %s", replay, reply.GetEventId())
+	}
+	if got := events(); got != startEvents+1 {
+		t.Fatalf("events after replay = %d, want %d", got, startEvents+1)
+	}
+	if got := get(sim.CustomerThiago); totalsOf(got) != totalsOf(thiago) {
+		t.Fatalf("replay moved the account: %+v", totalsOf(got))
+	}
+
+	refusals := []struct {
+		name string
+		req  *accountv1.PurchaseRequest
+		want codes.Code
+	}{
+		{"over cash", &accountv1.PurchaseRequest{ProductId: "acoesg", AmountCents: 3_052_001}, codes.FailedPrecondition},
+		{"unknown product", &accountv1.PurchaseRequest{ProductId: "ouro", AmountCents: 100_000}, codes.InvalidArgument},
+		{"zero amount", &accountv1.PurchaseRequest{ProductId: "acoesg"}, codes.InvalidArgument},
+		{"negative amount", &accountv1.PurchaseRequest{ProductId: "acoesg", AmountCents: -100}, codes.InvalidArgument},
+		{"below minimum", &accountv1.PurchaseRequest{ProductId: "corp", AmountCents: 99_999}, codes.InvalidArgument},
+	}
+	for i, r := range refusals {
+		r.req.CustomerId = sim.CustomerThiago
+		r.req.IdempotencyKey = "buy-refused-" + string(rune('a'+i))
+		_, err := client.Purchase(ctx, r.req)
+		if status.Code(err) != r.want {
+			t.Fatalf("%s: code = %s (%v), want %s", r.name, status.Code(err), err, r.want)
+		}
+	}
+	if got := get(sim.CustomerThiago); totalsOf(got) != totalsOf(thiago) || !slices.Equal(positionsOf(got), positionsOf(thiago)) {
+		t.Fatalf("a refusal moved the account: %+v", got)
+	}
+	if got := events(); got != startEvents+1 {
+		t.Fatalf("events after refusals = %d, want %d", got, startEvents+1)
+	}
+
+	// Fernanda holds no cobalto: the purchase creates the position.
+	fernanda := get(sim.CustomerFernanda)
+	if _, ok := position(fernanda, "cobalto"); ok {
+		t.Fatal("fernanda already holds cobalto")
+	}
+	if _, err := client.Purchase(ctx, &accountv1.PurchaseRequest{
+		CustomerId: sim.CustomerFernanda, IdempotencyKey: "buy-cobalto", ProductId: "cobalto", AmountCents: 1_000,
+	}); err != nil {
+		t.Fatalf("Purchase cobalto: %v", err)
+	}
+	after := get(sim.CustomerFernanda)
+	if got, ok := position(after, "cobalto"); !ok || got != (positionCents{"cobalto", sim.ClassAcoes, 1_000, 1_000}) {
+		t.Fatalf("cobalto = %+v (%v), want applied and value 1000", got, ok)
+	}
+	if after.GetCaixaCents() != fernanda.GetCaixaCents()-1_000 || after.GetPatrimonyCents() != fernanda.GetPatrimonyCents() ||
+		after.GetAcoesCents() != fernanda.GetAcoesCents()+1_000 {
+		t.Fatalf("fernanda %+v -> %+v", totalsOf(fernanda), totalsOf(after))
+	}
+
+	unknown, err := identity.NewV7()
+	if err != nil {
+		t.Fatalf("NewV7: %v", err)
+	}
+	_, err = client.Purchase(ctx, &accountv1.PurchaseRequest{
+		CustomerId: unknown, IdempotencyKey: "buy-unknown", ProductId: "acoesg", AmountCents: 100_000,
+	})
+	wantCode(t, err, codes.NotFound)
+	_, err = client.Purchase(ctx, &accountv1.PurchaseRequest{
+		CustomerId: "not-a-uuid", IdempotencyKey: "buy-bad", ProductId: "acoesg", AmountCents: 100_000,
+	})
+	wantCode(t, err, codes.InvalidArgument)
+	_, err = client.Purchase(ctx, &accountv1.PurchaseRequest{
+		CustomerId: sim.CustomerThiago, ProductId: "acoesg", AmountCents: 100_000,
+	})
+	wantCode(t, err, codes.InvalidArgument)
+}
+
+func TestGRPCServer_Purchase(t *testing.T) {
+	t.Parallel()
+	memory := sim.NewMemory()
+	client := startAccountServer(t, memory)
+	assertPurchases(t, client, func(eventID string) []byte {
+		t.Helper()
+		for _, row := range memory.PendingOutbox() {
+			if row.EventID == eventID {
+				return row.Payload
+			}
+		}
+		t.Fatalf("event %s not in outbox", eventID)
+		return nil
+	}, func() int { return len(memory.PendingOutbox()) })
+
+	if err := sim.Reseed(t.Context(), memory); err != nil {
 		t.Fatalf("Reseed: %v", err)
 	}
 	assertSeedState(t, client)

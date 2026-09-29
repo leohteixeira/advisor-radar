@@ -240,3 +240,73 @@ func TestIndex_ApplyDeliveryKeepsSourceAndTime(t *testing.T) {
 		t.Errorf("search = %+v, %v", rows, err)
 	}
 }
+
+// Account events of every schema version index; an aplicacao and its perfil
+// alert get their titles and count under the "conta" chip. An unknown
+// version is refused, so the consumer dead-letters it.
+func TestIndex_ApplyDeliverySchemaVersions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		version   int
+		routing   string
+		payload   map[string]any
+		wantErr   bool
+		wantKind  string
+		wantTitle string
+	}{
+		{name: "v1 saque", version: 1, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "saque", "amount": 100}, wantKind: "saque", wantTitle: "Saque"},
+		{name: "v2 aporte", version: 2, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte", "amount": 10000}, wantKind: "aporte", wantTitle: "Aporte"},
+		{
+			name: "v3 aplicacao", version: 3, routing: event.NameAccountEventRecorded,
+			payload: map[string]any{
+				"kind": "aplicacao", "amount": 3000000, "before": 6800000, "after": 6800000,
+				"product_id": "acoesg", "asset_class": "etfs", "risk": 3,
+			},
+			wantKind: "aplicacao", wantTitle: "Aplicação",
+		},
+		{
+			name: "v3 reavaliacao", version: 3, routing: event.NameAccountEventRecorded,
+			payload:  map[string]any{"kind": "reavaliacao", "amount": -100, "before": 1000, "after": 900, "sim_day": 3},
+			wantKind: "reavaliacao", wantTitle: "Reavaliação",
+		},
+		{
+			name: "perfil alert", version: 1, routing: event.NameAlertRaised,
+			payload:  map[string]any{"kind": "perfil", "rule": "Compra acima do perfil de investidor", "product_id": "cobalto"},
+			wantKind: "perfil", wantTitle: "Compra acima do perfil",
+		},
+		{name: "v4 is refused", version: 4, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte"}, wantErr: true},
+		{name: "v0 is refused", version: 0, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			idx := timeline.NewIndex()
+			cust := identity.MustNewV7()
+			body, err := json.Marshal(map[string]any{
+				"event_id": identity.MustNewV7(), "occurred_at": time.Now().UTC(),
+				"customer_id": cust, "schema_version": tt.version, "payload": tt.payload,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			applied, entry, err := idx.ApplyDelivery(context.Background(), tt.routing, body)
+			if tt.wantErr {
+				if err == nil || applied {
+					t.Fatalf("apply = %v, %v, want an error", applied, err)
+				}
+				return
+			}
+			if err != nil || !applied {
+				t.Fatalf("apply = %v, %v", applied, err)
+			}
+			if entry.Kind != tt.wantKind || entry.Title != tt.wantTitle {
+				t.Fatalf("entry = %+v, want kind %s title %s", entry, tt.wantKind, tt.wantTitle)
+			}
+			conta, err := idx.Search(context.Background(), cust, "", timeline.KindConta)
+			if err != nil || len(conta) != 1 {
+				t.Fatalf("conta chip = %+v, %v, want the row", conta, err)
+			}
+		})
+	}
+}

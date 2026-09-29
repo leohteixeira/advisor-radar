@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { ICONS } from '../domain/queueVisual';
 import type { CaseItem, ClientInfo, Signal } from '../domain/types';
 import { CustomerScreen } from '../screens/CustomerScreen';
 import { QueueScreen } from '../screens/QueueScreen';
@@ -571,6 +572,30 @@ describe('QueueScreen', () => {
     const card = screen.getByTestId(`signal-${SID.sergioAlert}`);
     expect(card).toHaveTextContent('Saque relevante');
     expect(card).toHaveTextContent('Saque de US$ 190.000,00, 30% do patrimônio');
+  });
+
+  it('renders a perfil alert as Compra acima do perfil with its reason and gauge icon', async () => {
+    const perfil: Signal = {
+      id: SID.fernandaPerfil,
+      kind: 'alert',
+      client: CID.fernanda,
+      name: 'Fernanda Lima',
+      segment: 'Essencial',
+      alert: 'perfil',
+      reason: 'Compra de US$ 1.000,00 em Cobalto Semicondutores, risco 5. Perfil conservador vai até risco 2.',
+      rule: 'Compra acima do perfil de investidor',
+      product_id: 'cobalto',
+      risk: 5,
+      profile: 'conservador',
+      max_risk: 2,
+    };
+    mockFetch([...seedSignals, perfil]);
+    renderQueue({ isDesktop: true });
+    await waitFor(() => expect(screen.getByTestId(`signal-${SID.fernandaPerfil}`)).toBeInTheDocument());
+    const card = screen.getByTestId(`signal-${SID.fernandaPerfil}`);
+    expect(card).toHaveTextContent('Compra acima do perfil');
+    expect(card).toHaveTextContent('Cobalto Semicondutores, risco 5. Perfil conservador vai até risco 2.');
+    expect(card.querySelector(`path[d="${ICONS.perfil}"]`)).not.toBeNull();
   });
 
   it('shows Em atendimento on the Paulo case rail and keeps resolved cases off the board', async () => {

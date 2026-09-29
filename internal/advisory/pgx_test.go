@@ -221,3 +221,105 @@ func TestPGX_SeedAndMomentReads(t *testing.T) {
 		t.Errorf("aporte source_schema_version = %d, %v", aporteVersion, err)
 	}
 }
+
+// TestPGX_PurchaseSuitability applies v3 aplicacao events over the seeded
+// book: Fernanda (conservador) buying cobalto raises one perfil alert and its
+// outbox row; Thiago (arrojado) buying cobalto raises nothing. Both books
+// follow the unchanged patrimony.
+func TestPGX_PurchaseSuitability(t *testing.T) {
+	t.Parallel()
+	pool := newAdvisoryPool(t)
+	ctx := t.Context()
+	for _, name := range []string{"001_book.sql", "002_uuidv7.sql", "003_investor_profile.sql"} {
+		applySQL(t, pool, "migrations", "advisory", name)
+	}
+	applySQL(t, pool, "seeds", "advisory", "001_cast.sql")
+	store := advisory.NewPGXStore(pool)
+
+	purchase := func(eventID, customerID string, patrimony float64) event.Envelope {
+		return event.Envelope{
+			Name:          event.NameAccountEventRecorded,
+			EventID:       eventID,
+			OccurredAt:    time.Now().UTC(),
+			CustomerID:    customerID,
+			SchemaVersion: event.SchemaVersionPositions,
+			Payload: sim.AccountPayload{
+				Kind: sim.KindAplicacao, Amount: 100_000, Before: patrimony, After: patrimony,
+				ProductID: "cobalto", AssetClass: sim.ClassAcoes, Risk: 5,
+			},
+		}
+	}
+	fernanda := purchase("01a0e3a4-9a44-7000-8000-00000000e101", sim.CustomerFernanda, 820_000)
+	if err := advisory.Apply(ctx, store, fernanda); err != nil {
+		t.Fatalf("Apply fernanda: %v", err)
+	}
+	if err := advisory.Apply(ctx, store, fernanda); err != nil {
+		t.Fatalf("redeliver fernanda: %v", err)
+	}
+	if err := advisory.Apply(ctx, store, purchase("01a0e3a4-9a44-7000-8000-00000000e102", sim.CustomerThiago, 6_800_000)); err != nil {
+		t.Fatalf("Apply thiago: %v", err)
+	}
+
+	rows, err := pool.Query(ctx, `
+SELECT customer_id::text, rule, source_schema_version, payload
+FROM alerts
+WHERE kind = $1`, advisory.KindPerfil)
+	if err != nil {
+		t.Fatalf("query alerts: %v", err)
+	}
+	type alertRow struct {
+		customer, rule string
+		version        int
+		payload        advisory.AlertPayload
+	}
+	got, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (alertRow, error) {
+		var r alertRow
+		err := row.Scan(&r.customer, &r.rule, &r.version, &r.payload)
+		return r, err
+	})
+	if err != nil {
+		t.Fatalf("scan alerts: %v", err)
+	}
+	if len(got) != 1 || got[0].customer != sim.CustomerFernanda || got[0].rule != "Compra acima do perfil de investidor" ||
+		got[0].version != event.SchemaVersionPositions {
+		t.Fatalf("perfil alerts = %+v, want one for Fernanda", got)
+	}
+	p := got[0].payload
+	if p.Amount != 1_000 || p.ProductID != "cobalto" || p.Risk != 5 || p.Profile != advisory.ProfileConservador || p.MaxRisk != 2 {
+		t.Fatalf("payload = %+v", p)
+	}
+	var outbox int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM outbox WHERE routing_key = $1 AND payload->'payload'->>'kind' = $2`,
+		event.NameAlertRaised, advisory.KindPerfil).Scan(&outbox); err != nil || outbox != 1 {
+		t.Fatalf("perfil outbox rows = %d, %v, want 1", outbox, err)
+	}
+
+	reader := advisory.NewBookReader(pool)
+	for id, want := range map[string]float64{sim.CustomerFernanda: 8_200, sim.CustomerThiago: 68_000} {
+		c, err := reader.GetCustomer(ctx, id)
+		if err != nil || c.AUM != want {
+			t.Fatalf("book %s = %+v, %v, want aum %v", id, c, err, want)
+		}
+	}
+	// A customer outside the book fails the book update with
+	// ErrUnknownCustomer (so the consumer dead-letters it) and claims nothing.
+	const stranger = "01a0e3a4-9a44-7000-8000-00000000e1ff"
+	deposit := event.Envelope{
+		Name:          event.NameAccountEventRecorded,
+		EventID:       "01a0e3a4-9a44-7000-8000-00000000e104",
+		OccurredAt:    time.Now().UTC(),
+		CustomerID:    stranger,
+		SchemaVersion: event.SchemaVersionCents,
+		Payload:       sim.AccountPayload{Kind: "aporte", Amount: 100_000, Before: 820_000, After: 920_000},
+	}
+	for _, env := range []event.Envelope{purchase("01a0e3a4-9a44-7000-8000-00000000e103", stranger, 820_000), deposit} {
+		if err := advisory.Apply(ctx, store, env); !errors.Is(err, advisory.ErrUnknownCustomer) {
+			t.Fatalf("Apply %s for a stranger = %v, want ErrUnknownCustomer", env.EventID, err)
+		}
+		var claimed int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM inbox WHERE event_id = $1::uuid`, env.EventID).Scan(&claimed); err != nil || claimed != 0 {
+			t.Fatalf("inbox rows for %s = %d, %v, want 0", env.EventID, claimed, err)
+		}
+	}
+}

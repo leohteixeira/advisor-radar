@@ -3,8 +3,11 @@ package bff_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -234,5 +237,185 @@ func TestHTTP_ManagerAdvisorIsOperatorName(t *testing.T) {
 	got := snap.AtRisk[0]
 	if got.Advisor != "Carla Mendes" || got.Client != "Mariana Costa" || got.Segment != "Singular" {
 		t.Fatalf("atRisk = %+v", got)
+	}
+}
+
+// perfilQueue answers one perfil card from the advisory queue.
+func perfilQueue(t *testing.T) stubQueue {
+	t.Helper()
+	return stubQueue{
+		customers: map[string]bff.Customer{
+			"01a0e3a4-9a44-757a-ac8f-dab7db5eb068": {Name: "Fernanda Lima", Segment: "Essencial"},
+		},
+		queue: []bff.Signal{{
+			ID: identity.MustNewV7(), Kind: "alert", Client: "01a0e3a4-9a44-757a-ac8f-dab7db5eb068",
+			Alert: "perfil", Rule: "Compra acima do perfil de investidor", Amount: 1_000, Before: 8_200, After: 8_200,
+			ProductID: "cobalto", Risk: 5, Profile: "conservador", MaxRisk: 2,
+		}},
+	}
+}
+
+func queueItems(t *testing.T, h http.Handler) ([]bff.Signal, bff.ListFacets) {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/queue", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("queue = %d %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Items  []bff.Signal   `json:"items"`
+		Facets bff.ListFacets `json:"facets"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	return body.Items, body.Facets
+}
+
+// The perfil card body names the product from the account-sim catalog, its
+// risk, and the profile's limit; the queue labels it "Compra acima do perfil".
+func TestQueue_PerfilCardReason(t *testing.T) {
+	t.Parallel()
+	pov := &catalogPOV{products: []bff.POVProduct{{ID: "cobalto", Name: "Cobalto Semicondutores"}}}
+	h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, perfilQueue(t), nil, nil, pov, nil)
+	items, facets := queueItems(t, h)
+	if len(items) != 1 {
+		t.Fatalf("items = %+v", items)
+	}
+	want := "Compra de US$ 1.000,00 em Cobalto Semicondutores, risco 5. Perfil conservador vai até risco 2."
+	if items[0].Alert != "perfil" || items[0].Reason != want || items[0].Name != "Fernanda Lima" {
+		t.Fatalf("card = %+v, want reason %q", items[0], want)
+	}
+	found := false
+	for _, f := range facets.Motivo {
+		if f.Label == "Compra acima do perfil" {
+			found = f.Count == 1
+		}
+	}
+	if !found {
+		t.Fatalf("motivo facets = %+v, want Compra acima do perfil with 1", facets.Motivo)
+	}
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/queue?motivo=Compra+acima+do+perfil", nil))
+	if !strings.Contains(rr.Body.String(), `"alert":"perfil"`) {
+		t.Fatalf("motivo filter dropped the perfil card: %s", rr.Body.String())
+	}
+}
+
+// Without the catalog, the reason names the product id; a card that already
+// carries a reason keeps it.
+func TestQueue_PerfilCardReasonWithoutCatalog(t *testing.T) {
+	t.Parallel()
+	queue := perfilQueue(t)
+	seeded := queue.queue[0]
+	seeded.ID = identity.MustNewV7()
+	seeded.Reason = "Texto do seed"
+	queue.queue = append(queue.queue, seeded)
+	for _, pov := range []bff.POVSource{nil, &catalogPOV{err: errors.New("account-sim down")}} {
+		h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, queue, nil, nil, pov, nil)
+		items, _ := queueItems(t, h)
+		reasons := map[string]bool{}
+		for _, it := range items {
+			reasons[it.Reason] = true
+		}
+		if !reasons["Compra de US$ 1.000,00 em cobalto, risco 5. Perfil conservador vai até risco 2."] || !reasons["Texto do seed"] {
+			t.Fatalf("reasons = %v", reasons)
+		}
+	}
+}
+
+// catalogPOV is a POVSource that also lends the product catalog. The first
+// failures calls fail; block waits for the caller's deadline and records it.
+type catalogPOV struct {
+	bff.POVSource
+	products []bff.POVProduct
+	err      error
+	failures int32
+	block    bool
+	calls    atomic.Int32
+	budget   atomic.Int64
+}
+
+func (c *catalogPOV) Products(ctx context.Context) ([]bff.POVProduct, error) {
+	n := c.calls.Add(1)
+	if c.block {
+		if deadline, ok := ctx.Deadline(); ok {
+			c.budget.Store(int64(time.Until(deadline)))
+		}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	if n <= c.failures {
+		return nil, errors.New("account-sim down")
+	}
+	return c.products, c.err
+}
+
+// The catalog is fixed: after the first successful read the names are
+// cached, while a failed read is retried on the next render.
+func TestQueue_PerfilCatalogIsCachedAfterSuccess(t *testing.T) {
+	t.Parallel()
+	pov := &catalogPOV{products: []bff.POVProduct{{ID: "cobalto", Name: "Cobalto Semicondutores"}}, failures: 1}
+	h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, perfilQueue(t), nil, nil, pov, nil)
+
+	const byName = "Compra de US$ 1.000,00 em Cobalto Semicondutores, risco 5. Perfil conservador vai até risco 2."
+	wants := []string{
+		"Compra de US$ 1.000,00 em cobalto, risco 5. Perfil conservador vai até risco 2.",
+		byName,
+		byName,
+		byName,
+	}
+	for i, want := range wants {
+		items, _ := queueItems(t, h)
+		if len(items) != 1 || items[0].Reason != want {
+			t.Fatalf("render %d: items = %+v, want reason %q", i, items, want)
+		}
+	}
+	if got := pov.calls.Load(); got != 2 {
+		t.Fatalf("catalog calls = %d, want 2 (one failure, one success)", got)
+	}
+}
+
+// A slow catalog is cut at 300 ms and the card names the product id.
+func TestQueue_PerfilCatalogReadIsBounded(t *testing.T) {
+	t.Parallel()
+	pov := &catalogPOV{block: true}
+	h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, perfilQueue(t), nil, nil, pov, nil)
+	items, _ := queueItems(t, h)
+	if len(items) != 1 || items[0].Reason != "Compra de US$ 1.000,00 em cobalto, risco 5. Perfil conservador vai até risco 2." {
+		t.Fatalf("items = %+v", items)
+	}
+	if budget := time.Duration(pov.budget.Load()); budget <= 0 || budget > 300*time.Millisecond {
+		t.Fatalf("catalog deadline budget = %v, want within 300ms", budget)
+	}
+}
+
+// Without a product name or id the card says "produto"; without a risk it
+// leaves the risk out.
+func TestQueue_PerfilCardReasonFallbacks(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		productID string
+		risk      int
+		want      string
+	}{
+		{name: "no product", risk: 5, want: "Compra de US$ 1.000,00 em produto, risco 5. Perfil conservador vai até risco 2."},
+		{name: "no risk", productID: "cobalto", want: "Compra de US$ 1.000,00 em cobalto. Perfil conservador vai até risco 2."},
+		{name: "neither", want: "Compra de US$ 1.000,00 em produto. Perfil conservador vai até risco 2."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			queue := perfilQueue(t)
+			queue.queue[0].ProductID = tt.productID
+			queue.queue[0].Risk = tt.risk
+			h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, queue, nil, nil, nil, nil)
+			items, _ := queueItems(t, h)
+			if len(items) != 1 || items[0].Reason != tt.want {
+				t.Fatalf("items = %+v, want reason %q", items, tt.want)
+			}
+		})
 	}
 }

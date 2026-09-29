@@ -74,6 +74,39 @@ func TestAccountPayload_Dollars(t *testing.T) {
 			wantErr:       "cents",
 		},
 		{
+			name: "version 3 purchase cents to dollars keeps product fields",
+			payload: sim.AccountPayload{
+				Kind:       sim.KindAplicacao,
+				Amount:     3_000_000,
+				Before:     6_800_000,
+				After:      6_800_000,
+				ProductID:  "acoesg",
+				AssetClass: sim.ClassETFs,
+				Risk:       3,
+			},
+			schemaVersion: 3,
+			want: sim.AccountPayload{
+				Kind:       sim.KindAplicacao,
+				Amount:     30_000,
+				Before:     68_000,
+				After:      68_000,
+				ProductID:  "acoesg",
+				AssetClass: sim.ClassETFs,
+				Risk:       3,
+			},
+		},
+		{
+			name: "version 3 fractional cents",
+			payload: sim.AccountPayload{
+				Kind:   sim.KindAplicacao,
+				Amount: 100,
+				Before: 100.25,
+				After:  100,
+			},
+			schemaVersion: 3,
+			wantErr:       "cents",
+		},
+		{
 			name: "unsupported schema version",
 			payload: sim.AccountPayload{
 				Kind:   "deposit",
@@ -81,7 +114,16 @@ func TestAccountPayload_Dollars(t *testing.T) {
 				Before: 100,
 				After:  200,
 			},
-			schemaVersion: 3,
+			schemaVersion: 4,
+			wantErr:       "schema_version",
+		},
+		{
+			name: "schema version zero",
+			payload: sim.AccountPayload{
+				Kind:   "deposit",
+				Amount: 100,
+			},
+			schemaVersion: 0,
 			wantErr:       "schema_version",
 		},
 	}

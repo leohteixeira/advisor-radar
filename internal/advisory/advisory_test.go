@@ -28,6 +28,9 @@ type memStore struct {
 	book    map[string]bookRow
 	order   []string
 	failIns string
+	// profiles is the book investor profile per customer; a customer
+	// without one is outside the book.
+	profiles map[string]string
 }
 
 type memOutbox struct {
@@ -101,6 +104,17 @@ func (t *memTx) ClaimInbox(ctx context.Context, eventID string) (bool, error) {
 	}
 	t.inbox[eventID] = struct{}{}
 	return true, nil
+}
+
+func (t *memTx) InvestorProfile(ctx context.Context, customerID string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	profile, ok := t.store.profiles[customerID]
+	if !ok {
+		return "", fmt.Errorf("mem: %w", advisory.ErrUnknownCustomer)
+	}
+	return profile, nil
 }
 
 func (t *memTx) UpdateBook(ctx context.Context, customerID string, aum float64, segment string) error {
@@ -680,6 +694,283 @@ func TestApply_SameBand(t *testing.T) {
 		if kind == advisory.KindSegmento {
 			t.Fatalf("unexpected segment alert %s", id)
 		}
+	}
+}
+
+// purchaseEnv is a v3 aplicacao of productID at risk for customerID, in
+// cents, leaving patrimony (before = after) unchanged.
+func purchaseEnv(eventID, customerID, productID, class string, risk int, amount, patrimony float64) event.Envelope {
+	return event.Envelope{
+		Name:          event.NameAccountEventRecorded,
+		EventID:       eventID,
+		OccurredAt:    time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC),
+		CustomerID:    customerID,
+		SchemaVersion: event.SchemaVersionPositions,
+		Payload: sim.AccountPayload{
+			Kind: sim.KindAplicacao, Amount: amount, Before: patrimony, After: patrimony,
+			ProductID: productID, AssetClass: class, Risk: risk,
+		},
+	}
+}
+
+// Fernanda (conservador, max risk 2) buys US$ 1,000 of cobalto (risk 5): one
+// perfil alert that names the product and amount, and the book follows the
+// unchanged patrimony.
+func TestApply_PurchaseAboveProfileRaisesPerfil(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newMemStore()
+	store.profiles = map[string]string{"c-fernanda": advisory.ProfileConservador}
+
+	env := purchaseEnv("ev-buy-cobalto", "c-fernanda", "cobalto", sim.ClassAcoes, 5, 100_000, 820_000)
+	if err := advisory.Apply(ctx, store, env); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if store.alertCount() != 1 || store.outboxCount() != 1 {
+		t.Fatalf("alerts %d outbox %d, want 1 and 1", store.alertCount(), store.outboxCount())
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for _, row := range store.alerts {
+		if row.Kind != advisory.KindPerfil || row.Rule != "Compra acima do perfil de investidor" ||
+			row.SourceEventID != env.EventID || row.SourceSchemaVersion != event.SchemaVersionPositions {
+			t.Fatalf("alert row = %+v", row)
+		}
+		var payload advisory.AlertPayload
+		if err := json.Unmarshal(row.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		want := advisory.AlertPayload{
+			Kind: advisory.KindPerfil, Rule: advisory.RuleSuitability, SourceEventID: env.EventID,
+			Amount: 1_000, Before: 8_200, After: 8_200,
+			ProductID: "cobalto", AssetClass: sim.ClassAcoes, Risk: 5, Profile: advisory.ProfileConservador, MaxRisk: 2,
+		}
+		if payload != want {
+			t.Fatalf("payload = %+v, want %+v", payload, want)
+		}
+		// The BFF board decodes these literal keys; keep them in sync.
+		var raw map[string]any
+		if err := json.Unmarshal(row.Payload, &raw); err != nil {
+			t.Fatalf("unmarshal raw: %v", err)
+		}
+		wantRaw := map[string]any{
+			"product_id":  "cobalto",
+			"asset_class": sim.ClassAcoes,
+			"risk":        float64(5),
+			"profile":     "conservador",
+			"max_risk":    float64(2),
+		}
+		for key, want := range wantRaw {
+			if got, ok := raw[key]; !ok || got != want {
+				t.Fatalf("payload[%q] = %v (present %v), want %v", key, got, ok, want)
+			}
+		}
+	}
+	for _, out := range store.outbox {
+		if out.row.RoutingKey != event.NameAlertRaised {
+			t.Fatalf("outbox routing = %s", out.row.RoutingKey)
+		}
+	}
+	if row := store.book["c-fernanda"]; row.aum != 8_200 || row.segment != "Essencial" {
+		t.Fatalf("book = %+v, want aum 8200 Essencial", row)
+	}
+}
+
+// Thiago (arrojado) buying cobalto, or anyone buying within the profile,
+// raises nothing; the inbox is still claimed and the book still follows.
+func TestApply_PurchaseWithinProfileRaisesNothing(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		profile  string
+		product  string
+		class    string
+		risk     int
+		customer string
+	}{
+		{name: "arrojado buys cobalto", profile: advisory.ProfileArrojado, product: "cobalto", class: sim.ClassAcoes, risk: 5, customer: "c-thiago"},
+		{name: "moderado buys acoesg at the limit", profile: advisory.ProfileModerado, product: "acoesg", class: sim.ClassETFs, risk: 3, customer: "c-mariana"},
+		{name: "conservador buys corp at the limit", profile: advisory.ProfileConservador, product: "corp", class: sim.ClassRendaFixa, risk: 2, customer: "c-fernanda"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := newMemStore()
+			store.profiles = map[string]string{tt.customer: tt.profile}
+			env := purchaseEnv("ev-"+tt.customer, tt.customer, tt.product, tt.class, tt.risk, 3_000_000, 6_800_000)
+			if err := advisory.Apply(context.Background(), store, env); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			if store.alertCount() != 0 || store.outboxCount() != 0 {
+				t.Fatalf("alerts %d outbox %d, want none", store.alertCount(), store.outboxCount())
+			}
+			if store.inboxCount() != 1 {
+				t.Fatalf("inbox = %d, want 1", store.inboxCount())
+			}
+			if row := store.book[tt.customer]; row.aum != 68_000 || row.segment != "Advance" {
+				t.Fatalf("book = %+v, want aum 68000 Advance", row)
+			}
+		})
+	}
+}
+
+// A purchase for a customer outside the book fails the whole transaction.
+func TestApply_PurchaseWithoutProfileRollsBack(t *testing.T) {
+	t.Parallel()
+	store := newMemStore()
+	env := purchaseEnv("ev-nobody", "c-nobody", "cobalto", sim.ClassAcoes, 5, 100_000, 820_000)
+	err := advisory.Apply(context.Background(), store, env)
+	if !errors.Is(err, advisory.ErrUnknownCustomer) {
+		t.Fatalf("Apply error = %v, want ErrUnknownCustomer", err)
+	}
+	if store.inboxCount() != 0 || store.alertCount() != 0 || len(store.book) != 0 {
+		t.Fatalf("partial write: inbox %d alerts %d book %d", store.inboxCount(), store.alertCount(), len(store.book))
+	}
+}
+
+func TestApply_PurchaseRedeliveryRaisesOnce(t *testing.T) {
+	t.Parallel()
+	store := newMemStore()
+	store.profiles = map[string]string{"c-fernanda": advisory.ProfileConservador}
+	env := purchaseEnv("ev-buy-twice", "c-fernanda", "farol", sim.ClassAcoes, 4, 100_000, 820_000)
+	for range 2 {
+		if err := advisory.Apply(context.Background(), store, env); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+	}
+	if store.alertCount() != 1 || store.outboxCount() != 1 {
+		t.Fatalf("alerts %d outbox %d, want 1 and 1", store.alertCount(), store.outboxCount())
+	}
+}
+
+// An aplicacao that cannot be evaluated is rejected before anything is written,
+// with ErrInvalidPurchase, so the consumer dead-letters it instead of requeuing.
+func TestApply_InvalidPurchaseIsRejected(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		version int
+		product string
+		risk    int
+	}{
+		{name: "aplicacao at schema_version 2", version: event.SchemaVersionCents, product: "cobalto", risk: 5},
+		{name: "aplicacao at schema_version 1", version: event.SchemaVersionMVP, product: "cobalto", risk: 5},
+		{name: "risk 0", version: event.SchemaVersionPositions, product: "cobalto", risk: 0},
+		{name: "risk 6", version: event.SchemaVersionPositions, product: "cobalto", risk: 6},
+		{name: "empty product_id", version: event.SchemaVersionPositions, product: "", risk: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := newMemStore()
+			store.profiles = map[string]string{"c-fernanda": advisory.ProfileConservador}
+			env := purchaseEnv("ev-bad-buy", "c-fernanda", tt.product, sim.ClassAcoes, tt.risk, 100_000, 820_000)
+			env.SchemaVersion = tt.version
+			err := advisory.Apply(context.Background(), store, env)
+			if !errors.Is(err, advisory.ErrInvalidPurchase) {
+				t.Fatalf("Apply error = %v, want ErrInvalidPurchase", err)
+			}
+			if store.inboxCount() != 0 || store.alertCount() != 0 || store.outboxCount() != 0 || len(store.book) != 0 {
+				t.Fatalf("partial write: inbox %d alerts %d outbox %d book %d",
+					store.inboxCount(), store.alertCount(), store.outboxCount(), len(store.book))
+			}
+		})
+	}
+}
+
+// A v3 reavaliacao follows the book generically: AUM from after and the
+// segment rule. The drop rule waits for story 13, so a 15% loss raises no
+// queda yet.
+func TestApply_ReavaliacaoFollowsBookAndSegment(t *testing.T) {
+	t.Parallel()
+	store := newMemStore()
+	env := event.Envelope{
+		Name:          event.NameAccountEventRecorded,
+		EventID:       "ev-reval",
+		OccurredAt:    time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC),
+		CustomerID:    "c-thiago",
+		SchemaVersion: event.SchemaVersionPositions,
+		Payload:       map[string]any{"kind": "reavaliacao", "amount": -200_000, "before": 1_100_000, "after": 900_000, "sim_day": 3},
+	}
+	if err := advisory.Apply(context.Background(), store, env); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	kinds := store.alertKinds()
+	if len(kinds) != 1 {
+		t.Fatalf("alerts = %v, want only the segment alert", kinds)
+	}
+	for _, kind := range kinds {
+		if kind != advisory.KindSegmento {
+			t.Fatalf("kind = %s, want segmento", kind)
+		}
+	}
+	if row := store.book["c-thiago"]; row.aum != 9_000 || row.segment != "Essencial" {
+		t.Fatalf("book = %+v, want aum 9000 Essencial", row)
+	}
+}
+
+// Consumers accept schema versions 1, 2, and 3 and reject any other before a
+// rule runs.
+func TestApply_SchemaVersions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		version int
+		amount  float64
+		before  float64
+		wantErr bool
+		wantAUM float64
+	}{
+		{name: "version 1 dollars", version: 1, amount: 5_000, before: 20_000},
+		{name: "version 2 cents", version: 2, amount: 500_000, before: 2_000_000, wantAUM: 15_000},
+		{name: "version 3 cents", version: 3, amount: 500_000, before: 2_000_000, wantAUM: 15_000},
+		{name: "version 4 is rejected", version: 4, amount: 500_000, before: 2_000_000, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := newMemStore()
+			env := event.Envelope{
+				Name:          event.NameAccountEventRecorded,
+				EventID:       "ev-v",
+				OccurredAt:    time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC),
+				CustomerID:    "c-x",
+				SchemaVersion: tt.version,
+				Payload:       sim.AccountPayload{Kind: "saque", Amount: tt.amount, Before: tt.before, After: tt.before - tt.amount},
+			}
+			err := advisory.Apply(context.Background(), store, env)
+			if tt.wantErr {
+				if !errors.Is(err, sim.ErrMoneyScale) {
+					t.Fatalf("Apply error = %v, want ErrMoneyScale", err)
+				}
+				if store.inboxCount() != 0 {
+					t.Fatalf("inbox = %d, want 0", store.inboxCount())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			kinds := store.alertKinds()
+			if len(kinds) != 1 {
+				t.Fatalf("alerts = %v, want one saque", kinds)
+			}
+			for id, kind := range kinds {
+				var payload advisory.AlertPayload
+				store.mu.Lock()
+				raw := store.alerts[id].Payload
+				store.mu.Unlock()
+				if err := json.Unmarshal(raw, &payload); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if kind != advisory.KindSaque || payload.Amount != 5_000 || payload.Before != 20_000 {
+					t.Fatalf("%s payload = %+v, want dollars 5000 of 20000", kind, payload)
+				}
+			}
+			if row, ok := store.book["c-x"]; tt.wantAUM == 0 && ok || tt.wantAUM != 0 && row.aum != tt.wantAUM {
+				t.Fatalf("book = %+v (%v), want aum %v", row, ok, tt.wantAUM)
+			}
+		})
 	}
 }
 

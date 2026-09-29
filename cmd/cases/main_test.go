@@ -4,9 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
+	amqp "github.com/rabbitmq/amqp091-go"
+
 	"github.com/leohteixeira/advisor-radar/internal/cases"
+	"github.com/leohteixeira/advisor-radar/internal/event"
 )
 
 func TestTriagedOutcome(t *testing.T) {
@@ -45,5 +50,45 @@ func TestTriagedOutcome(t *testing.T) {
 				t.Fatalf("triagedOutcome = (ack %v, requeue %v), want (%v, %v)", ack, requeue, tt.wantAck, tt.wantRequeue)
 			}
 		})
+	}
+}
+
+// recordingChannel records the routing keys the topology binds.
+type recordingChannel struct {
+	bindings []string
+}
+
+func (c *recordingChannel) QueueDeclare(name string, _, _, _, _ bool, _ amqp.Table) (amqp.Queue, error) {
+	return amqp.Queue{Name: name}, nil
+}
+
+func (c *recordingChannel) QueueBind(name, key, _ string, _ bool, _ amqp.Table) error {
+	c.bindings = append(c.bindings, name+"<-"+key)
+	return nil
+}
+
+// cases consumes message.triaged and its own SLA delay only. It never binds
+// alert.raised, so no alert kind (perfil included) can open a case.
+func TestTopology_NeverBindsAlertRaised(t *testing.T) {
+	t.Parallel()
+
+	ch := &recordingChannel{}
+	if err := declareSLATopology(ch, "advisor-radar"); err != nil {
+		t.Fatalf("declareSLATopology: %v", err)
+	}
+	if err := declareTriagedTopology(ch, "advisor-radar"); err != nil {
+		t.Fatalf("declareTriagedTopology: %v", err)
+	}
+	want := []string{
+		"cases.sla.breached<-" + cases.SLADelayArgs(60).DeadLetterRoutingKey,
+		triagedQueue + "<-" + event.NameMessageTriaged,
+	}
+	if !slices.Equal(ch.bindings, want) {
+		t.Fatalf("bindings = %v, want %v", ch.bindings, want)
+	}
+	for _, b := range ch.bindings {
+		if strings.HasSuffix(b, "<-"+event.NameAlertRaised) {
+			t.Fatalf("cases binds %s", b)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -419,5 +420,94 @@ func TestPGXStore_SQLSeedPositions(t *testing.T) {
 	assertSeedState(t, client)
 	if got := countRows(t, pool, "pov_position"); got != 11 {
 		t.Fatalf("positions after Go reseed = %d, want 11", got)
+	}
+}
+
+// TestPGXStore_Purchase runs the purchase matrix over PostgreSQL, loaded from
+// the SQL seed as `cmd/db seed` does, then checks that the Go reseed drops
+// the bought positions and restores the cash.
+func TestPGXStore_Purchase(t *testing.T) {
+	t.Parallel()
+	pool := newMigratedPool(t)
+	applySQLDir(t, pool, filepath.Join("..", "..", "seeds", "account_sim"))
+	store := sim.NewPGXStore(pool)
+	client := startAccountServer(t, store)
+
+	assertPurchases(t, client, func(eventID string) []byte {
+		t.Helper()
+		var payload []byte
+		if err := pool.QueryRow(t.Context(),
+			`SELECT payload FROM outbox WHERE event_id = $1::uuid`, eventID,
+		).Scan(&payload); err != nil {
+			t.Fatalf("read outbox %s: %v", eventID, err)
+		}
+		return payload
+	}, func() int { return countRows(t, pool, "outbox") })
+
+	var units, applied int64
+	if err := pool.QueryRow(t.Context(),
+		`SELECT units_cents, applied_cents FROM pov_position WHERE customer_id = $1 AND product_id = 'acoesg'`,
+		sim.CustomerThiago,
+	).Scan(&units, &applied); err != nil {
+		t.Fatalf("read acoesg position: %v", err)
+	}
+	if units != 3_544_000 || applied != 3_520_000 {
+		t.Fatalf("acoesg units %d applied %d, want 3544000 and 3520000", units, applied)
+	}
+
+	if err := sim.Reseed(t.Context(), store); err != nil {
+		t.Fatalf("Reseed: %v", err)
+	}
+	assertSeedState(t, client)
+	if got := countRows(t, pool, "pov_position"); got != 11 {
+		t.Fatalf("positions after reseed = %d, want 11", got)
+	}
+}
+
+// TestPGXStore_ConcurrentPurchases sends two purchases with different keys
+// that together exceed the cash. The customer lock serializes them, so one
+// commits and the other sees the lower cash and is refused.
+func TestPGXStore_ConcurrentPurchases(t *testing.T) {
+	t.Parallel()
+	pool := newTestPool(t)
+	store := sim.NewPGXStore(pool)
+	caixa := dbCaixa(t, pool, sim.CustomerThiago)
+	amount := caixa/2 + 1
+
+	const callers = 2
+	errs := make([]error, callers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range callers {
+		wg.Go(func() {
+			<-start
+			_, errs[i] = sim.Apply(t.Context(), store, sim.Command{
+				CustomerID: sim.CustomerThiago, IdempotencyKey: fmt.Sprintf("buy-race-%d", i),
+				Kind: sim.CmdPurchase, ProductID: "cobalto", Amount: amount,
+			})
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	ok, refused := 0, 0
+	for i := range callers {
+		switch {
+		case errs[i] == nil:
+			ok++
+		case errors.Is(errs[i], sim.ErrInsufficient):
+			refused++
+		default:
+			t.Fatalf("Apply %d: %v", i, errs[i])
+		}
+	}
+	if ok != 1 || refused != 1 {
+		t.Fatalf("accepted %d refused %d, want 1 and 1", ok, refused)
+	}
+	if got := dbCaixa(t, pool, sim.CustomerThiago); got != caixa-amount {
+		t.Fatalf("caixa = %d, want %d", got, caixa-amount)
+	}
+	if got := countRows(t, pool, "outbox"); got != 1 {
+		t.Fatalf("outbox rows = %d, want 1", got)
 	}
 }

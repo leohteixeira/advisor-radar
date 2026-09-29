@@ -302,7 +302,7 @@ func TestRecentActivity(t *testing.T) {
 	})
 	t.Run("icons", func(t *testing.T) {
 		t.Parallel()
-		for kind, icon := range map[string]string{"aporte": "in", "saque": "out", "mensagem": "msg", "reavaliacao": ""} {
+		for kind, icon := range map[string]string{"aporte": "in", "saque": "out", "aplicacao": "out", "mensagem": "msg", "reavaliacao": ""} {
 			if got := activityIcon(kind); got != icon {
 				t.Errorf("activityIcon(%q) = %q, want %q", kind, got, icon)
 			}

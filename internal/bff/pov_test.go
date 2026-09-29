@@ -3,6 +3,7 @@ package bff_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -142,5 +143,28 @@ func TestPOVDepositIdempotencyAndRefusal(t *testing.T) {
 	}
 	if got.Refusals["insufficient"] != 1 || got.Duplicates < 1 || got.Actions["deposit"] < 1 {
 		t.Fatalf("counters = %+v", got)
+	}
+}
+
+// An unknown product surfaced as sim.ErrProduct is a refusal like an
+// InvalidArgument: 422 invalid, counted, and never a 502.
+func TestPOVPurchaseUnknownProductIsInvalid(t *testing.T) {
+	t.Parallel()
+	src := &fakePOV{err: fmt.Errorf("bff: account-sim purchase: %w", sim.ErrProduct)}
+	h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, nil, nil, nil, src, func() time.Time {
+		return time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/client-pov/customers/"+sim.CustomerFernanda+"/purchases",
+		strings.NewReader(`{"product_id":"nenhum","amount_cents":100000}`))
+	req.Header.Set("Idempotency-Key", "unknown-product")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnprocessableEntity || !strings.Contains(rr.Body.String(), `"error":"invalid"`) {
+		t.Fatalf("purchase = %d %s, want 422 invalid", rr.Code, rr.Body.String())
+	}
+	counters := httptest.NewRecorder()
+	h.ServeHTTP(counters, httptest.NewRequest(http.MethodGet, "/v1/client-pov/counters", nil))
+	if !strings.Contains(counters.Body.String(), `"refusals":{"invalid":1}`) {
+		t.Fatalf("counters = %s", counters.Body.String())
 	}
 }

@@ -72,3 +72,28 @@ func TestBastidoresComplaintUsesTriageLabels(t *testing.T) {
 		t.Fatalf("steps = %+v", got.Steps)
 	}
 }
+
+// A purchase moves through Bastidores like any account command: the v3
+// aplicacao event publishes it and the perfil alert that names it as source
+// evaluates and queues it.
+func TestBastidoresPurchaseFollowsAplicacaoAndPerfilAlert(t *testing.T) {
+	t.Parallel()
+	hub := newBastidoresHub()
+	hub.markCommand("c-fernanda", "evt-buy", sim.CmdPurchase)
+	hub.observe(event.NameAccountEventRecorded, []byte(
+		`{"event_id":"evt-buy","customer_id":"c-fernanda","schema_version":3,`+
+			`"payload":{"kind":"aplicacao","amount":100000,"before":820000,"after":820000,"product_id":"cobalto","asset_class":"acoes","risk":5}}`))
+	got, ok := hub.snapshot("c-fernanda", "evt-buy")
+	if !ok || got.Steps[1].State != "feito" || got.Steps[2].State != "agora" {
+		t.Fatalf("after publish = %+v", got.Steps)
+	}
+	if got.Steps[2].Label != "Avaliado pelas regras do advisory" {
+		t.Fatalf("label = %s", got.Steps[2].Label)
+	}
+	hub.observe(event.NameAlertRaised, []byte(
+		`{"event_id":"alert-perfil","customer_id":"c-fernanda","payload":{"kind":"perfil","source_event_id":"evt-buy"}}`))
+	got, _ = hub.snapshot("c-fernanda", "evt-buy")
+	if got.Steps[2].State != "feito" || got.Steps[3].State != "feito" {
+		t.Fatalf("after perfil alert = %+v", got.Steps)
+	}
+}

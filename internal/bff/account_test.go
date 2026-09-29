@@ -35,6 +35,12 @@ func (sinceQueue) GetCustomer(_ context.Context, id string) (bff.Customer, error
 // through DialAccountSim and NewGRPCPOV, the production path.
 func startPOV(t *testing.T, srv accountv1.AccountServiceServer) *bff.Server {
 	t.Helper()
+	return bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, sinceQueue{}, nil, nil, dialPOV(t, srv), nil)
+}
+
+// dialPOV serves srv over bufconn and returns the account-sim POVSource.
+func dialPOV(t *testing.T, srv accountv1.AccountServiceServer) bff.POVSource {
+	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	gs := grpc.NewServer()
 	accountv1.RegisterAccountServiceServer(gs, srv)
@@ -48,8 +54,7 @@ func startPOV(t *testing.T, srv accountv1.AccountServiceServer) *bff.Server {
 		t.Fatalf("DialAccountSim: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	pov := bff.NewGRPCPOV(accountv1.NewAccountServiceClient(conn))
-	return bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, sinceQueue{}, nil, nil, pov, nil)
+	return bff.NewGRPCPOV(accountv1.NewAccountServiceClient(conn))
 }
 
 // startSim serves the real account-sim server over a fresh seeded memory store.
@@ -173,6 +178,41 @@ func TestGRPCPOV_Commands(t *testing.T) {
 			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
 		},
 		{
+			name: "purchase within cash", customerID: sim.CustomerFernanda, route: "purchases",
+			body: `{"product_id":"cobalto","amount_cents":100000}`, wantCode: http.StatusAccepted,
+			wantCaixa: fernandaCaixa - 100_000, wantAction: "purchase",
+		},
+		{
+			name: "over-cash purchase is FailedPrecondition", customerID: sim.CustomerFernanda, route: "purchases",
+			body: `{"product_id":"cobalto","amount_cents":114801}`, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"insufficient"}`, wantCaixa: fernandaCaixa, wantRefusal: "insufficient",
+		},
+		{
+			name: "unknown product is InvalidArgument", customerID: sim.CustomerFernanda, route: "purchases",
+			body: `{"product_id":"ouro","amount_cents":100000}`, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
+		},
+		{
+			name: "purchase below the product minimum is InvalidArgument", customerID: sim.CustomerFernanda, route: "purchases",
+			body: `{"product_id":"corp","amount_cents":99999}`, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
+		},
+		{
+			name: "zero purchase is InvalidArgument", customerID: sim.CustomerFernanda, route: "purchases",
+			body: `{"product_id":"cobalto","amount_cents":0}`, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
+		},
+		{
+			name: "purchase body that does not decode is invalid", customerID: sim.CustomerFernanda, route: "purchases",
+			body: `{"product_id":"cobalto","amount_cents":"mil"}`, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
+		},
+		{
+			name: "empty purchase body is invalid", customerID: sim.CustomerFernanda, route: "purchases",
+			body: ``, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
+		},
+		{
 			name: "unknown customer is NotFound", customerID: unknown, route: "deposits",
 			body: `{"amount":100,"origin":"pix"}`, wantCode: http.StatusUnprocessableEntity,
 			wantBody: `{"error":"invalid"}`, wantRefusal: "invalid",
@@ -247,6 +287,104 @@ func TestGRPCPOV_Replay(t *testing.T) {
 	}
 	if rr := postPOV(t, h, t.Context(), sim.CustomerFernanda, "deposits", "over", `{"amount":1,"origin":"pix"}`); rr.Code != http.StatusTooManyRequests {
 		t.Fatalf("eleventh new command = %d, want 429", rr.Code)
+	}
+}
+
+// TestGRPCPOV_Purchase runs the purchase matrix through the HTTP handler,
+// the gRPC adapter, and the real account-sim server: Thiago buys US$ 30,000
+// of acoesg, replays it for free, and then meets the shared per-minute limit.
+func TestGRPCPOV_Purchase(t *testing.T) {
+	t.Parallel()
+	h := startSim(t)
+	const body = `{"product_id":"acoesg","amount_cents":3000000}`
+
+	first := postPOV(t, h, t.Context(), sim.CustomerThiago, "purchases", "buy-1", body)
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("purchase = %d %s", first.Code, first.Body.String())
+	}
+	if got := caixaOf(t, h, sim.CustomerThiago); got != 3_052_000 {
+		t.Fatalf("caixa = %d, want 3052000", got)
+	}
+	replay := postPOV(t, h, t.Context(), sim.CustomerThiago, "purchases", "buy-1", body)
+	if replay.Code != http.StatusAccepted || eventIDOf(t, replay) != eventIDOf(t, first) {
+		t.Fatalf("replay = %d %s, want the first event_id", replay.Code, replay.Body.String())
+	}
+	if got := caixaOf(t, h, sim.CustomerThiago); got != 3_052_000 {
+		t.Fatalf("caixa after replay = %d, want one purchase", got)
+	}
+	counters := countersOf(t, h)
+	if counters.Actions["purchase"] != 1 || counters.Duplicates != 1 {
+		t.Fatalf("counters = %+v, want 1 purchase and 1 duplicate", counters)
+	}
+
+	// The replay spent nothing: nine more new commands fill the budget of ten
+	// and the eleventh is refused before account-sim.
+	for i := range 9 {
+		rr := postPOV(t, h, t.Context(), sim.CustomerThiago, "purchases", "more-"+strconv.Itoa(i), `{"product_id":"renda","amount_cents":5000}`)
+		if rr.Code != http.StatusAccepted {
+			t.Fatalf("purchase %d = %d %s", i, rr.Code, rr.Body.String())
+		}
+	}
+	over := postPOV(t, h, t.Context(), sim.CustomerThiago, "purchases", "over", `{"product_id":"renda","amount_cents":5000}`)
+	if over.Code != http.StatusTooManyRequests || strings.TrimSpace(over.Body.String()) != `{"error":"minute"}` {
+		t.Fatalf("eleventh = %d %s, want 429 minute", over.Code, over.Body.String())
+	}
+	if got := caixaOf(t, h, sim.CustomerThiago); got != 3_052_000-9*5_000 {
+		t.Fatalf("caixa = %d, want %d", got, 3_052_000-9*5_000)
+	}
+
+	if rr := postPOV(t, h, t.Context(), "not-a-uuid", "purchases", "bad-id", body); rr.Code != http.StatusBadRequest {
+		t.Fatalf("bad id = %d, want 400", rr.Code)
+	}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/v1/client-pov/customers/"+sim.CustomerFernanda+"/purchases", strings.NewReader(body))
+	missing := httptest.NewRecorder()
+	h.ServeHTTP(missing, req)
+	if missing.Code != http.StatusBadRequest {
+		t.Fatalf("missing key = %d, want 400", missing.Code)
+	}
+}
+
+// A purchase body that does not decode is refused before the limiter, so it
+// spends no budget.
+func TestGRPCPOV_UndecodablePurchaseSpendsNoBudget(t *testing.T) {
+	t.Parallel()
+	h := startSim(t)
+	for i := range 11 {
+		rr := postPOV(t, h, t.Context(), sim.CustomerFernanda, "purchases", "bad-"+strconv.Itoa(i), `{"product_id":`)
+		if rr.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("bad body %d = %d, want 422", i, rr.Code)
+		}
+	}
+	rr := postPOV(t, h, t.Context(), sim.CustomerFernanda, "purchases", "good", `{"product_id":"renda","amount_cents":5000}`)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("valid purchase = %d %s, want 202", rr.Code, rr.Body.String())
+	}
+	if counters := countersOf(t, h); counters.Refusals["invalid"] != 11 || counters.Actions["purchase"] != 1 {
+		t.Fatalf("counters = %+v, want 11 invalid and 1 purchase", counters)
+	}
+}
+
+// The account-sim POVSource lends the catalog names the perfil card uses.
+func TestGRPCPOV_Products(t *testing.T) {
+	t.Parallel()
+	catalog, ok := dialPOV(t, sim.NewGRPCServer(sim.NewMemory(), nil)).(bff.ProductCatalog)
+	if !ok {
+		t.Fatal("the account-sim POVSource does not implement ProductCatalog")
+	}
+	products, err := catalog.Products(t.Context())
+	if err != nil {
+		t.Fatalf("Products: %v", err)
+	}
+	if len(products) != len(sim.Catalog()) {
+		t.Fatalf("products = %+v", products)
+	}
+	names := map[string]string{}
+	for _, p := range products {
+		names[p.ID] = p.Name
+	}
+	if names["cobalto"] != "Cobalto Semicondutores" || names["acoesg"] != "Maré Ações Globais ETF" {
+		t.Fatalf("names = %v", names)
 	}
 }
 
@@ -326,6 +464,7 @@ type stubAccount struct {
 	mu        sync.Mutex
 	calls     int
 	deadlines []time.Time
+	purchases []*accountv1.PurchaseRequest
 }
 
 func (s *stubAccount) record(ctx context.Context) (int, error) {
@@ -348,6 +487,20 @@ func (s *stubAccount) Deposit(ctx context.Context, _ *accountv1.DepositRequest) 
 	}
 	return &accountv1.CommandReply{
 		EventId: "01a0e3a4-9a44-7000-8000-000000000001",
+		Replay:  s.replay != nil && s.replay(call),
+	}, nil
+}
+
+func (s *stubAccount) Purchase(ctx context.Context, req *accountv1.PurchaseRequest) (*accountv1.CommandReply, error) {
+	s.mu.Lock()
+	s.purchases = append(s.purchases, req)
+	s.mu.Unlock()
+	call, err := s.record(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &accountv1.CommandReply{
+		EventId: "01a0e3a4-9a44-7000-8000-000000000002",
 		Replay:  s.replay != nil && s.replay(call),
 	}, nil
 }
@@ -512,6 +665,49 @@ func TestDialAccountSim_RetryAfterLostReply(t *testing.T) {
 	if counters.Actions["deposit"] != 1 || counters.Duplicates != 0 {
 		t.Fatalf("counters = %+v, want one deposit and no duplicate", counters)
 	}
+}
+
+// TestGRPCPOV_PurchaseRequest checks the account/v1 request the adapter
+// sends, that a retried attempt keeps its command id, and that an upstream
+// failure is 502.
+func TestGRPCPOV_PurchaseRequest(t *testing.T) {
+	t.Parallel()
+
+	t.Run("fields and command id across a retry", func(t *testing.T) {
+		t.Parallel()
+		stub := &stubAccount{respond: failFirst(1, codes.Unavailable)}
+		h := startPOV(t, stub)
+		rr := postPOV(t, h, t.Context(), sim.CustomerFernanda, "purchases", "buy-k", `{"product_id":"cobalto","amount_cents":100000}`)
+		if rr.Code != http.StatusAccepted {
+			t.Fatalf("status = %d %s, want 202", rr.Code, rr.Body.String())
+		}
+		stub.mu.Lock()
+		defer stub.mu.Unlock()
+		if len(stub.purchases) != 2 {
+			t.Fatalf("attempts = %d, want 2", len(stub.purchases))
+		}
+		req := stub.purchases[0]
+		if req.GetCustomerId() != sim.CustomerFernanda || req.GetIdempotencyKey() != "buy-k" ||
+			req.GetProductId() != "cobalto" || req.GetAmountCents() != 100_000 {
+			t.Fatalf("request = %+v", req)
+		}
+		if _, err := identity.ParseV7(req.GetCommandId()); err != nil {
+			t.Fatalf("command_id %q is not a UUIDv7: %v", req.GetCommandId(), err)
+		}
+		if stub.purchases[1].GetCommandId() != req.GetCommandId() {
+			t.Fatalf("retry command_id = %q, want %q", stub.purchases[1].GetCommandId(), req.GetCommandId())
+		}
+	})
+
+	t.Run("upstream failure is 502", func(t *testing.T) {
+		t.Parallel()
+		stub := &stubAccount{respond: failFirst(1<<30, codes.Internal)}
+		h := startPOV(t, stub)
+		rr := postPOV(t, h, t.Context(), sim.CustomerFernanda, "purchases", "buy-k", `{"product_id":"cobalto","amount_cents":100000}`)
+		if rr.Code != http.StatusBadGateway {
+			t.Fatalf("status = %d, want 502", rr.Code)
+		}
+	})
 }
 
 // grpcTimeoutSlack covers the transit between the client computing the

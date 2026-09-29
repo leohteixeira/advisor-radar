@@ -526,3 +526,38 @@ func TestGRPCServer_StoreFailure(t *testing.T) {
 		t.Fatal("retry replay = true, want a fresh apply after rollback")
 	}
 }
+
+// A failed purchase rolls back cash and position, and the internal-failure
+// log names the caller's command id but no amount.
+func TestGRPCServer_PurchaseStoreFailure(t *testing.T) {
+	t.Parallel()
+	var logs syncBuffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	memory := sim.NewMemory()
+	client := startAccountServerWithLogger(t, failingStore{inner: memory}, logger)
+	healthy := startAccountServer(t, memory)
+	before, err := healthy.GetAccount(t.Context(), &accountv1.GetAccountRequest{CustomerId: sim.CustomerThiago})
+	if err != nil {
+		t.Fatalf("GetAccount: %v", err)
+	}
+
+	_, err = client.Purchase(t.Context(), &accountv1.PurchaseRequest{
+		CustomerId: sim.CustomerThiago, IdempotencyKey: "buy-fail", ProductId: "acoesg",
+		AmountCents: 3_000_000, CommandId: "cmd-7f3a",
+	})
+	wantCode(t, err, codes.Internal)
+	after, err := healthy.GetAccount(t.Context(), &accountv1.GetAccountRequest{CustomerId: sim.CustomerThiago})
+	if err != nil {
+		t.Fatalf("GetAccount: %v", err)
+	}
+	if after.GetCaixaCents() != before.GetCaixaCents() || after.GetEtfsCents() != before.GetEtfsCents() {
+		t.Fatalf("failed purchase moved the account: %+v -> %+v", before, after)
+	}
+	line := logs.String()
+	if !strings.Contains(line, `"command_id":"cmd-7f3a"`) || !strings.Contains(line, `"method":"Purchase"`) {
+		t.Fatalf("failure log = %s, want method and command_id", line)
+	}
+	if strings.Contains(line, "3000000") {
+		t.Fatalf("failure log carries the amount: %s", line)
+	}
+}

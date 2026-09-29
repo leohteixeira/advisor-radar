@@ -102,8 +102,35 @@ func (t *memTx) InsertOutbox(ctx context.Context, row outbox.Row) error {
 	return nil
 }
 
+// AddPosition adds delta to the class aggregate and the position list; this
+// fake keeps the account as stored aggregates.
+func (t *memTx) AddPosition(ctx context.Context, customerID string, delta sim.Position) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if t.store.fail == "position" {
+		return errors.New("forced position failure")
+	}
+	account, ok := t.store.accounts[customerID]
+	if !ok {
+		return sim.ErrUnknownCustomer
+	}
+	switch delta.AssetClass {
+	case sim.ClassAcoes:
+		account.Acoes += delta.UnitsCents
+	case sim.ClassETFs:
+		account.ETFs += delta.UnitsCents
+	case sim.ClassRendaFixa:
+		account.RendaFixa += delta.UnitsCents
+	}
+	delta.ValueCents = delta.UnitsCents
+	account.Positions = append(slices.Clone(account.Positions), delta)
+	t.store.accounts[customerID] = account
+	return nil
+}
+
 func (t *memTx) ListProducts(ctx context.Context) ([]sim.Product, error) {
-	return nil, ctx.Err()
+	return sim.Catalog(), ctx.Err()
 }
 
 func (t *memTx) GetRegistration(ctx context.Context, _ string) (sim.Registration, bool, error) {
@@ -273,6 +300,115 @@ func TestIdempotencyReplayDoesNotAppend(t *testing.T) {
 	}
 	if store.accounts[sim.CustomerFernanda].Caixa != 114_800+1_000_000 {
 		t.Fatalf("caixa = %d", store.accounts[sim.CustomerFernanda].Caixa)
+	}
+}
+
+func TestPurchaseRefusalsFollowTheContractOrder(t *testing.T) {
+	t.Parallel()
+
+	thiago := sim.CustomerThiago // cash 6052000
+	tests := []struct {
+		name      string
+		productID string
+		amount    int64
+		want      error
+	}{
+		{name: "unknown product", productID: "ouro", amount: 100_000, want: sim.ErrProduct},
+		{name: "empty product", productID: "", amount: 100_000, want: sim.ErrProduct},
+		{name: "unknown product before a bad amount", productID: "ouro", amount: 0, want: sim.ErrProduct},
+		{name: "zero amount", productID: "acoesg", amount: 0, want: sim.ErrAmount},
+		{name: "negative amount", productID: "acoesg", amount: -1, want: sim.ErrAmount},
+		{name: "above the cap", productID: "acoesg", amount: sim.MaxAmountCents + 1, want: sim.ErrAmount},
+		{name: "below the product minimum", productID: "corp", amount: 99_999, want: sim.ErrAmount},
+		{name: "below the minimum before over cash", productID: "tbill", amount: 9_999, want: sim.ErrAmount},
+		{name: "above cash", productID: "acoesg", amount: 6_052_001, want: sim.ErrInsufficient},
+		{name: "above the cap before over cash", productID: "cobalto", amount: sim.MaxAmountCents + 1, want: sim.ErrAmount},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := newStore()
+			before := store.accounts[thiago]
+			_, err := sim.Apply(context.Background(), store, sim.Command{
+				CustomerID:     thiago,
+				IdempotencyKey: "buy-refused",
+				Kind:           sim.CmdPurchase,
+				ProductID:      tt.productID,
+				Amount:         tt.amount,
+			})
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("err = %v, want %v", err, tt.want)
+			}
+			if !sameAccount(store.accounts[thiago], before) {
+				t.Fatalf("account changed: %+v", store.accounts[thiago])
+			}
+			if len(store.outbox) != 0 || len(store.keys) != 0 {
+				t.Fatalf("outbox=%d keys=%d, want 0", len(store.outbox), len(store.keys))
+			}
+		})
+	}
+}
+
+func TestPurchaseMovesCashIntoAPositionAtV3(t *testing.T) {
+	t.Parallel()
+	store := newStore()
+	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+	result, err := sim.Apply(context.Background(), store, sim.Command{
+		CustomerID:     sim.CustomerThiago,
+		IdempotencyKey: "buy-acoesg",
+		CommandID:      "cmd-1",
+		Kind:           sim.CmdPurchase,
+		ProductID:      "acoesg",
+		Amount:         3_000_000,
+		Now:            now,
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if result.EventID == "" || result.Replay {
+		t.Fatalf("result = %+v", result)
+	}
+	account := store.accounts[sim.CustomerThiago]
+	if account.Caixa != 3_052_000 || account.ETFs != 3_544_000 || account.Assets() != 6_800_000 {
+		t.Fatalf("account = %+v assets %d, want cash 3052000, etfs 3544000, patrimony 6800000", account, account.Assets())
+	}
+	last := account.Positions[len(account.Positions)-1]
+	if last.ProductID != "acoesg" || last.UnitsCents != 3_000_000 || last.AppliedCents != 3_000_000 {
+		t.Fatalf("position delta = %+v", last)
+	}
+	if len(store.outbox) != 1 || store.outbox[0].RoutingKey != "account.event.recorded" {
+		t.Fatalf("outbox = %+v", store.outbox)
+	}
+	env, payload, err := sim.DecodeOutboxAccount(store.outbox[0].Payload)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	want := sim.AccountPayload{
+		Kind: sim.KindAplicacao, Amount: 3_000_000, Before: 6_800_000, After: 6_800_000,
+		ProductID: "acoesg", AssetClass: sim.ClassETFs, Risk: 3,
+	}
+	if env.SchemaVersion != 3 || payload != want || !env.OccurredAt.Equal(now) {
+		t.Fatalf("event = %+v payload = %+v, want v3 %+v", env, payload, want)
+	}
+}
+
+func TestPurchasePositionFailureRollsBack(t *testing.T) {
+	t.Parallel()
+	store := newStore()
+	store.fail = "position"
+	before := store.accounts[sim.CustomerThiago]
+	_, err := sim.Apply(context.Background(), store, sim.Command{
+		CustomerID:     sim.CustomerThiago,
+		IdempotencyKey: "buy-fail",
+		Kind:           sim.CmdPurchase,
+		ProductID:      "acoesg",
+		Amount:         100_000,
+	})
+	if err == nil {
+		t.Fatal("Apply error = nil, want position failure")
+	}
+	if !sameAccount(store.accounts[sim.CustomerThiago], before) || len(store.outbox) != 0 || len(store.keys) != 0 {
+		t.Fatalf("partial write: account %+v outbox %d keys %d", store.accounts[sim.CustomerThiago], len(store.outbox), len(store.keys))
 	}
 }
 
