@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package account.v1;
+
+option go_package = "github.com/leohteixeira/advisor-radar/gen/account/v1;accountv1";
+
+// AccountService is the account-sim command and query surface (ADR 0008).
+// Every command carries an idempotency key; a replayed key returns the
+// original event id with replay set and writes nothing. Amounts are integer
+// USD cents.
+service AccountService {
+  rpc Deposit(DepositRequest) returns (CommandReply);
+  rpc Withdraw(WithdrawRequest) returns (CommandReply);
+  rpc SendMessage(SendMessageRequest) returns (CommandReply);
+  rpc FileComplaint(FileComplaintRequest) returns (CommandReply);
+  rpc GetAccount(GetAccountRequest) returns (Account);
+  rpc ListAccounts(ListAccountsRequest) returns (ListAccountsResponse);
+}
+
+message DepositRequest {
+  string customer_id = 1;
+  string idempotency_key = 2;
+  int64 amount_cents = 3;
+  string origin = 4;
+}
+
+message WithdrawRequest {
+  string customer_id = 1;
+  string idempotency_key = 2;
+  int64 amount_cents = 3;
+  string destination = 4;
+}
+
+message SendMessageRequest {
+  string customer_id = 1;
+  string idempotency_key = 2;
+  // channel is "chat" or "e-mail".
+  string channel = 3;
+  string text = 4;
+}
+
+message FileComplaintRequest {
+  string customer_id = 1;
+  string idempotency_key = 2;
+  string text = 3;
+}
+
+message CommandReply {
+  string event_id = 1;
+  bool replay = 2;
+}
+
+message GetAccountRequest {
+  string customer_id = 1;
+}
+
+// Account holds the phase-2 class balances in integer USD cents.
+message Account {
+  string customer_id = 1;
+  int64 acoes_cents = 2;
+  int64 etfs_cents = 3;
+  int64 renda_fixa_cents = 4;
+  int64 caixa_cents = 5;
+}
+
+message ListAccountsRequest {}
+
+message ListAccountsResponse {
+  repeated Account accounts = 1;
+}
