@@ -37,7 +37,7 @@ Money fields are integer USD cents. Every POST requires `Idempotency-Key`. A mis
 | POST | `/v1/client-pov/customers/{id}/complaints` | `202`. Body: `text`. Channel is chat |
 | POST | `/v1/client-pov/customers/{id}/purchases` | `202` `{"event_id"}`, or `422` `{"error":"insufficient"}` when `amount_cents` exceeds caixa, or `422` `{"error":"invalid"}` for a bad body, an unknown product, or an amount at or below 0, above the command maximum, or below the product minimum. Body: `product_id`, `amount_cents` |
 | PUT | `/v1/client-pov/customers/{id}/preferences` | `200` `{"channel","beta"}` with the stored values. Body: `channel` `chat` or `email`, `beta` boolean, both required. `400` for a bad id, `404` for an unknown customer, `422` `{"error":"invalid"}` for a bad body or channel, `502` when account-sim fails |
-| GET | `/v1/client-pov/customers/{id}/stream` | SSE event `bastidores` with `event_id` and steps `feito`, `agora`, or `aguardando` |
+| GET | `/v1/client-pov/customers/{id}/stream` | SSE event `bastidores` with `event_id` and steps `feito`, `agora`, `aguardando`, or `não escalado` (the queue step when evaluation finishes and no alert was raised) |
 | GET | `/v1/client-pov/counters` | `actions` by type (`deposit`, `withdrawal`, `message`, `complaint`, `purchase`), `refusals` by rule, `duplicates` |
 | GET | `/v1/client-pov/simulation` | `200` `{"sim_day"}`: the global simulated day, for the simulation strip. `502` when account-sim fails |
 | POST | `/v1/client-pov/simulation/advance-day` | `202` `{"sim_day", "event_id"}`: the day after the advance and the first `reavaliacao` event id (one per account; the others are not returned). No body. `429` `{"error":"ten_minutes"}` over the limit; `502` when account-sim fails |
