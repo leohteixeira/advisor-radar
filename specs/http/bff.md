@@ -51,8 +51,8 @@ The client app gets each screen from the BFF as a page of sections and component
 |---|---|---|
 | GET | `/v1/client-pov/customers/{id}/screens/{slug}` | `200` screen envelope. `slug` is `home`, `investir`, `carteira`, or `perfil` |
 
-- The BFF serves `home` now. `investir`, `carteira`, and `perfil` answer `404` until their stories land and add them here.
-- The web home renders from this screen route. The phase-2 home route `GET /v1/client-pov/customers/{id}` stays: web still reads the shell (name, segment) and the coded panels (cash, messages) from it, and falls back to it when the screen request fails or answers something that is not an envelope, until story 10 removes that fallback.
+- The BFF serves `home` and `investir` now. `carteira` and `perfil` answer `404` until their stories land and add them here.
+- The web home and Investir render from this screen route. The phase-2 home route `GET /v1/client-pov/customers/{id}` stays: web still reads the shell (name, segment) and the coded panels (cash, messages) from it. There is no fallback screen: when the screen request fails, times out, or answers something that is not an envelope, the screen area shows an error state with a retry, and the shell, tabs, and panels stay.
 - Opening a screen is one HTTP request. There is no pagination and no single-section reload.
 - A slug outside the four is `404`. An unknown customer is `404` only when account-sim answers `NotFound` for that customer. Any other source failure never changes the status.
 - Screen responses carry `Cache-Control: no-store`.
@@ -87,7 +87,7 @@ Thiago's home with the timeline down. Only the `moment` section is shown; `wealt
 
 - `schema_version` is an integer, the version of this envelope and of the component table below.
 - A section object has `id` and `components`, an array of `{type, variant, props}`.
-- `omitted` is always present: one `{id, type, reason}` per catalog section this response left out, in catalog order, so Raio-X can draw a placeholder. `reason` is the failed source (`account-sim`, `advisory`, `timeline`, `moments`, `profile`, or `cases`) or `build_error`. `advisory` is the customer read; `moments` and `profile` are the advisory moment facts and investor profile. Web renders nothing for an omitted section outside Raio-X.
+- `omitted` is always present: one `{id, type, reason}` per catalog section this response left out, in catalog order, so Raio-X can draw a placeholder. `reason` is the failed source (`account-sim`, `catalog`, `advisory`, `timeline`, `moments`, `profile`, or `cases`) or `build_error`. `account-sim` is the account read and `catalog` the account-sim product catalog (`ListProducts`); `advisory` is the customer read; `moments` and `profile` are the advisory moment facts and investor profile. Web renders nothing for an omitted section outside Raio-X.
 - `title` and `subtitle?` are the screen heading, filled from the catalog: home "Olá, {{first}}" / "Cliente {{segment}} desde {{since}}", investir "Investir" / "Produtos fictícios · preço fixo da simulação", carteira "Carteira" / "Valores de mercado no dia simulado {{day}}", perfil "Perfil" / "Seus dados, seu perfil de investidor e suas preferências".
 - `revision` names the catalog revision of the screen. A client outside the beta gets `v1`. A beta client gets home `v2`, which inserts the `highlights` section right after `moment`. Investir, Carteira, and Perfil stay at `v1`.
 - Section order in the array is the render order. Web owns style, the breakpoint grid, and the span of each section.
@@ -117,22 +117,23 @@ An action is an object with `type` and `label`. There are four types:
 - **link** opens an external URL: `{"type":"link","label":"…","href":"https://…"}`.
 
 - An unknown action `type` or `target` hides the control and is reported with `console.error`.
-- A `purchase` panel without `product_id` is hidden.
+- A `purchase` panel without `product_id` is hidden and reported with `console.error`.
 - `link.href` must use `https:` and opens with `rel="noopener noreferrer"`. Any other scheme is refused and the control is hidden.
 
-The `deposit`, `withdraw`, `message`, and `complaint` panels submit through the POV routes above. The purchase route `/v1/client-pov/customers/{id}/purchases` exists now, but the web purchase form ships in story 10; until then web keeps the `purchase` panel hidden. The over-cash check runs inside the account-sim transaction and answers `422`. Capping a form's input at a `*_cents` value the BFF sent is only a form convenience.
+The `deposit`, `withdraw`, `message`, and `complaint` panels submit through the POV routes above. The `purchase` panel opens the coded purchase form, which reads the product and `invest_summary.cash_cents` from the Investir envelope on view and submits `POST /v1/client-pov/customers/{id}/purchases` `{product_id, amount_cents}`; that route is documented under the POV commands above. The form keeps one `Idempotency-Key` per open form and amount: a retry of the same amount reuses it, and a changed amount, a reopened form, a `202`, or a definite `4xx` makes a new one. It shows `minimum` and keeps Confirm disabled below `minimum_cents`. The refusals it maps are `422` `{"error":"insufficient"}` ("Valor acima do caixa disponível.") and `422` `{"error":"invalid"}`, which includes an amount below the product minimum ("Confira o valor e tente de novo."); `429` and any other failure show the notices of the other panels. The over-cash check runs inside the account-sim transaction and answers `422`. Capping a form's input at a `*_cents` value the BFF sent, and the minimum check, are only form conveniences.
 
 ### Failure policy
 
-- The BFF reads account-sim, advisory (customer, moment facts, and investor profile, each its own source), cases, and timeline in parallel under one screen deadline. One source failing never cancels the others.
+- The BFF reads account-sim (the account and the product catalog, each its own source), advisory (customer, moment facts, and investor profile, each its own source), cases, and timeline in parallel under one screen deadline. One source failing never cancels the others.
 - A section whose source failed or ran past the deadline falls back to its default variant when the default does not need that source. Example: `moment` becomes `welcome` when moment facts fail.
 - A section that depends only on the failed source is omitted, and so is a section whose default also needs the failed source. Example: `activity` without timeline.
 - When cases fails, `case_open` does not match and moment evaluation continues down the priority list.
 - When the advisory customer read fails, the moments whose copy names the advisor (`case_open` and `portfolio_review`) do not match and evaluation continues.
 - When the moment facts fail, only `case_open` and `welcome` can match.
 - When the beta flag is unavailable, the BFF serves revision `v1`.
-- When the investor profile fact fails, `idle_cash` does not match, and the sections whose variant depends on it (`highlights` and `suitability`) are omitted.
-- `title` and `subtitle` fall back to "Olá" and no subtitle when their source fails.
+- When the investor profile fact fails, `idle_cash` does not match, and the sections whose variant depends on it (`highlights` and `suitability`) are omitted. On Investir, `cash` then has no `profile_chip` and every product carries `above_profile: false` with no `badge` or `warning`.
+- When the catalog fails, the Investir `highlights`, `fixed_income`, `etfs`, and `stocks` sections are omitted with reason `catalog`.
+- `title` and `subtitle` fall back to "Olá" and no subtitle when their source fails. A heading with no customer field (Investir) keeps its title and subtitle.
 - A `Build` error drops only that component. A section left with zero components is omitted with reason `build_error`.
 - Every omitted section is listed in `omitted` with its reason.
 - The response is still `200` with the remaining sections. When every section is omitted, it is `200` with `"sections": []`.
@@ -189,6 +190,24 @@ The BFF serves home `v1` with every moment variant of the priority list except `
 - `advisor`: `name` is the advisory book advisor, `initials` its first two name initials, `meta` "Resposta em até {{sla}} · cliente {{segment}}" with the catalog SLA per segment (Essencial 24 h, Advance 4 h, Singular 1 h), and action "Conversar" → `panel` `message`. An unknown segment is a `build_error`.
 - `activity`: title "Atividade recente". `recent` holds the five most recent client-facing timeline rows as `{icon, title, meta}`. A row is client-facing when its timeline `source` is `account.event.recorded` or `message.received`; rows from `alert.raised`, `message.triaged`, `case.*`, advisor notes, and calls never reach the client, and neither does a row without `source`. `meta` is the relative time from the row's `occurred_at` to the request time, or from the indexed `ago` when `occurred_at` is absent. Icons are `aporte` `in`, `saque` and `aplicacao` `out`, and `mensagem` `msg`; any other kind has no icon. With no client-facing row, `empty` carries `items: []` and the empty text.
 
+### Investir `v1` served now
+
+The BFF serves investir `v1` under the same screen deadline. The heading is "Investir" / "Produtos fictícios · preço fixo da simulação".
+
+| Section | Type | Variants | Source | When the source fails |
+|---|---|---|---|---|
+| `cash` | `invest_summary` | `default` | account-sim; profile for the chip | account-sim: omitted, reason `account-sim`; profile: no chip |
+| `highlights` | `product_rail` | `profile_conservador`, `profile_moderado`, `profile_arrojado` | catalog, profile | omitted, reason `catalog` or `profile`; an unknown profile matches no variant and is `build_error` |
+| `fixed_income` | `product_list` | `fixed_income` | catalog; profile for the badges | catalog: omitted, reason `catalog`; profile: no badge |
+| `etfs` | `product_list` | `etf` | catalog; profile for the badges | as `fixed_income` |
+| `stocks` | `product_list` | `stocks` | catalog; profile for the badges | as `fixed_income` |
+
+- `cash`: `cash_label` "Disponível para investir", `cash` and `cash_cents` the account-sim cash, and `profile_chip` "Perfil {{profile}}" with the lowercase advisory investor profile.
+- `highlights`: `title` "Para o seu perfil {{profile}}", `subtitle` "Escolhidos pelo backend a partir do seu perfil de investidor.", and a fixed pick per profile, in order: conservador `tbill`, `corp`; moderado `acoesg`, `corp`; arrojado `cobalto`, `acoesg`. A pick missing from the catalog is a `build_error`.
+- The lists hold every catalog product of their `asset_class` (`renda_fixa`, `etfs`, `acoes`), ordered by risk and then id, with titles "Renda fixa", "ETFs", and "Ações". A class with no product is a `build_error`.
+- Products: `class_label` "Renda fixa", "ETF", or "Ação"; `risk_label` "Risco {{risk}} de 5"; `minimum` "Mínimo {{minimum}}" with whole dollars written without cents ("Mínimo US$ 1.000"); `above_profile` is true when `risk` is above the profile's `max_risk`, which is the same test the advisory suitability rule applies to a purchase. Above the profile, `badge` is "Acima do seu perfil" and `warning` is "Este produto tem risco {{risk}}. Seu perfil é {{profile}}, que vai até risco {{max_risk}}. Você pode investir mesmo assim, e a sua assessora será avisada." The action is "Investir" → `panel` `purchase` with the `product_id`.
+- On day 0 of the seed, Thiago (arrojado) has nothing above his profile; Fernanda (conservador, max 2) sees `acoesg`, `farol`, and `cobalto` above it; Mariana (moderado, max 3) sees `farol` and `cobalto` above it.
+
 ### Components (15 types)
 
 Shared objects used in the table:
@@ -207,7 +226,7 @@ The Variants column is not evaluation order; the catalog holds each section's or
 | `action_grid` | home `actions` | `default` | `items`: `[{label, icon?, action}]`, four `panel` actions: Depositar `deposit`, Sacar `withdraw`, Mensagem `message`, Reclamar `complaint` |
 | `advisor_card` | home `advisor`, perfil `advisor` | `default`, `dedicated` (Singular) | `kicker` ("Sua assessora" or "Sua assessora dedicada"), `name`, `initials`, `meta` ("Resposta em até … · cliente …"), `action?` (`panel` `message`) |
 | `activity_list` | home `activity`, carteira `history` | `recent`, `empty`, `history` | `title`, `items` (activity items; empty for `empty`), `empty_text?` (`empty`: "Suas movimentações aparecem aqui assim que acontecerem."; `history` with no items: "Nenhuma movimentação ainda.") |
-| `invest_summary` | investir `cash` | `default` | `cash_label`, `cash`, `cash_cents`, `profile_chip` ("Perfil moderado") |
+| `invest_summary` | investir `cash` | `default` | `cash_label`, `cash`, `cash_cents`, `profile_chip?` ("Perfil moderado", left out without a profile) |
 | `product_rail` | investir `highlights`; home `highlights` in beta revision `v2` | `profile_conservador`, `profile_moderado`, `profile_arrojado` | `title` ("Para o seu perfil …"), `subtitle`, `products` (products) |
 | `product_list` | investir `fixed_income`, `etfs`, `stocks` | `fixed_income`, `etf`, `stocks` | `title` ("Renda fixa", "ETFs", or "Ações"), `products` (products) |
 | `portfolio_summary` | carteira `summary` | `default`, `with_day_change` | `total_label`, `total`, `stats` (stats: "Valor aplicado", "Rentabilidade" signed with percentage, "Caixa", "Dia simulado"); `with_day_change` adds `day_change` and `day_change_tone` |

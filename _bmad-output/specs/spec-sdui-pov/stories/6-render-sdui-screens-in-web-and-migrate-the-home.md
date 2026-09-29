@@ -16,7 +16,7 @@ context:
 warnings: []
 deferred:
   - summary: >-
-      Remove the phase-2 home fallback in web once the purchase story lands.
+      Remove the phase-2 home fallback in web once the purchase story lands. (Resolved in story 10: the fallback is removed and replaced by the SDUI error state with retry.)
     evidence: |-
       When the screen request fails or answers a non-envelope body, ClientAppScreen renders the phase-2 home from GET /v1/client-pov/customers/{id} so ClientPov.test.tsx keeps passing unchanged; the shell strip, sidebar, and the deposit/withdraw/message/complaint panels also still read that route.
     location: >-
