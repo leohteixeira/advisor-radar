@@ -272,7 +272,8 @@ func (c screenCases) OpenCases(ctx context.Context, customerID string) ([]screen
 }
 
 // getScreen serves GET /v1/client-pov/customers/{id}/screens/{slug}. A bad id
-// is 400; an unknown slug or an account-sim NotFound is 404; any other source
+// is 400; X-SDUI-Schema is checked next (acceptSchema: 400 or 406); an
+// unknown slug or an account-sim NotFound is 404; any other source
 // failure omits sections and still answers 200. When the client is gone
 // before the screen is built, nothing is written or logged.
 func (h *Handler) getScreen(w http.ResponseWriter, r *http.Request) {
@@ -280,6 +281,9 @@ func (h *Handler) getScreen(w http.ResponseWriter, r *http.Request) {
 	id, err := identity.ParseV7(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	if !acceptSchema(w, r) {
 		return
 	}
 	res, err := h.screens.Build(r.Context(), r.PathValue("slug"), id)

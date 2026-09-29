@@ -13,9 +13,11 @@ import (
 	"text/template/parse"
 )
 
-// catalogJSON is the screen catalog: per screen and revision the ordered
-// sections, per variant its Portuguese copy templates, and per segment the
-// SLA text. Keys are English. A change ships with a BFF rebuild (ADR 0009).
+// catalogJSON is the screen catalog: per screen its revisions with their
+// ordered sections, the revision served by default and, for a screen with
+// one, the revision served to beta clients; per variant its Portuguese copy
+// templates; and per segment the SLA text. Keys are English. A change ships
+// with a BFF rebuild (ADR 0009).
 //
 //go:embed catalog.json
 var catalogJSON []byte
@@ -83,12 +85,16 @@ var headingSources = map[string]Source{
 // use.
 type Catalog struct {
 	version int
+	// screens is the revision each screen serves by default.
 	screens map[string]screenDef
-	copy    map[copyKey]*template.Template
-	sla     map[string]string
+	// beta is the revision served to clients in the beta program, for the
+	// screens that have one.
+	beta map[string]screenDef
+	copy map[copyKey]*template.Template
+	sla  map[string]string
 }
 
-// screenDef is the served revision of one screen. titleNeeds and
+// screenDef is one revision of a screen. titleNeeds and
 // subtitleNeeds are the sources whose fields each heading template reads;
 // each is empty for plain text. The title is always rendered, so a title
 // template must guard its own fields ({{if .FirstName}}…{{end}}) to read well
@@ -125,8 +131,11 @@ type catalogFile struct {
 }
 
 type screenFile struct {
-	Revision  string                  `json:"revision"`
-	Revisions map[string]revisionFile `json:"revisions"`
+	Revision string `json:"revision"`
+	// BetaRevision, when set, is served instead of Revision to a client whose
+	// stored beta flag is on.
+	BetaRevision string                  `json:"beta_revision"`
+	Revisions    map[string]revisionFile `json:"revisions"`
 }
 
 type revisionFile struct {
@@ -171,15 +180,19 @@ func parseCatalog(raw []byte) (Catalog, error) {
 	cat := Catalog{
 		version: file.Version,
 		screens: make(map[string]screenDef, len(file.Screens)),
+		beta:    map[string]screenDef{},
 		copy:    map[copyKey]*template.Template{},
 		sla:     make(map[string]string, len(file.Segments)),
 	}
 	for slug, sf := range file.Screens {
-		def, err := parseScreen(slug, sf)
+		def, beta, hasBeta, err := parseScreen(slug, sf)
 		if err != nil {
 			return Catalog{}, err
 		}
 		cat.screens[slug] = def
+		if hasBeta {
+			cat.beta[slug] = beta
+		}
 	}
 	for typ, variants := range file.Copy {
 		for variant, texts := range variants {
@@ -202,22 +215,30 @@ func parseCatalog(raw []byte) (Catalog, error) {
 	return cat, nil
 }
 
-// parseScreen validates every revision of a screen and keeps the served one.
-func parseScreen(slug string, sf screenFile) (screenDef, error) {
+// parseScreen validates every revision of a screen and returns the one it
+// serves by default and, when hasBeta, the one it serves to beta clients.
+func parseScreen(slug string, sf screenFile) (served, beta screenDef, hasBeta bool, err error) {
 	if _, ok := sf.Revisions[sf.Revision]; !ok {
-		return screenDef{}, fmt.Errorf("%w: screen %q serves missing revision %q", errCatalog, slug, sf.Revision)
+		return screenDef{}, screenDef{}, false, fmt.Errorf("%w: screen %q serves missing revision %q", errCatalog, slug, sf.Revision)
 	}
-	var served screenDef
+	if sf.BetaRevision != "" {
+		if _, ok := sf.Revisions[sf.BetaRevision]; !ok || sf.BetaRevision == sf.Revision {
+			return screenDef{}, screenDef{}, false, fmt.Errorf("%w: screen %q has beta revision %q, which must be another of its revisions", errCatalog, slug, sf.BetaRevision)
+		}
+	}
 	for rev, rf := range sf.Revisions {
 		def, err := parseRevision(slug, rev, rf)
 		if err != nil {
-			return screenDef{}, err
+			return screenDef{}, screenDef{}, false, err
 		}
 		if rev == sf.Revision {
 			served = def
 		}
+		if sf.BetaRevision != "" && rev == sf.BetaRevision {
+			beta, hasBeta = def, true
+		}
 	}
-	return served, nil
+	return served, beta, hasBeta, nil
 }
 
 func parseRevision(slug, rev string, rf revisionFile) (screenDef, error) {

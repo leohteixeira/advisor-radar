@@ -215,7 +215,8 @@ type Sources struct {
 	Profiles  ProfileSource
 	Cases     CaseSource
 	Products  ProductSource
-	// Registrations and Preferences are the account-sim reads of Perfil.
+	// Registrations and Preferences are the account-sim reads of Perfil;
+	// Preferences also picks the home revision.
 	Registrations RegistrationSource
 	Preferences   PreferenceSource
 }
@@ -249,7 +250,8 @@ type Snapshot struct {
 	Profile    Fetched[InvestorProfile]
 	Cases      Fetched[[]OpenCase]
 	Products   Fetched[[]Product]
-	// Registration and Preferences are read for Perfil only.
+	// Registration is read for Perfil, and Preferences for Perfil and to
+	// pick the revision of a screen with a beta revision.
 	Registration Fetched[Registration]
 	Preferences  Fetched[Preferences]
 }

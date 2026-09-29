@@ -3,6 +3,7 @@
   "screens": {
     "home": {
       "revision": "v1",
+      "beta_revision": "v2",
       "revisions": {
         "v1": {
           "title": "Olá{{if .FirstName}}, {{.FirstName}}{{end}}",
@@ -20,6 +21,34 @@
                 "portfolio_review",
                 "welcome"
               ]
+            },
+            { "id": "wealth", "type": "wealth_summary", "variants": ["with_day_change", "default"] },
+            { "id": "actions", "type": "action_grid", "variants": ["default"] },
+            { "id": "advisor", "type": "advisor_card", "variants": ["dedicated", "default"] },
+            { "id": "activity", "type": "activity_list", "variants": ["recent", "empty"] }
+          ]
+        },
+        "v2": {
+          "title": "Olá{{if .FirstName}}, {{.FirstName}}{{end}}",
+          "subtitle": "Cliente {{.Segment}}{{if .Since}} desde {{.Since}}{{end}}",
+          "sections": [
+            {
+              "id": "moment",
+              "type": "moment_card",
+              "variants": [
+                "portfolio_drop",
+                "case_open",
+                "segment_upgraded",
+                "segment_upgrade_near",
+                "idle_cash",
+                "portfolio_review",
+                "welcome"
+              ]
+            },
+            {
+              "id": "highlights",
+              "type": "product_rail",
+              "variants": ["profile_conservador", "profile_moderado", "profile_arrojado"]
             },
             { "id": "wealth", "type": "wealth_summary", "variants": ["with_day_change", "default"] },
             { "id": "actions", "type": "action_grid", "variants": ["default"] },

@@ -91,6 +91,7 @@ type Engine struct {
 	sources        Sources
 	catalog        Catalog
 	plans          map[string]plan
+	betaPlans      map[string]plan // the beta revision of the screens with one
 	deadline       time.Duration
 	reporter       DropReporter
 	now            func() time.Time
@@ -100,9 +101,9 @@ type Engine struct {
 	drops          dropCounter
 }
 
-// plan is the served revision of one screen with its variants resolved.
-// sources is what a Build of the screen fetches, in allSources order;
-// required is the subset whose failure is a screen failure.
+// plan is one revision of a screen with its variants resolved. sources is
+// what a Build of the screen fetches, in allSources order; required is the
+// subset whose failure is a screen failure.
 type plan struct {
 	def      screenDef
 	sections []plannedSection
@@ -208,6 +209,7 @@ func newEngine(src Sources, cat Catalog, variants map[variantKey]registered, opt
 		sources:        src,
 		catalog:        cat,
 		plans:          make(map[string]plan, len(cat.screens)),
+		betaPlans:      make(map[string]plan, len(cat.beta)),
 		deadline:       DefaultDeadline,
 		reporter:       noopReporter{},
 		now:            time.Now,
@@ -229,6 +231,13 @@ func newEngine(src Sources, cat Catalog, variants map[variantKey]registered, opt
 			return nil, err
 		}
 		e.plans[slug] = p
+		if beta, ok := cat.beta[slug]; ok {
+			bp, err := resolve(slug, beta, variants)
+			if err != nil {
+				return nil, err
+			}
+			e.plans[slug], e.betaPlans[slug] = withBeta(p, bp)
+		}
 	}
 	return e, nil
 }
@@ -284,14 +293,16 @@ func planSources(def screenDef, sections []plannedSection) (fetched, required []
 	return fetched, required
 }
 
-// Build composes one screen for a customer. It fails only for an unknown
-// slug (ErrUnknownScreen), when account-sim does not know the customer
-// (ErrUnknownCustomer), or with ctx.Err() when the request ended during the
-// fetch, in which case nothing is reported; every other failure omits
-// sections and is listed in Result.Failures.
+// Build composes one screen for a customer, in the revision servedPlan picks
+// from the Snapshot. It fails only for an unknown slug (ErrUnknownScreen),
+// when account-sim does not know the customer (ErrUnknownCustomer), or with
+// ctx.Err() when the request ended during the fetch, in which case nothing is
+// reported; every other failure omits sections and is listed in
+// Result.Failures.
 //
-// An unknown slug is neither traced nor measured, so a path value never
-// becomes a span or a label.
+// The screen span starts with the default revision and carries the served one
+// once it is chosen. An unknown slug is neither traced nor measured, so a path
+// value never becomes a span or a label.
 func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, error) {
 	p, ok := e.plans[slug]
 	if !ok {
@@ -316,6 +327,9 @@ func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, er
 		// A 404, not a server fault: the span stays unset.
 		return Result{}, snap.Account.Err
 	}
+	beta, hasBeta := e.betaPlans[slug]
+	p = servedPlan(p, beta, hasBeta, snap)
+	span.SetAttributes(attrRevision.String(p.def.revision))
 
 	var res Result
 	for _, src := range p.required {
