@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "screens": {
+    "home": {
+      "revision": "v1",
+      "revisions": {
+        "v1": {
+          "title": "Olá{{if .FirstName}}, {{.FirstName}}{{end}}",
+          "subtitle": "Cliente {{.Segment}}{{if .Since}} desde {{.Since}}{{end}}",
+          "sections": [
+            { "id": "moment", "type": "moment_card", "variants": ["welcome"] },
+            { "id": "wealth", "type": "wealth_summary", "variants": ["default"] },
+            { "id": "actions", "type": "action_grid", "variants": ["default"] },
+            { "id": "advisor", "type": "advisor_card", "variants": ["dedicated", "default"] },
+            { "id": "activity", "type": "activity_list", "variants": ["recent", "empty"] }
+          ]
+        }
+      }
+    }
+  },
+  "copy": {
+    "moment_card": {
+      "welcome": {
+        "kicker": "Tudo em dia",
+        "title": "Olá{{if .FirstName}}, {{.FirstName}}{{end}}. Sua conta está em dia.",
+        "body": "Quando algo mudar na sua carteira, você vê aqui primeiro."
+      }
+    },
+    "wealth_summary": {
+      "default": {
+        "total_label": "Patrimônio total",
+        "cash_label": "Disponível para saque",
+        "stocks": "Ações",
+        "etfs": "ETFs",
+        "fixed_income": "Renda fixa",
+        "cash": "Caixa"
+      }
+    },
+    "action_grid": {
+      "default": {
+        "deposit": "Depositar",
+        "withdraw": "Sacar",
+        "message": "Mensagem",
+        "complaint": "Reclamar"
+      }
+    },
+    "advisor_card": {
+      "dedicated": {
+        "kicker": "Sua assessora dedicada",
+        "meta": "Resposta em até {{.SLA}} · cliente {{.Segment}}",
+        "action": "Conversar"
+      },
+      "default": {
+        "kicker": "Sua assessora",
+        "meta": "Resposta em até {{.SLA}} · cliente {{.Segment}}",
+        "action": "Conversar"
+      }
+    },
+    "activity_list": {
+      "recent": {
+        "title": "Atividade recente"
+      },
+      "empty": {
+        "title": "Atividade recente",
+        "empty_text": "Suas movimentações aparecem aqui assim que acontecerem."
+      }
+    }
+  },
+  "segments": {
+    "Essencial": { "sla": "24 h" },
+    "Advance": { "sla": "4 h" },
+    "Singular": { "sla": "1 h" }
+  }
+}

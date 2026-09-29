@@ -1,0 +1,173 @@
+package screen
+
+import (
+	"errors"
+	"math/bits"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
+)
+
+// minus is U+2212, the sign every negative display value uses.
+const minus = "−"
+
+// errShareOverflow is returned by Shares when the values sum past uint64.
+var errShareOverflow = errors.New("screen: shares overflow")
+
+// Money formats integer USD cents as "US$ 1.234,56" with pt-BR grouping. A
+// negative amount reads "− US$ 1.234,56" with U+2212.
+func Money(cents int64) string {
+	magnitude := uint64(cents)
+	if cents < 0 {
+		magnitude = -magnitude // two's complement: exact even for math.MinInt64
+	}
+	var b strings.Builder
+	if cents < 0 {
+		b.WriteString(minus + " ")
+	}
+	b.WriteString("US$ ")
+	b.WriteString(groupThousands(magnitude / 100))
+	b.WriteByte(',')
+	frac := magnitude % 100
+	if frac < 10 {
+		b.WriteByte('0')
+	}
+	b.WriteString(strconv.FormatUint(frac, 10))
+	return b.String()
+}
+
+// groupThousands writes n with "." between groups of three digits.
+func groupThousands(n uint64) string {
+	digits := strconv.FormatUint(n, 10)
+	if len(digits) <= 3 {
+		return digits
+	}
+	var b strings.Builder
+	b.Grow(len(digits) + len(digits)/3)
+	lead := len(digits) % 3
+	if lead == 0 {
+		lead = 3
+	}
+	b.WriteString(digits[:lead])
+	for i := lead; i < len(digits); i += 3 {
+		b.WriteByte('.')
+		b.WriteString(digits[i : i+3])
+	}
+	return b.String()
+}
+
+// Percent formats a whole percentage as "62%".
+func Percent(p int) string {
+	return strconv.Itoa(p) + "%"
+}
+
+// Shares splits 100 percentage points across values by largest remainder, so
+// the shares sum to exactly 100 whenever the total is positive. Each value
+// gets the floor of its exact share; the points left go one each to the
+// largest remainders, ties to the earlier value. Negative values count as
+// zero. All shares are zero when the total is zero.
+func Shares(values []int64) ([]int, error) {
+	shares := make([]int, len(values))
+	var total uint64
+	for _, v := range values {
+		var carry uint64
+		total, carry = bits.Add64(total, nonNegative(v), 0)
+		if carry != 0 {
+			return nil, errShareOverflow
+		}
+	}
+	if total == 0 {
+		return shares, nil
+	}
+	remainders := make([]uint64, len(values))
+	assigned := 0
+	for i, v := range values {
+		// v·100 in 128 bits; v ≤ total keeps the high word below total, which
+		// Div64 requires.
+		hi, lo := bits.Mul64(nonNegative(v), 100)
+		q, r := bits.Div64(hi, lo, total)
+		shares[i] = int(q) // q ≤ 100
+		remainders[i] = r
+		assigned += int(q)
+	}
+	order := make([]int, len(values))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int {
+		switch {
+		case remainders[a] > remainders[b]:
+			return -1
+		case remainders[a] < remainders[b]:
+			return 1
+		default:
+			return 0
+		}
+	})
+	for _, i := range order[:100-assigned] {
+		shares[i]++
+	}
+	return shares, nil
+}
+
+func nonNegative(v int64) uint64 {
+	if v < 0 {
+		return 0
+	}
+	return uint64(v)
+}
+
+// RelativeTime formats how long ago something happened: "agora" under a
+// minute, "há 5 min", "há 3 h", "ontem" from 24 to 48 hours, then "há 4 dias".
+// A negative age reads "agora".
+func RelativeTime(age time.Duration) string {
+	day := 24 * time.Hour
+	switch {
+	case age < time.Minute:
+		return "agora"
+	case age < time.Hour:
+		return "há " + strconv.FormatInt(int64(age/time.Minute), 10) + " min"
+	case age < day:
+		return "há " + strconv.FormatInt(int64(age/time.Hour), 10) + " h"
+	case age < 2*day:
+		return "ontem"
+	default:
+		return "há " + strconv.FormatInt(int64(age/day), 10) + " dias"
+	}
+}
+
+// FirstName is the first word of a display name.
+func FirstName(name string) string {
+	for word := range strings.FieldsSeq(name) {
+		return word
+	}
+	return ""
+}
+
+// nameConnectors are the Portuguese particles Initials skips.
+var nameConnectors = map[string]struct{}{
+	"da": {}, "das": {}, "de": {}, "do": {}, "dos": {}, "e": {},
+}
+
+// Initials are the upper-cased first letters of the first two words of a
+// name, skipping Portuguese connectors, so "Ana Paula Ribeiro" is "AP" and
+// "Maria da Silva" is "MS".
+func Initials(name string) string {
+	var b strings.Builder
+	count := 0
+	for word := range strings.FieldsSeq(name) {
+		if _, skip := nameConnectors[strings.ToLower(word)]; skip {
+			continue
+		}
+		r, _ := utf8.DecodeRuneInString(word)
+		b.WriteRune(unicode.ToUpper(r))
+		count++
+		if count == 2 {
+			break
+		}
+	}
+	return b.String()
+}

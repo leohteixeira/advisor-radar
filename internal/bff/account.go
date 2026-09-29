@@ -210,11 +210,22 @@ func accountSimError(op string, err error) error {
 }
 
 func povFromProto(a *accountv1.Account) POVAccount {
+	positions := make([]POVPosition, 0, len(a.GetPositions()))
+	for _, p := range a.GetPositions() {
+		positions = append(positions, POVPosition{
+			ProductID:    p.GetProductId(),
+			AssetClass:   p.GetAssetClass(),
+			AppliedCents: p.GetAppliedCents(),
+			ValueCents:   p.GetValueCents(),
+		})
+	}
 	return POVAccount{
 		CustomerID: a.GetCustomerId(),
 		Acoes:      a.GetAcoesCents(),
 		ETFs:       a.GetEtfsCents(),
 		RendaFixa:  a.GetRendaFixaCents(),
 		Caixa:      a.GetCaixaCents(),
+		Patrimony:  a.GetPatrimonyCents(),
+		Positions:  positions,
 	}
 }

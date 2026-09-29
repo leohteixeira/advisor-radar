@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/leohteixeira/advisor-radar/internal/identity"
+	"github.com/leohteixeira/advisor-radar/internal/screen"
 )
 
 // Handler serves the queue, SSE stream, actions proxy, cases, timeline,
@@ -27,6 +28,7 @@ type Handler struct {
 	review     ReviewSource
 	timeline   TimelineClient
 	pov        POVSource
+	screens    *screen.Engine
 	now        func() time.Time
 	limits     *povLimiter
 	counts     *povCounts
@@ -105,6 +107,7 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	if h.pov == nil {
 		h.pov = emptyPOV{}
 	}
+	h.screens = newScreenEngine(h.pov, h.queue, h.timeline, h.now)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/queue", h.queueHandler)
 	mux.HandleFunc("GET /v1/queue/stream", h.stream)
@@ -126,6 +129,7 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/complaints", h.postPOVComplaint)
 	mux.HandleFunc("GET /v1/client-pov/counters", h.povCounters)
 	mux.HandleFunc("GET /v1/client-pov/customers/{id}/stream", h.povStream)
+	mux.HandleFunc("GET /v1/client-pov/customers/{id}/screens/{slug}", h.getScreen)
 	return &Server{Handler: mux, bastidores: h.bastidores, h: h}
 }
 

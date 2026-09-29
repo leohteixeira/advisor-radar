@@ -25,13 +25,25 @@ const (
 	povDay       = 24 * time.Hour
 )
 
-// POVAccount is one seeded balance in integer USD cents.
+// POVAccount is one account-sim account in integer USD cents. Acoes, ETFs,
+// and RendaFixa are class aggregates of Positions at market value; Patrimony
+// is positions plus Caixa, as account-sim reports it.
 type POVAccount struct {
 	CustomerID string
 	Acoes      int64
 	ETFs       int64
 	RendaFixa  int64
 	Caixa      int64
+	Patrimony  int64
+	Positions  []POVPosition
+}
+
+// POVPosition is one holding in integer USD cents.
+type POVPosition struct {
+	ProductID    string
+	AssetClass   string
+	AppliedCents int64
+	ValueCents   int64
 }
 
 // assets is the sum of the four classes.
