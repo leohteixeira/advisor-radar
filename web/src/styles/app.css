@@ -2893,6 +2893,32 @@ a.detail__360 {
   background: #0b1220;
   border: 6px solid #26324d;
   border-radius: 28px;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.selection__sdui-phone--scrolling {
+  scrollbar-color: rgb(242 181 68 / 80%) transparent;
+}
+
+.selection__sdui-phone::-webkit-scrollbar {
+  width: 12px;
+}
+
+.selection__sdui-phone::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 22px;
+}
+
+.selection__sdui-phone::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border: 4px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+.selection__sdui-phone--scrolling::-webkit-scrollbar-thumb {
+  background-color: rgb(242 181 68 / 80%);
 }
 
 .selection--wide .selection__sdui-phone {

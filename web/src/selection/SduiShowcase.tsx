@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { fetchPOVClients, type POVClient } from '../api/pov';
 import { fetchScreenResponse, UnsupportedSchemaError } from '../sdui/api';
 import { SduiContext, type SduiContextValue } from '../sdui/context';
@@ -341,9 +341,34 @@ function ResponseJSON({ json }: { json: string }) {
   );
 }
 
+/** How long the phone scrollbar stays visible after scrolling stops. */
+const PHONE_SCROLLBAR_MS = 700;
+
 function PhoneFrame({ who, client, screen }: { who: SduiClientName; client: RosterClient; screen: Screen }) {
+  const frameRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) {
+      return;
+    }
+    let hideTimer = 0;
+    const onScroll = () => {
+      frame.classList.add('selection__sdui-phone--scrolling');
+      window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => {
+        frame.classList.remove('selection__sdui-phone--scrolling');
+      }, PHONE_SCROLLBAR_MS);
+    };
+    frame.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      frame.removeEventListener('scroll', onScroll);
+      window.clearTimeout(hideTimer);
+    };
+  }, []);
+
   return (
-    <div className="selection__sdui-phone" role="region" aria-label={`Início de ${who} no app`} tabIndex={0}>
+    <div ref={frameRef} className="selection__sdui-phone" role="region" aria-label={`Início de ${who} no app`} tabIndex={0}>
       <div className="pov-app selection__sdui-app" inert>
         <div className="selection__sdui-appbar">
           <span className="pov-app__logo">
