@@ -80,4 +80,4 @@ Deploy advisory before cases. Cases intake reads the advisor from advisory `GetC
 
 ## Contract
 
-The BFF HTTP contract, including the POV routes, is in [specs/http/bff.md](specs/http/bff.md). Client commands are recorded in [specs/adr/0008-client-command-grpc-outbox.md](specs/adr/0008-client-command-grpc-outbox.md). OpenTelemetry is described under [Observability](#observability).
+The BFF HTTP contract, including the POV routes, is in [specs/http/bff.md](specs/http/bff.md). To add a variant to an existing screen section, follow the [`add-sdui-variant` skill](.claude/skills/add-sdui-variant/SKILL.md). Client commands are recorded in [specs/adr/0008-client-command-grpc-outbox.md](specs/adr/0008-client-command-grpc-outbox.md). OpenTelemetry is described under [Observability](#observability).
