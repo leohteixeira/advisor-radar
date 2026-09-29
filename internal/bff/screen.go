@@ -136,11 +136,13 @@ func (a screenActivity) Activity(ctx context.Context, customerID string) ([]scre
 	out := make([]screen.Activity, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, screen.Activity{
-			Kind:       row.Kind,
-			Title:      row.Title,
-			Source:     row.Source,
-			OccurredAt: row.OccurredAt,
-			Age:        time.Duration(max(row.Ago, 0)) * time.Minute,
+			Kind:        row.Kind,
+			Title:       row.Title,
+			Source:      row.Source,
+			OccurredAt:  row.OccurredAt,
+			Age:         time.Duration(max(row.Ago, 0)) * time.Minute,
+			ProductID:   row.ProductID,
+			AmountCents: row.AmountCents,
 		})
 	}
 	return out, nil

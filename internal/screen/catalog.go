@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/template"
 	"text/template/parse"
@@ -49,6 +50,25 @@ type Fields struct {
 	MaxRisk string
 	// Minimum is a product's minimum purchase as compact money.
 	Minimum string
+	// Day is the global simulated day, such as "0".
+	Day string
+	// Product is a catalog product name.
+	Product string
+	// Amount is signed or plain money, as the template places it.
+	Amount string
+	// Percent is a formatted percentage, such as "+11,5%".
+	Percent string
+}
+
+// headingSources maps each field a screen heading may use to the Snapshot
+// source that fills it. A heading template naming any other field is an
+// invalid catalog.
+var headingSources = map[string]Source{
+	"FirstName":   SourceAdvisory,
+	"AdvisorName": SourceAdvisory,
+	"Segment":     SourceAdvisory,
+	"Since":       SourceAdvisory,
+	"Day":         SourceAccount,
 }
 
 // Catalog is the parsed, read-only screen catalog. It is safe for concurrent
@@ -60,14 +80,18 @@ type Catalog struct {
 	sla     map[string]string
 }
 
-// screenDef is the served revision of one screen. staticSubtitle is set when
-// the subtitle template is plain text, so it needs no advisory field.
+// screenDef is the served revision of one screen. titleNeeds and
+// subtitleNeeds are the sources whose fields each heading template reads;
+// each is empty for plain text. The title is always rendered, so a title
+// template must guard its own fields ({{if .FirstName}}…{{end}}) to read well
+// when their source failed; the subtitle is left out instead.
 type screenDef struct {
-	revision       string
-	title          *template.Template
-	subtitle       *template.Template
-	staticSubtitle bool
-	sections       []sectionDef
+	revision      string
+	title         *template.Template
+	subtitle      *template.Template
+	titleNeeds    []Source
+	subtitleNeeds []Source
+	sections      []sectionDef
 }
 
 // sectionDef is one catalog section: its component type and its variants in
@@ -201,12 +225,21 @@ func parseRevision(slug, rev string, rf revisionFile) (screenDef, error) {
 	if err != nil {
 		return screenDef{}, err
 	}
+	titleNeeds, err := templateSources(title)
+	if err != nil {
+		return screenDef{}, fmt.Errorf("%w: %s/title: %w", errCatalog, where, err)
+	}
+	subtitleNeeds, err := templateSources(subtitle)
+	if err != nil {
+		return screenDef{}, fmt.Errorf("%w: %s/subtitle: %w", errCatalog, where, err)
+	}
 	def := screenDef{
-		revision:       rev,
-		title:          title,
-		subtitle:       subtitle,
-		staticSubtitle: isPlainText(subtitle),
-		sections:       make([]sectionDef, 0, len(rf.Sections)),
+		revision:      rev,
+		title:         title,
+		subtitle:      subtitle,
+		titleNeeds:    titleNeeds,
+		subtitleNeeds: subtitleNeeds,
+		sections:      make([]sectionDef, 0, len(rf.Sections)),
 	}
 	seen := make(map[string]struct{}, len(rf.Sections))
 	for _, s := range rf.Sections {
@@ -236,15 +269,92 @@ func parseTemplate(name, text string) (*template.Template, error) {
 	return tmpl, nil
 }
 
-// isPlainText reports whether tmpl holds only text and no action, so it
-// renders the same whatever the fields.
-func isPlainText(tmpl *template.Template) bool {
-	for _, node := range tmpl.Root.Nodes {
-		if node.Type() != parse.NodeText {
-			return false
+// templateSources returns the sources that fill the fields a heading
+// template reads, in order of first use and without repeats. A plain-text
+// template needs none. A field outside headingSources, and any template call
+// ({{template}} or {{block}}), whose fields cannot be traced, is an error.
+func templateSources(tmpl *template.Template) ([]Source, error) {
+	var fields []string
+	if err := collectFields(tmpl.Root, true, &fields); err != nil {
+		return nil, err
+	}
+	var sources []Source
+	for _, name := range fields {
+		src, ok := headingSources[name]
+		if !ok {
+			return nil, fmt.Errorf("field %q cannot be used in a heading", name)
+		}
+		if !slices.Contains(sources, src) {
+			sources = append(sources, src)
 		}
 	}
-	return true
+	return sources, nil
+}
+
+// collectFields appends the first identifier of every heading field read
+// under node: "FirstName" for {{.FirstName}}, {{if .FirstName}}, or
+// {{$.FirstName}}. isRootDot reports whether dot is still the Fields value.
+// Inside a with or range body dot is rebound to the pipeline value, so a
+// field relative to it names no heading field and is not collected; the
+// pipeline itself and the else branch read the outer dot.
+func collectFields(node parse.Node, isRootDot bool, out *[]string) error {
+	switch n := node.(type) {
+	case *parse.ListNode:
+		if n == nil {
+			return nil
+		}
+		for _, child := range n.Nodes {
+			if err := collectFields(child, isRootDot, out); err != nil {
+				return err
+			}
+		}
+	case *parse.ActionNode:
+		return collectFields(n.Pipe, isRootDot, out)
+	case *parse.IfNode:
+		return collectBranch(&n.BranchNode, isRootDot, isRootDot, out)
+	case *parse.RangeNode:
+		return collectBranch(&n.BranchNode, isRootDot, false, out)
+	case *parse.WithNode:
+		return collectBranch(&n.BranchNode, isRootDot, false, out)
+	case *parse.TemplateNode:
+		return fmt.Errorf("template %q cannot be called in a heading", n.Name)
+	case *parse.PipeNode:
+		if n == nil {
+			return nil
+		}
+		for _, cmd := range n.Cmds {
+			for _, arg := range cmd.Args {
+				if err := collectFields(arg, isRootDot, out); err != nil {
+					return err
+				}
+			}
+		}
+	case *parse.ChainNode:
+		return collectFields(n.Node, isRootDot, out)
+	case *parse.FieldNode:
+		if isRootDot {
+			*out = append(*out, n.Ident[0])
+		}
+	case *parse.VariableNode:
+		// $ is always the Fields value; other variables hold a pipeline
+		// whose fields were collected where it was declared.
+		if n.Ident[0] == "$" && len(n.Ident) > 1 {
+			*out = append(*out, n.Ident[1])
+		}
+	}
+	return nil
+}
+
+// collectBranch walks an if, with, or range: its pipeline and else branch
+// with the outer dot, and its body with bodyRootDot.
+func collectBranch(b *parse.BranchNode, isRootDot, bodyRootDot bool, out *[]string) error {
+	if err := collectFields(b.Pipe, isRootDot, out); err != nil {
+		return err
+	}
+	if err := collectFields(b.List, bodyRootDot, out); err != nil {
+		return err
+	}
+	return collectFields(b.ElseList, isRootDot, out)
 }
 
 // Version is the catalog file version.

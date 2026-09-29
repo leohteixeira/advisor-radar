@@ -179,6 +179,60 @@ type ProductList struct {
 	Products []ProductItem `json:"products"`
 }
 
+// PortfolioSummary is the portfolio_summary props: total patrimony and the
+// stats "Valor aplicado", "Rentabilidade", "Caixa", and "Dia simulado".
+type PortfolioSummary struct {
+	TotalLabel string `json:"total_label"`
+	Total      string `json:"total"`
+	Stats      []Stat `json:"stats"`
+}
+
+// Stat is one labelled value. Tone is set only for a signed value. Money
+// marks a value that holds money, which web masks with the eye toggle.
+type Stat struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+	Tone  string `json:"tone,omitempty"`
+	Money bool   `json:"money,omitempty"`
+}
+
+// AllocationBreakdown is the allocation_breakdown props: one row per class,
+// zero included.
+type AllocationBreakdown struct {
+	Title string         `json:"title"`
+	Rows  []BreakdownRow `json:"rows"`
+}
+
+// BreakdownRow is an allocation row with the class value as money.
+// BarWidth is 0–100 and equals the share.
+type BreakdownRow struct {
+	Class    string `json:"class"`
+	Label    string `json:"label"`
+	Value    string `json:"value"`
+	Share    string `json:"share"`
+	BarWidth int    `json:"bar_width"`
+}
+
+// PositionList is the position_list props: the positions of one asset
+// class, by value descending and then product id.
+type PositionList struct {
+	Title        string         `json:"title"`
+	Subtotal     string         `json:"subtotal"`
+	AppliedLabel string         `json:"applied_label"`
+	Items        []PositionItem `json:"items"`
+}
+
+// PositionItem is one position: the applied and current value as money, and
+// the return as a signed percentage with its tone.
+type PositionItem struct {
+	ProductID  string `json:"product_id"`
+	Name       string `json:"name"`
+	Applied    string `json:"applied"`
+	Value      string `json:"value"`
+	Return     string `json:"return"`
+	ReturnTone string `json:"return_tone"`
+}
+
 // ProductItem is one product as the Investir screen and the purchase form
 // show it. Risk is 1–5 for the bars. Badge and Warning are set only when
 // AboveProfile is true. Action is a purchase panel for ProductID.

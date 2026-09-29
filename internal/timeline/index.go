@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -41,6 +42,14 @@ type Entry struct {
 	Source string `json:"source,omitempty"`
 	// OccurredAt is the event time; Ago is frozen at index time.
 	OccurredAt time.Time `json:"occurred_at,omitzero"`
+	// ProductID is the catalog product an account event names, such as the
+	// one an aplicacao bought.
+	ProductID string `json:"product_id,omitempty"`
+	// AmountCents is an account event's amount in integer USD cents, whatever
+	// its schema version (version 1 whole dollars are scaled). Zero for rows
+	// that are not account events, and for an account event whose amount is
+	// not a number or is past 2^53 cents.
+	AmountCents int64 `json:"amount_cents,omitempty"`
 }
 
 // Index is an in-memory customer timeline. It has no database.
@@ -126,7 +135,7 @@ func (idx *Index) ApplyDelivery(ctx context.Context, routingKey string, body []b
 		return false, Entry{}, nil
 	}
 
-	entry, err = entryFromEvent(routingKey, raw.EventID, raw.CustomerID, raw.OccurredAt, raw.Payload)
+	entry, err = entryFromEvent(routingKey, raw.EventID, raw.CustomerID, raw.OccurredAt, raw.SchemaVersion, raw.Payload)
 	if err != nil {
 		return false, Entry{}, err
 	}
@@ -177,16 +186,19 @@ func matchQuery(e Entry, q string) bool {
 	return strings.Contains(hay, q)
 }
 
-func entryFromEvent(name, eventID, customerID string, at time.Time, payload json.RawMessage) (Entry, error) {
+// entryFromEvent maps one event to its row. schemaVersion scales an account
+// event's amount: version 1 carries whole dollars, later versions cents.
+func entryFromEvent(name, eventID, customerID string, at time.Time, schemaVersion int, payload json.RawMessage) (Entry, error) {
 	ago := minutesAgo(at)
 	switch name {
 	case event.NameAccountEventRecorded:
 		var p struct {
-			Kind   string `json:"kind"`
-			Title  string `json:"title"`
-			Text   string `json:"text"`
-			Meta   string `json:"meta"`
-			Amount any    `json:"amount"`
+			Kind      string `json:"kind"`
+			Title     string `json:"title"`
+			Text      string `json:"text"`
+			Meta      string `json:"meta"`
+			Amount    any    `json:"amount"`
+			ProductID string `json:"product_id"`
 		}
 		if err := json.Unmarshal(payload, &p); err != nil {
 			return Entry{}, fmt.Errorf("timeline: decode account payload: %w", err)
@@ -199,7 +211,17 @@ func entryFromEvent(name, eventID, customerID string, at time.Time, payload json
 		if title == "" {
 			title = kindTitle(kind)
 		}
-		return Entry{EventID: eventID, CustomerID: customerID, Kind: kind, Title: title, Text: p.Text, Meta: p.Meta, Ago: ago}, nil
+		return Entry{
+			EventID:     eventID,
+			CustomerID:  customerID,
+			Kind:        kind,
+			Title:       title,
+			Text:        p.Text,
+			Meta:        p.Meta,
+			Ago:         ago,
+			ProductID:   p.ProductID,
+			AmountCents: amountCents(p.Amount, schemaVersion),
+		}, nil
 	case event.NameMessageReceived, event.NameMessageTriaged:
 		var p struct {
 			Text    string `json:"text"`
@@ -277,6 +299,29 @@ func entryFromEvent(name, eventID, customerID string, at time.Time, payload json
 	default:
 		return Entry{}, fmt.Errorf("timeline: unsupported event %q", name)
 	}
+}
+
+// maxExactCents bounds the amounts amountCents keeps: every integer up to
+// 2^53 is exact in a float64.
+const maxExactCents = 1 << 53
+
+// amountCents reads an account event amount as integer USD cents. Schema
+// version 1 carries whole dollars; versions 2 and 3 carry cents. An amount
+// that is not a number or is too large to be exact reads 0: the row is still
+// worth indexing without it.
+func amountCents(amount any, schemaVersion int) int64 {
+	n, ok := amount.(float64)
+	if !ok {
+		return 0
+	}
+	if schemaVersion == 1 {
+		n *= 100
+	}
+	n = math.Round(n)
+	if math.Abs(n) > maxExactCents {
+		return 0
+	}
+	return int64(n)
 }
 
 func kindTitle(kind string) string {

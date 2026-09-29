@@ -40,6 +40,23 @@
           ]
         }
       }
+    },
+    "carteira": {
+      "revision": "v1",
+      "revisions": {
+        "v1": {
+          "title": "Carteira",
+          "subtitle": "Valores de mercado no dia simulado {{.Day}}",
+          "sections": [
+            { "id": "summary", "type": "portfolio_summary", "variants": ["default"] },
+            { "id": "allocation", "type": "allocation_breakdown", "variants": ["default"] },
+            { "id": "positions_stocks", "type": "position_list", "variants": ["stocks"] },
+            { "id": "positions_etf", "type": "position_list", "variants": ["etf"] },
+            { "id": "positions_fixed_income", "type": "position_list", "variants": ["fixed_income"] },
+            { "id": "history", "type": "activity_list", "variants": ["history"] }
+          ]
+        }
+      }
     }
   },
   "copy": {
@@ -119,7 +136,41 @@
       "empty": {
         "title": "Atividade recente",
         "empty_text": "Suas movimentações aparecem aqui assim que acontecerem."
+      },
+      "history": {
+        "title": "Movimentações",
+        "empty_text": "Nenhuma movimentação ainda."
       }
+    },
+    "activity_row": {
+      "default": {
+        "aplicacao": "Compra · {{.Product}}",
+        "aplicacao_unnamed": "Compra"
+      }
+    },
+    "portfolio_summary": {
+      "default": {
+        "total_label": "Patrimônio total",
+        "applied": "Valor aplicado",
+        "return": "Rentabilidade",
+        "return_value": "{{.Amount}} ({{.Percent}})",
+        "cash": "Caixa",
+        "day": "Dia simulado"
+      }
+    },
+    "allocation_breakdown": {
+      "default": {
+        "title": "Alocação",
+        "stocks": "Ações",
+        "etfs": "ETFs",
+        "fixed_income": "Renda fixa",
+        "cash": "Caixa"
+      }
+    },
+    "position_list": {
+      "stocks": { "title": "Ações", "applied_label": "Aplicado" },
+      "etf": { "title": "ETFs", "applied_label": "Aplicado" },
+      "fixed_income": { "title": "Renda fixa", "applied_label": "Aplicado" }
     },
     "invest_summary": {
       "default": {

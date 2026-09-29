@@ -2,6 +2,7 @@ package screen
 
 import (
 	"errors"
+	"math/big"
 	"math/bits"
 	"slices"
 	"strconv"
@@ -20,18 +21,42 @@ var errShareOverflow = errors.New("screen: shares overflow")
 // Money formats integer USD cents as "US$ 1.234,56" with pt-BR grouping. A
 // negative amount reads "− US$ 1.234,56" with U+2212.
 func Money(cents int64) string {
-	magnitude := uint64(cents)
 	if cents < 0 {
-		magnitude = -magnitude // two's complement: exact even for math.MinInt64
+		return minus + " " + unsignedMoney(magnitude(cents))
 	}
+	return unsignedMoney(magnitude(cents))
+}
+
+// SignedMoney formats integer USD cents with an explicit sign and no space
+// after it, as a return or a movement reads: "+US$ 19.400,00" and
+// "−US$ 250,00" with U+2212. Zero has no sign: "US$ 0,00".
+func SignedMoney(cents int64) string {
+	switch {
+	case cents > 0:
+		return "+" + unsignedMoney(magnitude(cents))
+	case cents < 0:
+		return minus + unsignedMoney(magnitude(cents))
+	default:
+		return unsignedMoney(0)
+	}
+}
+
+// magnitude is |n| as a uint64, exact even for math.MinInt64.
+func magnitude(n int64) uint64 {
+	m := uint64(n)
+	if n < 0 {
+		m = -m // two's complement
+	}
+	return m
+}
+
+// unsignedMoney writes cents as "US$ 1.234,56".
+func unsignedMoney(cents uint64) string {
 	var b strings.Builder
-	if cents < 0 {
-		b.WriteString(minus + " ")
-	}
 	b.WriteString("US$ ")
-	b.WriteString(groupThousands(magnitude / 100))
+	b.WriteString(groupThousands(cents / 100))
 	b.WriteByte(',')
-	frac := magnitude % 100
+	frac := cents % 100
 	if frac < 10 {
 		b.WriteByte('0')
 	}
@@ -50,7 +75,12 @@ func CompactMoney(cents int64) string {
 
 // groupThousands writes n with "." between groups of three digits.
 func groupThousands(n uint64) string {
-	digits := strconv.FormatUint(n, 10)
+	return groupDigits(strconv.FormatUint(n, 10))
+}
+
+// groupDigits writes a string of decimal digits with "." between groups of
+// three.
+func groupDigits(digits string) string {
 	if len(digits) <= 3 {
 		return digits
 	}
@@ -71,6 +101,43 @@ func groupThousands(n uint64) string {
 // Percent formats a whole percentage as "62%".
 func Percent(p int) string {
 	return strconv.Itoa(p) + "%"
+}
+
+// ChangePercent formats delta as a signed percentage of base with one
+// decimal, rounded half away from zero: "+11,5%", "−53,5%" with U+2212. A
+// zero delta, or a base that is not positive (there is nothing to measure
+// against), reads "0,0%". The sign always follows delta, so a gain too small
+// to show reads "+0,0%".
+func ChangePercent(delta, base int64) string {
+	if delta == 0 || base <= 0 {
+		return "0,0%"
+	}
+	// tenths = round(|delta| · 1000 / base), exact at any magnitude.
+	num := new(big.Int).Mul(new(big.Int).SetUint64(magnitude(delta)), big.NewInt(1000))
+	den := big.NewInt(base)
+	tenths, rem := new(big.Int).QuoRem(num, den, new(big.Int))
+	if rem.Lsh(rem, 1).Cmp(den) >= 0 {
+		tenths.Add(tenths, big.NewInt(1))
+	}
+	whole, frac := new(big.Int).QuoRem(tenths, big.NewInt(10), new(big.Int))
+	sign := "+"
+	if delta < 0 {
+		sign = minus
+	}
+	return sign + groupDigits(whole.String()) + "," + frac.String() + "%"
+}
+
+// SignTone is the tone of a signed amount: TonePos above zero, ToneNeg below,
+// and ToneNeutral at zero.
+func SignTone(n int64) string {
+	switch {
+	case n > 0:
+		return TonePos
+	case n < 0:
+		return ToneNeg
+	default:
+		return ToneNeutral
+	}
 }
 
 // Shares splits 100 percentage points across values by largest remainder, so

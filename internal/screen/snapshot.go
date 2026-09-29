@@ -55,7 +55,8 @@ var ErrUnknownCustomer = errors.New("screen: unknown customer")
 
 // Account is the account-sim account in integer USD cents. Acoes, ETFs, and
 // RendaFixa are the class aggregates of the positions at market value;
-// Patrimony is positions plus Cash.
+// Patrimony is positions plus Cash. SimDay is the global simulated day the
+// values are at; it stays 0 until account-sim reports the day.
 type Account struct {
 	Acoes     int64
 	ETFs      int64
@@ -63,6 +64,7 @@ type Account struct {
 	Cash      int64
 	Patrimony int64
 	Positions []Position
+	SimDay    int
 }
 
 // Position is one holding at market value, in integer USD cents.
@@ -84,13 +86,17 @@ type Customer struct {
 
 // Activity is one customer timeline row. Source is the routing key of the
 // event it came from. OccurredAt is the event time; when it is zero, Age (how
-// long ago the row was when it was indexed) is used instead.
+// long ago the row was when it was indexed) is used instead. ProductID and
+// AmountCents are the product and the amount in integer USD cents of an
+// account event that carries them, such as an aplicacao.
 type Activity struct {
-	Kind       string
-	Title      string
-	Source     string
-	OccurredAt time.Time
-	Age        time.Duration
+	Kind        string
+	Title       string
+	Source      string
+	OccurredAt  time.Time
+	Age         time.Duration
+	ProductID   string
+	AmountCents int64
 }
 
 // MomentFacts are the home moment conditions advisory evaluated for the

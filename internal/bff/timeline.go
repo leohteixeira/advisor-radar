@@ -22,6 +22,11 @@ type TimelineEntry struct {
 	Source string `json:"source,omitempty"`
 	// OccurredAt is the event time, zero when the indexer did not send it.
 	OccurredAt time.Time `json:"occurred_at,omitzero"`
+	// ProductID is the catalog product an account event names, such as the
+	// one an aplicacao bought.
+	ProductID string `json:"product_id,omitempty"`
+	// AmountCents is an account event's amount in integer USD cents.
+	AmountCents int64 `json:"amount_cents,omitempty"`
 }
 
 // TimelineClient reads the customer 360. The BFF never stores the rows.
@@ -79,15 +84,17 @@ func (g *GRPCTimeline) Search(ctx context.Context, customerID, query, kind strin
 		// An empty or unreadable occurred_at stays zero; readers then use Ago.
 		occurredAt, _ := time.Parse(time.RFC3339Nano, it.GetOccurredAt())
 		out = append(out, TimelineEntry{
-			EventID:    it.GetEventId(),
-			CustomerID: it.GetCustomerId(),
-			Kind:       it.GetKind(),
-			Title:      it.GetTitle(),
-			Text:       it.GetText(),
-			Meta:       it.GetMeta(),
-			Ago:        int(it.GetAgo()),
-			Source:     it.GetSource(),
-			OccurredAt: occurredAt,
+			EventID:     it.GetEventId(),
+			CustomerID:  it.GetCustomerId(),
+			Kind:        it.GetKind(),
+			Title:       it.GetTitle(),
+			Text:        it.GetText(),
+			Meta:        it.GetMeta(),
+			Ago:         int(it.GetAgo()),
+			Source:      it.GetSource(),
+			OccurredAt:  occurredAt,
+			ProductID:   it.GetProductId(),
+			AmountCents: it.GetAmountCents(),
 		})
 	}
 	return out, nil

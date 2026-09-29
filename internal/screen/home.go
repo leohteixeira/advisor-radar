@@ -1,14 +1,11 @@
 package screen
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
-	"time"
-
-	"github.com/leohteixeira/advisor-radar/internal/event"
+	"strconv"
 )
 
 // Component types of the home screen.
@@ -36,11 +33,12 @@ func builtinVariants(cat Catalog) map[variantKey]registered {
 		{typeActionGrid, "default"}:    {variant: defaultActions{}},
 		{typeAdvisorCard, "dedicated"}: {variant: advisorCard{name: "dedicated", singularOnly: true}, needs: []Source{SourceAdvisory}},
 		{typeAdvisorCard, "default"}:   {variant: advisorCard{name: "default"}, needs: []Source{SourceAdvisory}},
-		{typeActivityList, "recent"}:   {variant: recentActivity{}, needs: []Source{SourceTimeline}},
-		{typeActivityList, "empty"}:    {variant: emptyActivity{}, needs: []Source{SourceTimeline}},
+		{typeActivityList, "recent"}:   {variant: recentActivity{}, needs: []Source{SourceTimeline}, uses: []Source{SourceCatalog}},
+		{typeActivityList, "empty"}:    {variant: emptyActivity{}, needs: []Source{SourceTimeline}, uses: []Source{SourceCatalog}},
 	}
 	maps.Copy(variants, momentVariants(cat))
 	maps.Copy(variants, investirVariants())
+	maps.Copy(variants, carteiraVariants())
 	return variants
 }
 
@@ -57,6 +55,17 @@ func customerFields(s Snapshot) Fields {
 		Segment:     c.Segment,
 		Since:       c.Since,
 	}
+}
+
+// headingFields are the fields a screen heading may use: the advisory
+// customer fields and the simulated day from the account. A field whose
+// source failed is empty.
+func headingFields(s Snapshot) Fields {
+	f := customerFields(s)
+	if s.Account.OK() {
+		f.Day = strconv.Itoa(s.Account.Value.SimDay)
+	}
+	return f
 }
 
 // welcomeMoment is the default moment: it always matches and needs no source.
@@ -212,19 +221,18 @@ func (v advisorCard) Build(s Snapshot, c Catalog) (Component, error) {
 type recentActivity struct{}
 
 func (recentActivity) Matches(s Snapshot) bool {
-	return s.Activity.OK() && len(visibleActivity(s.Activity.Value, s.Now)) > 0
+	return s.Activity.OK() && len(visibleActivity(s.Activity.Value, s.Now, activityLimit)) > 0
 }
 
 func (recentActivity) Build(s Snapshot, c Catalog) (Component, error) {
 	if !s.Activity.OK() {
 		return Component{}, fmt.Errorf("screen: activity needs the timeline: %w", s.Activity.Err)
 	}
-	cp := copier{cat: c, typ: typeActivityList, variant: "recent"}
-	rows := visibleActivity(s.Activity.Value, s.Now)
-	items := make([]ActivityItem, len(rows))
-	for i, row := range rows {
-		items[i] = ActivityItem{Icon: activityIcon(row.Kind), Title: row.Title, Meta: RelativeTime(row.Age)}
+	items, err := activityItems(s, c, activityLimit)
+	if err != nil {
+		return Component{}, err
 	}
+	cp := copier{cat: c, typ: typeActivityList, variant: "recent"}
 	props := ActivityList{Title: cp.text("title"), Items: items}
 	if cp.err != nil {
 		return Component{}, cp.err
@@ -249,45 +257,4 @@ func (emptyActivity) Build(_ Snapshot, c Catalog) (Component, error) {
 		return Component{}, cp.err
 	}
 	return Component{Type: typeActivityList, Variant: "empty", Props: props}, nil
-}
-
-// activityIcon maps a client-facing timeline kind to its web icon. Any other
-// kind gets no icon.
-func activityIcon(kind string) string {
-	switch kind {
-	case "aporte":
-		return "in"
-	case "saque", "aplicacao":
-		// A purchase moves cash out of caixa into a position.
-		return "out"
-	case "mensagem":
-		return "msg"
-	default:
-		return ""
-	}
-}
-
-// isClientSource reports whether a timeline row came from an event the client
-// caused and may see: their own account movements and the messages they
-// sent. Alerts, cases, triage results, and advisor notes are team-side.
-func isClientSource(source string) bool {
-	return source == event.NameAccountEventRecorded || source == event.NameMessageReceived
-}
-
-// visibleActivity is the client-facing rows, most recent first, at most
-// activityLimit. Each row's Age is measured from OccurredAt against now when
-// both are known, else it keeps the indexed Age. rows is never changed.
-func visibleActivity(rows []Activity, now time.Time) []Activity {
-	out := make([]Activity, 0, min(len(rows), activityLimit))
-	for _, row := range rows {
-		if !isClientSource(row.Source) {
-			continue
-		}
-		if !row.OccurredAt.IsZero() && !now.IsZero() {
-			row.Age = now.Sub(row.OccurredAt)
-		}
-		out = append(out, row)
-	}
-	slices.SortStableFunc(out, func(a, b Activity) int { return cmp.Compare(a.Age, b.Age) })
-	return out[:min(len(out), activityLimit)]
 }

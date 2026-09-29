@@ -37,15 +37,17 @@ func (s *GRPCServer) Search(ctx context.Context, req *timelinev1.SearchRequest) 
 			occurredAt = e.OccurredAt.UTC().Format(time.RFC3339Nano)
 		}
 		out = append(out, &timelinev1.TimelineItem{
-			EventId:    e.EventID,
-			CustomerId: e.CustomerID,
-			Kind:       e.Kind,
-			Title:      e.Title,
-			Text:       e.Text,
-			Meta:       e.Meta,
-			Ago:        int32(e.Ago),
-			Source:     e.Source,
-			OccurredAt: occurredAt,
+			EventId:     e.EventID,
+			CustomerId:  e.CustomerID,
+			Kind:        e.Kind,
+			Title:       e.Title,
+			Text:        e.Text,
+			Meta:        e.Meta,
+			Ago:         int32(e.Ago),
+			Source:      e.Source,
+			OccurredAt:  occurredAt,
+			ProductId:   e.ProductID,
+			AmountCents: e.AmountCents,
 		})
 	}
 	return &timelinev1.SearchResponse{Items: out}, nil

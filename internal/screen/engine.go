@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -19,9 +20,16 @@ const DefaultDeadline = 800 * time.Millisecond
 // ErrUnknownScreen is returned for a slug the catalog does not serve.
 var ErrUnknownScreen = errors.New("screen: unknown screen")
 
+// errAbsent is what a variant's Build returns when its section has nothing
+// to show for this customer, such as a position class with no position. The
+// section is then left out of both Page.Sections and Page.Omitted: it is not
+// a failure.
+var errAbsent = errors.New("screen: section absent")
+
 // Variant is one way to render a section. The first variant of a section
 // whose Matches is true is built; the last variant is the default and always
-// matches. Implementations must be safe for concurrent use.
+// matches. A Build that returns errAbsent leaves its section out without an
+// omission. Implementations must be safe for concurrent use.
 type Variant interface {
 	Matches(Snapshot) bool
 	Build(Snapshot, Catalog) (Component, error)
@@ -63,9 +71,13 @@ type variantKey struct {
 }
 
 // registered is a variant implementation and the sources its Build reads.
+// uses are sources it reads when they answered, such as the catalog for
+// product names, and does without otherwise: they are fetched, but their
+// failure neither skips the variant nor counts as a screen failure.
 type registered struct {
 	variant Variant
 	needs   []Source
+	uses    []Source
 }
 
 // Engine composes screens from the embedded catalog. It is immutable after
@@ -89,11 +101,13 @@ type Engine struct {
 }
 
 // plan is the served revision of one screen with its variants resolved.
-// sources is what a Build of the screen fetches, in allSources order.
+// sources is what a Build of the screen fetches, in allSources order;
+// required is the subset whose failure is a screen failure.
 type plan struct {
 	def      screenDef
 	sections []plannedSection
 	sources  []Source
+	required []Source
 }
 
 type plannedSection struct {
@@ -110,6 +124,8 @@ type namedVariant struct {
 	variant Variant
 	// needs are the sources this variant reads; it is skipped when one failed.
 	needs []Source
+	// uses are optional sources, fetched but never required.
+	uses []Source
 }
 
 // Option configures an Engine.
@@ -227,37 +243,45 @@ func resolve(slug string, def screenDef, variants map[variantKey]registered) (pl
 			if !ok {
 				return plan{}, fmt.Errorf("%w: %s/%s: %s variant %q is not implemented", errCatalog, slug, sec.id, sec.typ, name)
 			}
-			ps.variants = append(ps.variants, namedVariant{name: name, variant: reg.variant, needs: reg.needs})
+			ps.variants = append(ps.variants, namedVariant{name: name, variant: reg.variant, needs: reg.needs, uses: reg.uses})
 			ps.needs = reg.needs // ends as the default's
 		}
 		p.sections = append(p.sections, ps)
 	}
-	p.sources = planSources(def, p.sections)
+	p.sources, p.required = planSources(def, p.sections)
 	return p, nil
 }
 
-// planSources is the union of the sources a screen reads: the account
-// always, since it is what answers an unknown customer with 404; advisory
-// when the heading has customer fields; and every source any variant needs.
-func planSources(def screenDef, sections []plannedSection) []Source {
-	used := map[Source]bool{SourceAccount: true}
-	if !isPlainText(def.title) || !def.staticSubtitle {
-		used[SourceAdvisory] = true
+// planSources returns what a Build of the screen fetches and which of those
+// count as screen failures. required is the account, always, since it is
+// what answers an unknown customer with 404; the sources the heading
+// templates read; and every source any variant needs. fetched adds the
+// sources variants only use.
+func planSources(def screenDef, sections []plannedSection) (fetched, required []Source) {
+	need := map[Source]bool{SourceAccount: true}
+	use := map[Source]bool{}
+	for _, src := range slices.Concat(def.titleNeeds, def.subtitleNeeds) {
+		need[src] = true
 	}
 	for _, sec := range sections {
 		for _, v := range sec.variants {
 			for _, src := range v.needs {
-				used[src] = true
+				need[src] = true
+			}
+			for _, src := range v.uses {
+				use[src] = true
 			}
 		}
 	}
-	out := make([]Source, 0, len(used))
 	for _, src := range allSources {
-		if used[src] {
-			out = append(out, src)
+		if need[src] {
+			required = append(required, src)
+		}
+		if need[src] || use[src] {
+			fetched = append(fetched, src)
 		}
 	}
-	return out
+	return fetched, required
 }
 
 // Build composes one screen for a customer. It fails only for an unknown
@@ -294,7 +318,7 @@ func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, er
 	}
 
 	var res Result
-	for _, src := range p.sources {
+	for _, src := range p.required {
 		if err := snap.failed(src); err != nil {
 			res.Failures = append(res.Failures, Failure{Source: src, Err: err})
 		}
@@ -316,6 +340,9 @@ func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, er
 
 	for _, sec := range p.sections {
 		comp, reason, err := e.tracedSection(ctx, sec, snap)
+		if errors.Is(err, errAbsent) {
+			continue // nothing to show for this customer; not an omission
+		}
 		if err != nil {
 			res.Failures = append(res.Failures, Failure{Section: sec.id, Err: err})
 		}
@@ -332,16 +359,16 @@ func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, er
 	return res, nil
 }
 
-// heading renders the screen title and, when advisory answered or the
-// subtitle is plain text, the subtitle. Without advisory the title template
-// falls back to its plain greeting.
+// heading renders the screen title and, when every source its fields come
+// from answered, the subtitle. Without advisory the title template falls
+// back to its plain greeting.
 func heading(def screenDef, snap Snapshot) (title, subtitle string, err error) {
-	f := customerFields(snap)
+	f := headingFields(snap)
 	title, err = execute(def.title, f)
 	if err != nil {
 		return "", "", err
 	}
-	if !snap.Customer.OK() && !def.staticSubtitle {
+	if anyFailed(snap, def.subtitleNeeds) {
 		return title, "", nil
 	}
 	subtitle, err = execute(def.subtitle, f)
@@ -365,7 +392,7 @@ func (e *Engine) tracedSection(ctx context.Context, sec plannedSection, snap Sna
 	if reason != "" {
 		span.SetAttributes(attrOmittedReason.String(reason))
 	}
-	if err != nil {
+	if err != nil && !errors.Is(err, errAbsent) {
 		span.SetStatus(codes.Error, failureClass(err))
 	}
 	return comp, reason, err
@@ -386,6 +413,9 @@ func (e *Engine) section(sec plannedSection, snap Snapshot) (comp Component, var
 			continue // fall back to a later variant, ending at the default
 		}
 		matched, comp, err := evaluate(v.variant, snap, e.catalog)
+		if errors.Is(err, errAbsent) {
+			return Component{}, v.name, "", errAbsent
+		}
 		if err != nil {
 			return Component{}, v.name, ReasonBuildError, fmt.Errorf("screen: %s/%s: %w", sec.typ, v.name, err)
 		}
