@@ -390,10 +390,12 @@ func TestEngine_Build_PerfilFetchesItsSources(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("perfil sources = %v, want %v", got, want)
 	}
+	// The home reads the preferences only to pick its revision.
 	for _, slug := range []string{"home", "investir"} {
 		sources := newTestEngine(t, thiagoFixture().sources()).plans[slug].sources
-		if slices.Contains(sources, SourceRegistration) || slices.Contains(sources, SourcePreferences) {
-			t.Errorf("%s sources = %v, want no Perfil reads", slug, sources)
+		readsPreferences := slices.Contains(sources, SourcePreferences)
+		if slices.Contains(sources, SourceRegistration) || readsPreferences != (slug == "home") {
+			t.Errorf("%s sources = %v, want no Perfil read but the home preferences", slug, sources)
 		}
 	}
 }

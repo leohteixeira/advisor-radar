@@ -127,11 +127,16 @@ func TestEngine_EverySectionEndsInDefault(t *testing.T) {
 		thiagoFixture().snapshot(),
 		marianaFixture().snapshot(),
 	}
-	for slug, p := range e.plans {
+	plans := maps.Clone(e.plans)
+	for slug, p := range e.betaPlans {
+		plans[slug+" beta"] = p
+	}
+	for slug, p := range plans {
 		for _, sec := range p.sections {
 			// A section whose variant is the investor profile has no
 			// catch-all default: an unknown profile is a build error.
-			if (slug == "investir" && sec.id == "highlights") || (slug == "perfil" && sec.id == "suitability") {
+			if (slug == "investir" || slug == "home beta") && sec.id == "highlights" ||
+				slug == "perfil" && sec.id == "suitability" {
 				continue
 			}
 			last := sec.variants[len(sec.variants)-1]

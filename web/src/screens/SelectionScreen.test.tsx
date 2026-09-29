@@ -320,6 +320,16 @@ describe('selection screen, phase 3 Server-Driven UI', () => {
     expect(within(sdui()).queryByText(/O bff não respondeu agora/)).not.toBeInTheDocument();
   });
 
+  it('asks for an update, not a BFF outage, when the home schema is not supported', async () => {
+    stubLiveBFF((url) =>
+      url.endsWith('/screens/home') ? json({ supported: { min: 2, max: 2 } }, 406) : undefined,
+    );
+    renderAt(ROUTER_BASENAME);
+    expect(await within(sdui()).findByText('Atualize o app para ver esta tela.')).toBeInTheDocument();
+    expect(within(sdui()).queryByText(/O bff não respondeu agora/)).not.toBeInTheDocument();
+    expect(within(sdui()).queryByRole('region', { name: 'Início de Thiago no app' })).not.toBeInTheDocument();
+  });
+
   it('matches seed clients by id and ignores malformed or renamed list items', async () => {
     const items = [
       'junk',

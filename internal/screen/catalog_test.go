@@ -113,6 +113,51 @@ func TestParseCatalog_Embedded(t *testing.T) {
 	if len(cat.screens) != 4 {
 		t.Errorf("catalog serves %d screens, want home, investir, carteira, and perfil", len(cat.screens))
 	}
+	if len(cat.beta) != 1 {
+		t.Errorf("catalog has %d beta revisions, want only the home v2", len(cat.beta))
+	}
+}
+
+// TestCatalog_HomeBetaRevision pins the home v2 of specs/http/bff.md: the v1
+// sections, variants included, with the Investir highlights section right
+// after moment. A change to the v1 home that is not mirrored in v2 fails
+// here.
+func TestCatalog_HomeBetaRevision(t *testing.T) {
+	t.Parallel()
+	cat := embedded(t)
+	v1, v2 := cat.screens["home"], cat.beta["home"]
+	if v1.revision != "v1" || v2.revision != "v2" {
+		t.Fatalf("home revisions = %q and beta %q, want v1 and v2", v1.revision, v2.revision)
+	}
+	var highlights sectionDef
+	for _, sec := range cat.screens["investir"].sections {
+		if sec.id == "highlights" {
+			highlights = sec
+		}
+	}
+	if highlights.typ != typeProductRail {
+		t.Fatalf("investir highlights = %+v", highlights)
+	}
+	moment := slices.IndexFunc(v1.sections, func(s sectionDef) bool { return s.id == "moment" })
+	if moment < 0 {
+		t.Fatal("home v1 has no moment section")
+	}
+	want := slices.Insert(slices.Clone(v1.sections), moment+1, highlights)
+	if !slices.EqualFunc(v2.sections, want, func(a, b sectionDef) bool {
+		return a.id == b.id && a.typ == b.typ && slices.Equal(a.variants, b.variants)
+	}) {
+		t.Errorf("home v2 sections = %+v, want %+v", v2.sections, want)
+	}
+	var ids []string
+	for _, sec := range v2.sections {
+		ids = append(ids, sec.id)
+	}
+	if want := []string{"moment", "highlights", "wealth", "actions", "advisor", "activity"}; !slices.Equal(ids, want) {
+		t.Errorf("home v2 section ids = %v, want %v", ids, want)
+	}
+	if v2.title.Root.String() != v1.title.Root.String() || v2.subtitle.Root.String() != v1.subtitle.Root.String() {
+		t.Error("home v2 heading differs from v1")
+	}
 }
 
 // TestCatalog_EveryTemplateExecutes parses and executes every copy and
@@ -144,7 +189,12 @@ func TestCatalog_EveryTemplateExecutes(t *testing.T) {
 		}
 	}
 	for slug, def := range cat.screens {
-		for _, tmpl := range []*template.Template{def.title, def.subtitle} {
+		beta, hasBeta := cat.beta[slug]
+		heads := []*template.Template{def.title, def.subtitle}
+		if hasBeta {
+			heads = append(heads, beta.title, beta.subtitle)
+		}
+		for _, tmpl := range heads {
 			if _, err := execute(tmpl, full); err != nil {
 				t.Errorf("%s heading: %v", slug, err)
 			}
@@ -293,6 +343,8 @@ func TestParseCatalog_Invalid(t *testing.T) {
 		{name: "unknown field", raw: `{"version":1,"screens":` + screen(section) + `,"extra":true}`},
 		{name: "version zero", raw: `{"version":0,"screens":` + screen(section) + `}`},
 		{name: "no screens", raw: `{"version":1,"screens":{}}`},
+		{name: "beta revision missing", raw: `{"version":1,"screens":{"home":{"revision":"v1","beta_revision":"v2","revisions":{"v1":{"title":"t","subtitle":"s","sections":[` + section + `]}}}}}`},
+		{name: "beta revision is the default", raw: `{"version":1,"screens":{"home":{"revision":"v1","beta_revision":"v1","revisions":{"v1":{"title":"t","subtitle":"s","sections":[` + section + `]}}}}}`},
 		{name: "served revision missing", raw: `{"version":1,"screens":{"home":{"revision":"v2","revisions":{"v1":{"title":"t","subtitle":"s","sections":[` + section + `]}}}}}`},
 		{name: "no sections", raw: `{"version":1,"screens":` + screen(``) + `}`},
 		{name: "section without variants", raw: `{"version":1,"screens":` + screen(`{"id":"moment","type":"moment_card","variants":[]}`) + `}`},

@@ -306,6 +306,23 @@ export function fernandaInvestir(): Screen {
   return investir('US$ 1.148,00', 114800, { name: 'conservador', max: 2 });
 }
 
+/**
+ * Fernanda's home in the beta (revision v2): the v1 home with the Investir
+ * highlights rail right after the moment, as internal/screen serves it.
+ */
+export function fernandaHomeV2(): Screen {
+  const v1 = fernandaHome();
+  const highlights = fernandaInvestir().sections.find((section) => section.id === 'highlights');
+  if (!highlights) {
+    throw new Error('fixture: Investir has no highlights');
+  }
+  const [moment, ...rest] = v1.sections;
+  if (!moment) {
+    throw new Error('fixture: home has no moment');
+  }
+  return { ...v1, revision: 'v2', sections: [moment, highlights, ...rest] };
+}
+
 /** One position row: product, applied, value, and the signed return with its tone. */
 type Holding = [ProductID, string, string, string, 'pos' | 'neg' | 'neutral'];
 
