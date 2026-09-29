@@ -457,12 +457,12 @@ func build(account Account, cmd Command) (any, string, Account, error) {
 		if cmd.Text == "" || (cmd.Channel != "chat" && cmd.Channel != "e-mail") {
 			return nil, "", Account{}, fmt.Errorf("%w: message needs chat or e-mail and text", ErrCommand)
 		}
-		return MessagePayload{Channel: cmd.Channel, Text: cmd.Text}, event.NameMessageReceived, account, nil
+		return MessagePayload{Channel: cmd.Channel, Text: cmd.Text, Origin: OriginClientApp}, event.NameMessageReceived, account, nil
 	case CmdComplaint:
 		if cmd.Text == "" {
 			return nil, "", Account{}, fmt.Errorf("%w: complaint needs text", ErrCommand)
 		}
-		return MessagePayload{Channel: "chat", Text: cmd.Text}, event.NameMessageReceived, account, nil
+		return MessagePayload{Channel: "chat", Text: cmd.Text, Origin: OriginClientApp}, event.NameMessageReceived, account, nil
 	default:
 		return nil, "", Account{}, ErrCommand
 	}

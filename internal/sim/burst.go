@@ -10,10 +10,15 @@ import (
 // ErrMoneyScale marks Dollars failures for schema or non-integer cents.
 var ErrMoneyScale = errors.New("sim: money scale")
 
+// OriginClientApp marks a message the customer sent from the client app.
+// Seeded and burst messages leave Origin empty.
+const OriginClientApp = "client_app"
+
 // MessagePayload is the outbox payload for a customer message.
 type MessagePayload struct {
 	Channel string `json:"channel"`
 	Text    string `json:"text"`
+	Origin  string `json:"origin,omitempty"`
 }
 
 // AccountPayload is the outbox payload for a fictional account fact.

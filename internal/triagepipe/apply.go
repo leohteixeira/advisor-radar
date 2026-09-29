@@ -42,6 +42,7 @@ type ResultRow struct {
 // TriagedPayload is the domain payload on message.triaged.
 type TriagedPayload struct {
 	SourceEventID string  `json:"source_event_id"`
+	Origin        string  `json:"origin,omitempty"`
 	Channel       string  `json:"channel"`
 	Text          string  `json:"text"`
 	Intent        string  `json:"intent"`
@@ -120,6 +121,7 @@ func Apply(ctx context.Context, store Store, classifier triage.Classifier, env e
 	needsReview := result.NeedsReview(triage.ReviewIntentProb)
 	domain := TriagedPayload{
 		SourceEventID: env.EventID,
+		Origin:        payload.Origin,
 		Channel:       payload.Channel,
 		Text:          payload.Text,
 		Intent:        string(result.Intent),
