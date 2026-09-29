@@ -58,6 +58,8 @@ cases consumes `message.triaged` on `cases.message.triaged` (dead letters go to 
 
 After `go run ./cmd/db migrate` applies `account_sim/004_pov_positions.sql`, run `go run ./cmd/db seed` (reseed): 004 drops the per-class balance columns and leaves the product catalog, positions, and registration tables empty until the seed loads them.
 
+After `go run ./cmd/db migrate` applies `account_sim/005_pov_preferences.sql`, run `go run ./cmd/db seed` (reseed) to write each client's preferences row; until then Perfil shows `chat` with beta off for every client.
+
 After `go run ./cmd/db migrate` applies `advisory/003_investor_profile.sql`, run `go run ./cmd/db seed` (reseed): 003 gives every existing book row the migration default profile (conservador, assessed 2026-01-01) until the seed writes each customer's profile.
 
 Deploy advisory before cases. Cases intake reads the advisor from advisory `GetCustomer.advisor_id`; against an advisory that does not send it yet, cases drops every qualifying message as `ErrUnusableCustomer` (dead-lettered, no case opened).

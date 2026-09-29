@@ -36,12 +36,15 @@ Money fields are integer USD cents. Every POST requires `Idempotency-Key`. A mis
 | POST | `/v1/client-pov/customers/{id}/messages` | `202`. Body: `channel` `chat` or `e-mail`, `text` |
 | POST | `/v1/client-pov/customers/{id}/complaints` | `202`. Body: `text`. Channel is chat |
 | POST | `/v1/client-pov/customers/{id}/purchases` | `202` `{"event_id"}`, or `422` `{"error":"insufficient"}` when `amount_cents` exceeds caixa, or `422` `{"error":"invalid"}` for a bad body, an unknown product, or an amount at or below 0, above the command maximum, or below the product minimum. Body: `product_id`, `amount_cents` |
+| PUT | `/v1/client-pov/customers/{id}/preferences` | `200` `{"channel","beta"}` with the stored values. Body: `channel` `chat` or `email`, `beta` boolean, both required. `400` for a bad id, `404` for an unknown customer, `422` `{"error":"invalid"}` for a bad body or channel, `502` when account-sim fails |
 | GET | `/v1/client-pov/customers/{id}/stream` | SSE event `bastidores` with `event_id` and steps `feito`, `agora`, or `aguardando` |
 | GET | `/v1/client-pov/counters` | `actions` by type (`deposit`, `withdrawal`, `message`, `complaint`, `purchase`), `refusals` by rule, `duplicates` |
 
 `202` has `event_id` and no protocol field. The UI formats the protocol as the first two UUID groups, uppercased.
 
 Deposit and withdrawal become `account.event.recorded` at schema version 2. A purchase becomes `account.event.recorded` `kind: aplicacao` at schema version 3: `amount` is the purchase, `before` and `after` both equal the patrimony (cash moves into a position at the catalog price), and the payload adds `product_id`, `asset_class`, and `risk` from the catalog row. Consumers accept versions 1, 2, and 3 and read v3 money as cents, like v2. An undecodable purchase body is `422 invalid` and spends no budget; account-sim refusals (`insufficient`, `invalid`) spend it, as for withdrawals. The Bastidores stream follows a purchase like the other account events. Message and complaint become `message.received` with `origin: "client_app"` in the payload (seeded and burst messages omit `origin`); triage copies it into `message.triaged`. The BFF does not publish. account-sim writes state and the outbox row in one transaction.
+
+The preferences PUT is idempotent and takes no `Idempotency-Key`. The BFF reads the stored preferences first: a PUT that changes nothing answers `200` and spends no budget; a change spends the same per-customer budget as a command (`429` over it, and account-sim is not written). An `Unavailable` account-sim failure refunds the budget, as for commands. account-sim stores the choice in `pov_preferences` (migration `account_sim/005_pov_preferences.sql`); a reseed restores `chat` with beta off. No outbox row, no event, and no counter: Bastidores never shows a preference change. Its channel vocabulary is `chat` or `email`, distinct from the messages route, which takes `chat` or `e-mail`.
 
 ## Screens (phase 3)
 
@@ -51,8 +54,8 @@ The client app gets each screen from the BFF as a page of sections and component
 |---|---|---|
 | GET | `/v1/client-pov/customers/{id}/screens/{slug}` | `200` screen envelope. `slug` is `home`, `investir`, `carteira`, or `perfil` |
 
-- The BFF serves `home`, `investir`, and `carteira` now. `perfil` answers `404` until its story lands and adds it here.
-- The web home, Investir, and Carteira render from this screen route. The phase-2 home route `GET /v1/client-pov/customers/{id}` stays: web still reads the shell (name, segment) and the coded panels (cash, messages) from it. There is no fallback screen: when the screen request fails, times out, or answers something that is not an envelope, the screen area shows an error state with a retry, and the shell, tabs, and panels stay.
+- The BFF serves all four screens: `home`, `investir`, `carteira`, and `perfil`.
+- The web home, Investir, Carteira, and Perfil render from this screen route. The phase-2 home route `GET /v1/client-pov/customers/{id}` stays: web still reads the shell (name, segment) and the coded panels (cash, messages) from it. There is no fallback screen: when the screen request fails, times out, or answers something that is not an envelope, the screen area shows an error state with a retry, and the shell, tabs, and panels stay.
 - Opening a screen is one HTTP request. There is no pagination and no single-section reload.
 - A slug outside the four is `404`. An unknown customer is `404` only when account-sim answers `NotFound` for that customer. Any other source failure never changes the status.
 - Screen responses carry `Cache-Control: no-store`.
@@ -87,9 +90,9 @@ Thiago's home with the timeline down. Only the `moment` section is shown; `wealt
 
 - `schema_version` is an integer, the version of this envelope and of the component table below.
 - A section object has `id` and `components`, an array of `{type, variant, props}`.
-- `omitted` is always present: one `{id, type, reason}` per catalog section this response left out because a source failed or a build broke, in catalog order, so Raio-X can draw a placeholder. `reason` is the failed source (`account-sim`, `catalog`, `advisory`, `timeline`, `moments`, `profile`, or `cases`) or `build_error`. `account-sim` is the account read and `catalog` the account-sim product catalog (`ListProducts`); `advisory` is the customer read; `moments` and `profile` are the advisory moment facts and investor profile. Web renders nothing for an omitted section outside Raio-X. A section that is absent by design, such as a Carteira class with no position, is neither in `sections` nor in `omitted`.
+- `omitted` is always present: one `{id, type, reason}` per catalog section this response left out because a source failed or a build broke, in catalog order, so Raio-X can draw a placeholder. `reason` is the failed source (`account-sim`, `catalog`, `registration`, `preferences`, `advisory`, `timeline`, `moments`, `profile`, or `cases`) or `build_error`. `account-sim` is the account read, `catalog` the account-sim product catalog (`ListProducts`), and `registration` and `preferences` the account-sim `GetRegistration` and `GetPreferences` reads; `advisory` is the customer read; `moments` and `profile` are the advisory moment facts and investor profile. Web renders nothing for an omitted section outside Raio-X. A section that is absent by design, such as a Carteira class with no position, is neither in `sections` nor in `omitted`.
 - `title` and `subtitle?` are the screen heading, filled from the catalog: home "Olá, {{first}}" / "Cliente {{segment}} desde {{since}}", investir "Investir" / "Produtos fictícios · preço fixo da simulação", carteira "Carteira" / "Valores de mercado no dia simulado {{day}}", perfil "Perfil" / "Seus dados, seu perfil de investidor e suas preferências".
-- `revision` names the catalog revision of the screen. A client outside the beta gets `v1`. A beta client gets home `v2`, which inserts the `highlights` section right after `moment`. Investir, Carteira, and Perfil stay at `v1`.
+- `revision` names the catalog revision of the screen. The beta revision is served from story 16: from then on, a client outside the beta gets `v1` and a beta client gets home `v2`, which inserts the `highlights` section right after `moment`. Until story 16 every client gets `v1`, whatever its stored beta flag. Investir, Carteira, and Perfil stay at `v1`.
 - Section order in the array is the render order. Web owns style, the breakpoint grid, and the span of each section.
 - `variant` is informational for web: it drives Raio-X and telemetry, never rendering logic. A new variant of an existing type needs no web change. A new `type` needs web code and a row in the table below.
 - An unknown `type` renders nothing and is reported: web logs it with `console.error`. A component that throws is caught by its own boundary. The rest of the screen stays.
@@ -125,7 +128,7 @@ The `deposit`, `withdraw`, `message`, and `complaint` panels submit through the 
 
 ### Failure policy
 
-- The BFF reads account-sim (the account and the product catalog, each its own source), advisory (customer, moment facts, and investor profile, each its own source), cases, and timeline in parallel under one screen deadline. One source failing never cancels the others.
+- The BFF reads account-sim (the account, the product catalog, the registration, and the preferences, each its own source), advisory (customer, moment facts, and investor profile, each its own source), cases, and timeline in parallel under one screen deadline. One source failing never cancels the others.
 - A section whose source failed or ran past the deadline falls back to its default variant when the default does not need that source. Example: `moment` becomes `welcome` when moment facts fail.
 - A section that depends only on the failed source is omitted, and so is a section whose default also needs the failed source. Example: `activity` without timeline.
 - When cases fails, `case_open` does not match and moment evaluation continues down the priority list.
@@ -229,6 +232,25 @@ The BFF serves carteira `v1` under the same screen deadline. The heading is "Car
 - The response is `200` with whatever remains: without account-sim only `history`, without the catalog no position list, without the timeline no `history`.
 - On day 0 of the seed, Mariana and Fernanda have all three position lists and Thiago has no `positions_fixed_income`.
 
+### Perfil `v1` served now
+
+The BFF serves perfil `v1` under the same screen deadline. The heading is "Perfil" / "Seus dados, seu perfil de investidor e suas preferências".
+
+| Section | Type | Variants | Source | When the source fails |
+|---|---|---|---|---|
+| `header` | `profile_header` | `default` | advisory; registration for `account` | advisory: omitted, reason `advisory`; registration: no `account` |
+| `suitability` | `profile_scale` | `conservador`, `moderado`, `arrojado` (the profile) | advisory, profile | omitted, reason `advisory` or `profile`; an unknown profile matches no variant and is `build_error` |
+| `registration` | `profile_field_list` | `default` | registration, advisory | omitted, reason `registration` or `advisory` |
+| `preferences` | `preference_list` | `default` | preferences | omitted, reason `preferences` |
+| `advisor` | `advisor_card` | `dedicated` (Singular), `default` | advisory | omitted, reason `advisory` |
+
+- `header`: `initials` and `name` from the advisory customer, `subtitle` "Cliente {{segment}} desde {{since}}" ("Cliente {{segment}}" without a since), and `account` the registration `account_number` ("Conta 3301-7 · Orla Invest"), left out when the registration read fails.
+- `suitability`: `title` "Seu perfil de investidor", `subtitle` "Define os destaques de Investir e quando uma compra recebe aviso.", `current_label` "Seu perfil", and `levels` conservador, moderado, and arrojado with the `ux.md` descriptions, `limit` "Produtos até risco {{max_risk}}", and `current` true for the client's level. The client's `max_risk` is the investor profile's; the other levels read the `max_risk_table` that advisory `GetInvestorProfile` returns, so the BFF and web hold no table. A level missing from the table, or a `max_risk` outside 1–5, is a `build_error`. `footer` is "Última avaliação em {{dd/mm/yyyy}}. Para refazer o questionário, fale com a sua assessora." The section needs the advisory customer too: with advisory down it is omitted with the header and advisor.
+- `registration`: `title` "Dados cadastrais", `fields` Nome (advisory), E-mail, Telefone (already masked), Cidade (registration), Segmento, and Cliente desde (advisory), and `footnote` "Dados fictícios. Alterar cadastro fica fora da simulação." Nome, Segmento, and Cliente desde come from advisory, so with advisory down the section is omitted rather than trimmed to a list without a name.
+- `preferences`: `title` "Preferências"; `theme` `{label "Tema", hint "Fica salvo só neste navegador"}`, which web applies locally and never sends; `channel` `{label "Canal preferido", hint "Por onde a assessoria fala com você", value, options [{chat, "Chat"}, {email, "E-mail"}]}` with the stored channel; `beta` `{label "Programa beta", hint, enabled}` with hint "Veja antes as novas versões das telas." when off and "Ligado. Você recebe a revision v2 do início antes dos outros clientes." when on. Storing beta changes no revision yet: until story 16 serves the beta revision, every client still gets home `v1`.
+- `advisor`: the home `advisor_card` variants and props.
+- On day 0 of the seed, Fernanda is conservador (assessed 12/03/2026), Thiago arrojado (04/08/2026), and Mariana moderado (20/01/2026); all three have `chat` with beta off.
+
 ### Components (15 types)
 
 Shared objects used in the table:
@@ -258,4 +280,4 @@ The Variants column is not evaluation order; the catalog holds each section's or
 | `profile_field_list` | perfil `registration` | `default` | `title`, `fields`: `[{label, value}]` for Nome, E-mail, Telefone (masked), Cidade, Segmento, Cliente desde; `footnote` |
 | `preference_list` | perfil `preferences` | `default` | `title`; `theme`: `{label, hint}`, local to the browser; `channel`: `{label, hint, value, options: [{value, label}]}`, `value` `chat` or `email`; `beta`: `{label, hint, enabled}`, `hint` for the current state |
 
-`preference_list` shows the stored channel and beta flag. Its channel vocabulary is `chat` or `email`, distinct from the messages route, which takes `chat` or `e-mail`. The route that writes them arrives with the Perfil story and is documented here then. Web reloads the screen after a change. Later stories that refine a prop list update this table in the same change.
+`preference_list` shows the stored channel and beta flag. Its channel vocabulary is `chat` or `email`, distinct from the messages route, which takes `chat` or `e-mail`. Web writes them with `PUT /v1/client-pov/customers/{id}/preferences` and reloads the screen after a change; on a failed write it keeps the previous value. Later stories that refine a prop list update this table in the same change.

@@ -53,3 +53,16 @@ its idempotency key. The BFF maps `FailedPrecondition`, `NotFound`, and
 `InvalidArgument` back to the phase-2 HTTP answers. It no longer runs
 `sim.Memory` in process and no longer publishes: account-sim writes the account
 state and the outbox row in one transaction, and its relay publishes.
+
+## Note (2026-09-29): preference writes are an exception
+
+Story 12 adds `UpdatePreferences` to `account/v1`: the Perfil contact channel
+and beta flag. The BFF writes them with a synchronous gRPC call, and
+account-sim stores them with no outbox row and no event. This is a deliberate
+exception to "state changes are events": these are client-facing settings that
+no other service consumes, so an event would have no consumer, and the write is
+an idempotent PUT of the full value, so a retry is safe without an idempotency
+key. The BFF reads them back over gRPC when it builds the Perfil screen. If
+another service ever needs a preference (for example, cases routing a reply by
+channel, or the BFF serving the beta revision from an event), the write moves
+to the outbox like every other command in this ADR.
