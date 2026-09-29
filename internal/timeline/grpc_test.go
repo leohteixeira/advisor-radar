@@ -22,8 +22,9 @@ func TestGRPC_SearchViaBufconn(t *testing.T) {
 	idx := timeline.NewIndex()
 	cust := identity.MustNewV7()
 	eid := identity.MustNewV7()
+	occurred := time.Now().UTC().Add(-12 * time.Minute)
 	body, _ := json.Marshal(map[string]any{
-		"event_id": eid, "occurred_at": time.Now().UTC().Add(-12 * time.Minute),
+		"event_id": eid, "occurred_at": occurred,
 		"customer_id": cust, "schema_version": 1,
 		"payload": map[string]any{"kind": "nota", "title": "Nota", "text": "Orlando", "meta": "x"},
 	})
@@ -53,6 +54,13 @@ func TestGRPC_SearchViaBufconn(t *testing.T) {
 	}
 	if len(res.GetItems()) != 1 {
 		t.Fatalf("items = %+v", res.GetItems())
+	}
+	item := res.GetItems()[0]
+	if item.GetSource() != "advisory.note.recorded" {
+		t.Errorf("source = %q", item.GetSource())
+	}
+	if got, err := time.Parse(time.RFC3339Nano, item.GetOccurredAt()); err != nil || !got.Equal(occurred) {
+		t.Errorf("occurred_at = %q (%v), want %v", item.GetOccurredAt(), err, occurred)
 	}
 	_ = event.NameAccountEventRecorded
 }

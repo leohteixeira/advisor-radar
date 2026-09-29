@@ -217,3 +217,26 @@ func TestIndex_IdempotentApply(t *testing.T) {
 		t.Fatalf("second apply: %v %v", a2, err)
 	}
 }
+
+func TestIndex_ApplyDeliveryKeepsSourceAndTime(t *testing.T) {
+	t.Parallel()
+	idx := timeline.NewIndex()
+	cust := identity.MustNewV7()
+	at := time.Date(2026, 9, 28, 12, 30, 0, 0, time.FixedZone("BRT", -3*60*60))
+	body, _ := json.Marshal(map[string]any{
+		"event_id": identity.MustNewV7(), "occurred_at": at,
+		"customer_id": cust, "schema_version": 2,
+		"payload": map[string]any{"kind": "aporte"},
+	})
+	applied, entry, err := idx.ApplyDelivery(context.Background(), event.NameAccountEventRecorded, body)
+	if err != nil || !applied {
+		t.Fatalf("apply: %v %v", applied, err)
+	}
+	if entry.Source != event.NameAccountEventRecorded || !entry.OccurredAt.Equal(at) || entry.OccurredAt.Location() != time.UTC {
+		t.Errorf("entry source, occurred_at = %q, %v", entry.Source, entry.OccurredAt)
+	}
+	rows, err := idx.Search(context.Background(), cust, "", "")
+	if err != nil || len(rows) != 1 || rows[0].Source != event.NameAccountEventRecorded || !rows[0].OccurredAt.Equal(at) {
+		t.Errorf("search = %+v, %v", rows, err)
+	}
+}

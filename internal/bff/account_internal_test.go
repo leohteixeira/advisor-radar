@@ -2,8 +2,11 @@ package bff
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
+
+	accountv1 "github.com/leohteixeira/advisor-radar/gen/account/v1"
 )
 
 func TestBackoff_EqualJitterBounds(t *testing.T) {
@@ -57,4 +60,26 @@ func TestSleepCtx(t *testing.T) {
 			t.Fatal("sleepCtx = false, want true with a live context")
 		}
 	})
+}
+
+func TestPovFromProto(t *testing.T) {
+	t.Parallel()
+	got := povFromProto(&accountv1.Account{
+		CustomerId: "c", AcoesCents: 204_000, EtfsCents: 544_000, CaixaCents: 6_052_000, PatrimonyCents: 6_800_000,
+		Positions: []*accountv1.Position{
+			{ProductId: "cobalto", AssetClass: "acoes", AppliedCents: 190_000, ValueCents: 204_000},
+			{ProductId: "acoesg", AssetClass: "etfs", AppliedCents: 520_000, ValueCents: 544_000},
+		},
+	})
+	if got.CustomerID != "c" || got.Acoes != 204_000 || got.ETFs != 544_000 || got.RendaFixa != 0 ||
+		got.Caixa != 6_052_000 || got.Patrimony != 6_800_000 {
+		t.Errorf("account = %+v", got)
+	}
+	want := []POVPosition{
+		{ProductID: "cobalto", AssetClass: "acoes", AppliedCents: 190_000, ValueCents: 204_000},
+		{ProductID: "acoesg", AssetClass: "etfs", AppliedCents: 520_000, ValueCents: 544_000},
+	}
+	if !slices.Equal(got.Positions, want) {
+		t.Errorf("positions = %+v, want %+v", got.Positions, want)
+	}
 }

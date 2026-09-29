@@ -108,8 +108,9 @@ func TestHTTP_TimelineViaGRPCBufconn(t *testing.T) {
 	idx := timeline.NewIndex()
 	cust := identity.MustNewV7()
 	eid := identity.MustNewV7()
+	occurred := time.Now().UTC()
 	body, _ := json.Marshal(map[string]any{
-		"event_id": eid, "occurred_at": time.Now().UTC(),
+		"event_id": eid, "occurred_at": occurred,
 		"customer_id": cust, "schema_version": 1,
 		"payload": map[string]any{"kind": "nota", "title": "Nota", "text": "Orlando", "meta": "x"},
 	})
@@ -145,6 +146,9 @@ func TestHTTP_TimelineViaGRPCBufconn(t *testing.T) {
 	}
 	if len(out.Items) != 1 {
 		t.Fatalf("items = %+v", out.Items)
+	}
+	if out.Items[0].Source != "advisory.note.recorded" || !out.Items[0].OccurredAt.Equal(occurred) {
+		t.Errorf("source, occurred_at = %q, %v; want advisory.note.recorded, %v", out.Items[0].Source, out.Items[0].OccurredAt, occurred)
 	}
 }
 
