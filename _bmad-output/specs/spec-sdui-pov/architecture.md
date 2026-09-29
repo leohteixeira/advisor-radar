@@ -14,7 +14,7 @@ Phase-3 delta. Anything this file does not change stays as the adopted phase-2 `
 
 This lands before any purchase, preference, or screen code.
 
-1. **`proto/account/v1/account.proto`**, generated into `gen/account/v1` with the same toolchain. It has RPCs for the four phase-2 commands (deposit, withdrawal, free message, complaint), each carrying `idempotency_key` and returning `event_id` and `replay`. It also has a query for one account and a list of the POV accounts. Amounts are integer USD cents.
+1. **`proto/account/v1/account.proto`**, generated into `gen/account/v1` with the same toolchain. A checked-in generation script pins protoc 29.3, protoc-gen-go 1.36.5, and protoc-gen-go-grpc 1.5.1 and regenerates every `proto/*/v1`; the plugins live in `~/go/bin`, which is not on `PATH` in the Dev Container. It has RPCs for the four phase-2 commands (deposit, withdrawal, free message, complaint), each carrying `idempotency_key` and returning `event_id` and `replay`. It also has a query for one account and a list of the POV accounts. Amounts are integer USD cents.
 2. **account-sim** serves it on `ACCOUNT_SIM_GRPC_ADDR`, over a pgx adapter for `sim.Tx` on `pov_account` and `pov_idempotency`. Account state and the outbox row are written in one transaction, and the existing relay publishes. A refusal maps to a gRPC status: over-cash withdrawal is `FailedPrecondition`, an unknown customer is `NotFound`, and a bad amount or channel is `InvalidArgument`. A replayed key returns the original `event_id` with `replay = true`.
 3. **BFF** dials `ACCOUNT_SIM_GRPC_TARGET` with a client interceptor that propagates the request deadline and retries transient failures with backoff. Retry is safe because every command carries `idempotency_key`. Tracing interceptors come with observability. It maps the statuses back to the phase-2 HTTP answers (`202`, `422`, `404`, `400`). `cmd/bff/povmem.go` and the BFF's use of `sim.Memory` are deleted. The phase-2 HTTP contract and `ClientPov.test.tsx` do not change.
 4. **Typed DTOs** replace `map[string]any` in the POV responses. This is still the phase-2 JSON shape, now typed.
@@ -28,7 +28,7 @@ Later phases add RPCs to `account/v1`: the product catalog, the purchase, advanc
 |---|---|
 | account-sim | `account/v1` gRPC server. Positions per product, where the four phase-2 classes become an aggregate of positions plus cash. Global simulated day. Deterministic revaluation of every account on advance. Fictional product catalog. `aplicacao` command (cash to position) with outbox and idempotency. Fictional registration data. Preferences (contact channel) and beta flag. |
 | advisory | Investor profile and assessment date in the book, with the max-risk table per profile. New suitability-mismatch rule on `aplicacao` (card kind `perfil`, rule "Compra acima do perfil de investidor", alert only). The book also follows `aplicacao` and `reavaliacao`. The drop rule evaluates negative `reavaliacao`; the segment rule already runs on every account event. A gRPC query returns the client's moment facts. |
-| cases | `ListCases` gains an optional customer filter. |
+| cases | Consumes `message.triaged` through its existing `inbox` and calls `cases.Open` when intent is `reclamacao` or `encerramento` or `churn_risk` ≥ 0.5. Segment and advisor come from advisory `GetCustomer` over gRPC with a deadline. At most one open case per customer; a later message joins it. Nothing called `cases.Open` before this. `ListCases` gains an optional customer filter. |
 | timeline-indexer | No contract change. It indexes `aplicacao` and `reavaliacao` like any account event. The BFF reads history through the existing `Search`. |
 | bff | `internal/screen` engine and the screen routes. Purchase, preferences, and advance-day routes. Calls account-sim over gRPC. Typed DTOs. The catalog is embedded read-only config; still no database. |
 | web | `web/src/sdui/` renderer, home migration, Investir, Carteira, and Perfil routes, the coded purchase form, and the simulation-strip additions. |
@@ -97,13 +97,13 @@ The BFF evaluates this list top to bottom. Advisory supplies the facts. The BFF 
 |---:|---|---|
 | 1 | `portfolio_drop` | The latest `reavaliacao` loss is above 15% of patrimony |
 | 2 | `case_open` | The client has an open case (cases, filtered by customer) |
-| 3 | `segment_upgraded` | Advisory recorded a segment upgrade for the client in the last 24 h |
+| 3 | `segment_upgraded` | A live POV account event (`schema_version` 2 or later) raised a segment upgrade for the client in the last 24 h |
 | 4 | `segment_upgrade_near` | Patrimony is between US$ 7,500 and US$ 10,000 |
 | 5 | `idle_cash` | Cash is at or above 50% of patrimony |
 | 6 | `portfolio_review` | The client is Singular |
 | 7 | `welcome` | Default, including when moment facts fail |
 
-Fernanda's USD 10,000 deposit leaves about 61% in cash, so `segment_upgraded` must rank above `idle_cash` for the live change to show. Thiago's seeded upgrade is older than 24 h, so he still opens on `idle_cash`.
+Fernanda's USD 10,000 deposit leaves about 61% in cash, so `segment_upgraded` must rank above `idle_cash` for the live change to show. Thiago's seeded upgrade alert is only about 4 h old (`seeds/advisory/001_cast.sql`), which is why seeded upgrades never match: he still opens on `idle_cash`. To lose `idle_cash`, Thiago must take cash below 50%: a purchase above USD 26,520 (the demo uses "Tudo" or USD 30,000).
 
 ## Investir and purchase
 
@@ -173,9 +173,23 @@ On day 3 Cobalto drops to 46.5% of its value. That is Mariana −15.5% (drop ale
 
 ## Observability
 
+- Bootstrap: no service has OpenTelemetry code today. Each service gets the OTel SDK with an OTLP exporter configured by `OTEL_EXPORTER_OTLP_ENDPOINT`, and a service name set in code, and Compose adds `grafana/otel-lgtm` (the phase-1 choice) to view traces and metrics.
 - Spans: one per screen build and one per section, with `sdui.slug`, `sdui.revision`, `sdui.section`, and `sdui.variant`. Snapshot calls are child spans.
 - Metrics: `sdui_variant_served_total{slug,section,variant}`, `sdui_component_dropped_total{slug,type,reason}`, build latency per screen, purchases by class, and suitability-mismatch alerts.
 - Logs: `slog` JSON, never rendered copy, registration data, or full account values at `info`.
+
+## Runtime configuration
+
+The repository runs no service container; `deploy/` holds only Postgres. New env vars go wherever services are configured:
+
+| Service | Variable | Purpose |
+|---|---|---|
+| account-sim | `ACCOUNT_SIM_GRPC_ADDR` | gRPC listen address (Phase A) |
+| bff | `ACCOUNT_SIM_GRPC_TARGET` | account-sim gRPC target (Phase A) |
+| cases | `ADVISORY_GRPC_TARGET` | advisory target for `GetCustomer`; already in the shared root `.env`, so no new line |
+| every service | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP export (observability story) |
+
+All services load the one root `.env` (`internal/envfile`, no `${VAR}` expansion). So the OTel service name is set in code per command, with `OTEL_SERVICE_NAME` only as a process-level override, never in `.env`. The `grafana/otel-lgtm` Grafana UI must not publish 3000, which is Cybersecurity's web port; the observability story picks a free port and adds it to the repository port table.
 
 ## Testing
 

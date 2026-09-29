@@ -34,7 +34,7 @@ An **opportunity** and a **pain**. The target squad builds Server-Driven UI (SDU
 
 - **CAP-2**
   - **intent:** The home shows each client a moment chosen from their own situation, and the moment changes live when that situation changes.
-  - **success:** After reseed, Fernanda opens on `segment_upgrade_near`, Thiago on `idle_cash`, and Mariana on `portfolio_review`. A USD 10,000 deposit by Fernanda switches her home to `segment_upgraded`. A complaint by Mariana switches her home to `case_open` with the Singular SLA. A purchase by Thiago removes `idle_cash`. Advancing to the shock day switches Mariana to `portfolio_drop`. The moment comes from advisory over gRPC; the BFF picks the variant by the priority in `architecture.md`.
+  - **success:** After reseed, Fernanda opens on `segment_upgrade_near`, Thiago on `idle_cash`, and Mariana on `portfolio_review`. A USD 10,000 deposit by Fernanda switches her home to `segment_upgraded`. A complaint by Mariana opens a case and switches her home to `case_open` with the Singular SLA. A purchase by Thiago that takes his cash below 50% of patrimony removes `idle_cash`. Advancing to the shock day switches Mariana to `portfolio_drop`. The moment comes from advisory over gRPC; the BFF picks the variant by the priority in `architecture.md`.
 
 - **CAP-3**
   - **intent:** One broken component or one slow data source never takes a screen down.
@@ -79,6 +79,7 @@ An **opportunity** and a **pain**. The target squad builds Server-Driven UI (SDU
 ## Constraints
 
 - Phase-1 and phase-2 rules hold. There is one database per service, an outbox on every publisher, and an inbox on every consumer. The BFF stores nothing. POV commands need `Idempotency-Key` and a rate limit. Web talks only to the BFF. Advisor, analyst, and manager screens keep their behavior; they only gain the suitability-mismatch alert.
+- A triaged complaint, closing request, or churn risk opens a case automatically. cases consumes `message.triaged` through its inbox and opens at most one open case per customer. Account and suitability alerts open no case.
 - The BFF composes screens. Advisory owns segmentation, investor profile, and client moments; the BFF never decides a moment, it only picks the variant for the moment it receives.
 - The catalog is a versioned file embedded in the BFF with `go:embed`. It is read-only config: no CMS and no runtime writes. The `add-sdui-variant` skill is the editing tool.
 - Components are semantic domain types; there are no `row`, `column`, or `text` primitives. The server controls section order and point props (tone, emphasis). Style and breakpoint layout stay in web. A new `type` needs web code and a contract entry; a new variant of an existing type does not.
@@ -106,4 +107,4 @@ An **opportunity** and a **pain**. The target squad builds Server-Driven UI (SDU
 
 ## Success signal
 
-On a phone, the interviewer opens the `#sdui` section, then opens the app as Fernanda, Thiago, and Mariana and sees three different homes. "Raio-X SDUI" shows each section's `id · type · variant`. Thiago buys a fictional ETF and his `idle_cash` card disappears. Fernanda, a conservador, buys a risk-5 product through the warning, and the suitability-mismatch alert appears on the team queue in under 2 s. A variant for Mariana, requested through `add-sdui-variant`, shows after restarting only the BFF. Advancing to the shock day revalues Mariana's Carteira, raises the drop alert, and switches her home to `portfolio_drop`. The trace shows one span per section with its variant.
+On a phone, the interviewer opens the `#sdui` section, then opens the app as Fernanda, Thiago, and Mariana and sees three different homes. "Raio-X SDUI" shows each section's `id · type · variant`. Thiago puts at least USD 30,000 into a fictional ETF and his `idle_cash` card disappears. Fernanda, a conservador, buys a risk-5 product through the warning, and the suitability-mismatch alert appears on the team queue in under 2 s. A variant for Mariana, requested through `add-sdui-variant`, shows after restarting only the BFF. Advancing to the shock day revalues Mariana's Carteira, raises the drop alert, and switches her home to `portfolio_drop`. The trace shows one span per section with its variant.
