@@ -40,6 +40,7 @@ const PREVIEW: SduiContextValue = {
   masked: false,
   onToggleMask: () => undefined,
   onPanel: () => undefined,
+  onPurchase: () => undefined,
 };
 
 function initials(name: string): string {

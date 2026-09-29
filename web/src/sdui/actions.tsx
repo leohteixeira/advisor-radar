@@ -10,9 +10,10 @@ export type Resolved =
   | { kind: 'panel'; label: string; panel: OpenPanel }
   | { kind: 'note'; label: string; text: string }
   | { kind: 'link'; label: string; href: string }
-  | { kind: 'hidden'; problem: string | null };
+  | { kind: 'purchase'; label: string; productID: string }
+  | { kind: 'hidden'; problem: string };
 
-function hidden(problem: string | null): Resolved {
+function hidden(problem: string): Resolved {
   return { kind: 'hidden', problem };
 }
 
@@ -26,8 +27,8 @@ function isHTTPS(href: string): boolean {
 
 /**
  * Checks an action from the envelope. Anything outside the contract resolves
- * to hidden with the problem to report; a purchase panel is hidden without a
- * problem until the purchase form exists.
+ * to hidden with the problem to report, including a purchase panel without a
+ * `product_id`.
  */
 export function resolveAction(action: unknown): Resolved {
   if (typeof action !== 'object' || action === null) {
@@ -48,7 +49,10 @@ export function resolveAction(action: unknown): Resolved {
     }
     case 'panel': {
       if (a.target === 'purchase') {
-        return hidden(null);
+        if (typeof a.product_id !== 'string' || a.product_id === '') {
+          return hidden('sdui: purchase panel has no product_id');
+        }
+        return { kind: 'purchase', label, productID: a.product_id };
       }
       const panel = OPEN_PANELS.find((value) => value === a.target);
       if (!panel) {
@@ -77,7 +81,7 @@ export function resolveAction(action: unknown): Resolved {
  * renders nothing and reports its problem once with console.error.
  */
 export function ActionControl({ action, className, render }: { action: unknown; className: string; render?: (label: string) => ReactNode }) {
-  const { onNavigate, onPanel } = useSdui();
+  const { onNavigate, onPanel, onPurchase } = useSdui();
   const [open, setOpen] = useState(false);
   const noteID = useId();
   const resolved = resolveAction(action);
@@ -103,6 +107,12 @@ export function ActionControl({ action, className, render }: { action: unknown; 
     case 'panel':
       return (
         <button type="button" className={className} onClick={() => onPanel(resolved.panel)}>
+          {inside}
+        </button>
+      );
+    case 'purchase':
+      return (
+        <button type="button" className={className} onClick={() => onPurchase(resolved.productID)}>
           {inside}
         </button>
       );

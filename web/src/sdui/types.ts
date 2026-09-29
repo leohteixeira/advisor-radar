@@ -127,3 +127,41 @@ export interface ActivityListProps {
   items: ActivityItem[];
   empty_text?: string;
 }
+
+/**
+ * One catalog product as the BFF shaped it for the viewing customer.
+ * `above_profile`, `badge`, and `warning` come from the BFF; web never
+ * compares risk with the profile.
+ */
+export interface ProductItem {
+  product_id: string;
+  name: string;
+  class_label: string;
+  risk: number;
+  risk_label: string;
+  return_label: string;
+  minimum: string;
+  minimum_cents: number;
+  above_profile: boolean;
+  badge?: string;
+  warning?: string;
+  action: Action;
+}
+
+export interface InvestSummaryProps {
+  cash_label: string;
+  cash: string;
+  cash_cents: number;
+  profile_chip?: string;
+}
+
+export interface ProductRailProps {
+  title: string;
+  subtitle: string;
+  products: ProductItem[];
+}
+
+export interface ProductListProps {
+  title: string;
+  products: ProductItem[];
+}

@@ -1,18 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { apiPath } from '../api/base';
 import { ApiError } from '../api/bff';
-import { fetchPOVHome, formatCents, postPOV, protocolOf, type POVHome } from '../api/pov';
+import { dollars, fetchPOVHome, formatCents, postPOV, protocolOf, type POVHome } from '../api/pov';
 import { fetchScreen } from '../sdui/api';
 import { SduiContext, type SduiContextValue } from '../sdui/context';
-import { SduiLoading, SduiScreen } from '../sdui/SduiScreen';
-import type { Screen } from '../sdui/types';
-
-interface LiveStep {
-  id: string;
-  label: string;
-  state: string;
-}
+import { findPurchase, type PurchaseTarget } from '../sdui/purchase';
+import { SduiError, SduiLoading, SduiScreen } from '../sdui/SduiScreen';
+import type { Screen, Slug } from '../sdui/types';
+import { purchaseSteps, PurchaseForm, PurchaseSent, type Bought, type LiveStep } from './PurchasePanel';
 
 interface Sent {
   event_id: string;
@@ -23,28 +19,30 @@ interface Sent {
   backLabel: string;
 }
 
-interface ActivityRow {
-  title: string;
-  meta: string;
-  value: string;
-  tone: '' | 'pos' | 'neg';
-  icon: string;
-}
-
 interface ChatRow {
   text: string;
   meta: string;
 }
 
-type Panel = 'home' | 'deposit' | 'withdraw' | 'complaint' | 'message' | 'done';
+/**
+ * What is open over the screen. The coded side panels (`deposit` … `done`)
+ * open as a drawer on desktop and full screen on the phone; the purchase form
+ * and its confirmation take the screen area, as in Compra-Fernanda-Aviso.
+ */
+type Panel = 'home' | 'deposit' | 'withdraw' | 'complaint' | 'message' | 'done' | 'purchase' | 'bought';
 
 /**
- * The SDUI home, or the phase-2 home when the screen request fails or answers
- * something that is not an envelope. The fallback is removed in story 10.
+ * The SDUI screen of the current tab. `slug` says which request the state
+ * belongs to, so a tab change shows the skeleton instead of the previous
+ * tab's screen. There is no hardcoded screen to fall back to: a failed,
+ * timed out, or non-envelope response is the error state with a retry.
  */
-type HomeScreen = { status: 'loading' } | { status: 'ready'; screen: Screen } | { status: 'fallback' };
+type ScreenView = { slug: Slug; status: 'loading' } | { slug: Slug; status: 'ready'; screen: Screen } | { slug: Slug; status: 'error' };
 
-/** Client app tabs. Only Início has a screen yet; the others show a note. */
+/**
+ * Client app tabs. Início and Investir render their SDUI screens; Carteira
+ * and Perfil still render the home with a note until their stories.
+ */
 const TABS = [
   { slug: 'home', label: 'Início', icon: 'home' },
   { slug: 'investir', label: 'Investir', icon: 'invest' },
@@ -53,6 +51,11 @@ const TABS = [
 ] as const;
 
 type TabSlug = (typeof TABS)[number]['slug'];
+
+/** The screen a tab fetches. */
+function screenSlug(tab: TabSlug): Slug {
+  return tab === 'investir' ? 'investir' : 'home';
+}
 
 const PRESETS = [
   {
@@ -74,19 +77,12 @@ const PRESETS = [
 ];
 
 const ICONS: Record<string, string> = {
-  in: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM12 8v8M8 12h8',
-  out: 'M3 21h18M4 10h16M12 3l8 5H4zM6 10v8M10 10v8M14 10v8M18 10v8',
-  msg: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z',
-  seg: 'M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6-4.5-4.2 6.1-.7z',
-  flag: 'M5 21V4h11l-1.5 4L16 12H5',
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   invest: 'M3 17l6-6 4 4 8-8M15 7h6v6',
   wallet: 'M21 12A9 9 0 1 1 12 3v9zM15 3.5A9 9 0 0 1 20.5 9H15z',
   user: 'M16 21v-1a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v1M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
-  bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0',
   sun: 'M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
   moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
-  eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0',
 };
 
 const ACCOUNT_STEPS = [
@@ -102,6 +98,9 @@ const MESSAGE_STEPS = [
   'Classificado pela triagem',
   'Na fila da assessoria',
 ];
+
+const TOO_MANY = 'Muitas ações em pouco tempo. Espere um minuto e tente de novo.';
+const NOT_RECORDED = 'Não foi possível registrar a ação.';
 
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
   return (
@@ -127,11 +126,6 @@ function useWide(): boolean {
   return wide;
 }
 
-function dollars(value: string): number {
-  const parsed = Number(value.replace(/[^0-9.,]/g, '').replace(/\./g, '').replace(',', '.'));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function money(amount: number): string {
   return amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -145,8 +139,28 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-function waiting(labels: string[]): LiveStep[] {
-  return labels.map((label) => ({ id: label, label, state: 'aguardando' }));
+/** The first step is done when the BFF answers 202; the stream moves the rest. */
+function accepted(labels: string[]): LiveStep[] {
+  return labels.map((label, index) => ({ id: label, label, state: index === 0 ? 'feito' : 'aguardando' }));
+}
+
+/**
+ * Whether a purchase refusal is final for its Idempotency-Key: any 4xx but a
+ * 429 means that request will never be accepted, so a retry is a new one.
+ */
+function definiteRefusal(err: unknown): boolean {
+  return err instanceof ApiError && err.status >= 400 && err.status < 500 && err.status !== 429;
+}
+
+/** The notice of a purchase the BFF refused (story 9 contract). */
+function purchaseNotice(err: unknown): string {
+  if (err instanceof ApiError && err.status === 422) {
+    return err.code === 'insufficient' ? 'Valor acima do caixa disponível.' : 'Confira o valor e tente de novo.';
+  }
+  if (err instanceof ApiError && err.status === 429) {
+    return TOO_MANY;
+  }
+  return NOT_RECORDED;
 }
 
 const THEME_KEY = 'advisor-radar.pov-theme';
@@ -220,17 +234,39 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const [sent, setSent] = useState<Sent | null>(null);
   const [steps, setSteps] = useState<LiveStep[]>([]);
   const [extraChat, setExtraChat] = useState<ChatRow[]>([]);
-  const [homeScreen, setHomeScreen] = useState<HomeScreen>({ status: 'loading' });
-  const navNote = tab === 'home' ? null : (TABS.find((item) => item.slug === tab)?.label ?? null);
+  const slug = screenSlug(tab);
+  const [view, setView] = useState<ScreenView>({ slug, status: 'loading' });
+  const [reload, setReload] = useState(0);
+  const [purchase, setPurchase] = useState<PurchaseTarget | null>(null);
+  const [bought, setBought] = useState<Bought | null>(null);
+  const [buying, setBuying] = useState(false);
+  // A tab change, including browser back and forward, closes any panel.
+  const [panelTab, setPanelTab] = useState(tab);
+  if (panelTab !== tab) {
+    setPanelTab(tab);
+    setPanel('home');
+  }
+  // One Idempotency-Key per open form and amount, so a retry of the same
+  // amount cannot buy twice; `form` counts panel changes so a purchase answer
+  // that arrives after its form closed is dropped.
+  const buyKey = useRef<{ cents: number; key: string } | null>(null);
+  const form = useRef(0);
+  const inFlight = useRef(false);
+  const navNote = tab === 'carteira' || tab === 'perfil' ? (TABS.find((item) => item.slug === tab)?.label ?? null) : null;
+  const liveEvent = panel === 'done' ? sent?.event_id : panel === 'bought' ? bought?.event_id : undefined;
 
   useEffect(() => {
-    if (panel !== 'done' || !sent) {
+    form.current += 1;
+  }, [panel, tab]);
+
+  useEffect(() => {
+    if (!liveEvent) {
       return;
     }
     const source = new EventSource(apiPath(`v1/client-pov/customers/${id}/stream`));
     const onStep = (ev: Event) => {
       const data = JSON.parse((ev as MessageEvent<string>).data) as { event_id: string; steps: LiveStep[] };
-      if (data.event_id === sent.event_id) {
+      if (data.event_id === liveEvent) {
         setSteps(data.steps);
       }
     };
@@ -239,28 +275,15 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
       source.removeEventListener('bastidores', onStep);
       source.close();
     };
-  }, [panel, sent, id]);
+  }, [liveEvent, id]);
 
+  // The phase-2 customer read feeds the shell and the coded panels (name,
+  // cash to withdraw, advisor, messages); it is re-read when a panel closes.
   useEffect(() => {
     if (panel !== 'home') {
       return;
     }
     let gone = false;
-    const abort = new AbortController();
-    // A timeout (SCREEN_TIMEOUT_MS) rejects like any other failure: fallback.
-    fetchScreen(id, 'home', abort.signal)
-      .then((screen) => {
-        if (!gone) {
-          setHomeScreen({ status: 'ready', screen });
-        }
-      })
-      .catch(() => {
-        // Phase-2 fallback, removed in story 10: a failed or non-envelope
-        // screen response renders the home from GET /customers/{id}.
-        if (!gone) {
-          setHomeScreen({ status: 'fallback' });
-        }
-      });
     fetchPOVHome(id)
       .then((row) => {
         if (!gone) {
@@ -274,9 +297,34 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
       });
     return () => {
       gone = true;
-      abort.abort();
     };
   }, [id, panel]);
+
+  // One screen request per tab visit, panel close, or retry. A re-fetch of
+  // the same screen keeps the current one on view until it settles.
+  useEffect(() => {
+    if (panel !== 'home') {
+      return;
+    }
+    let gone = false;
+    const abort = new AbortController();
+    // A timeout (SCREEN_TIMEOUT_MS) rejects like any other failure.
+    fetchScreen(id, slug, abort.signal)
+      .then((screen) => {
+        if (!gone) {
+          setView({ slug, status: 'ready', screen });
+        }
+      })
+      .catch(() => {
+        if (!gone) {
+          setView({ slug, status: 'error' });
+        }
+      });
+    return () => {
+      gone = true;
+      abort.abort();
+    };
+  }, [id, panel, slug, reload]);
 
   const cents = Math.round(dollars(amount) * 100);
   const overCash = panel === 'withdraw' && home != null && cents > home.caixa;
@@ -305,9 +353,59 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     });
   }
 
-  function pickNav(slug: TabSlug) {
+  function pickNav(next: TabSlug) {
     open('home');
-    navigate(clientPath(id, slug));
+    navigate(clientPath(id, next));
+  }
+
+  function retry() {
+    setView({ slug, status: 'loading' });
+    setReload((value) => value + 1);
+  }
+
+  function openPurchase(productID: string) {
+    const target = view.status === 'ready' ? findPurchase(view.screen, productID) : null;
+    if (!target) {
+      console.error(`sdui: purchase product ${productID} is not on the screen`);
+      return;
+    }
+    buyKey.current = null;
+    setPurchase(target);
+    open('purchase');
+  }
+
+  async function buy(target: PurchaseTarget, amountCents: number) {
+    if (inFlight.current) {
+      return;
+    }
+    if (buyKey.current?.cents !== amountCents) {
+      buyKey.current = { cents: amountCents, key: crypto.randomUUID() };
+    }
+    const key = buyKey.current.key;
+    const opened = form.current;
+    inFlight.current = true;
+    setNotice('');
+    setBuying(true);
+    try {
+      const done = await postPOV(id, 'purchases', { product_id: target.product.product_id, amount_cents: amountCents }, key);
+      buyKey.current = null;
+      if (form.current !== opened) {
+        return;
+      }
+      setBought({ event_id: done.event_id, cents: amountCents, product: target.product });
+      setSteps(accepted(purchaseSteps(target.product)));
+      setPanel('bought');
+    } catch (err) {
+      if (definiteRefusal(err)) {
+        buyKey.current = null;
+      }
+      if (form.current === opened) {
+        setNotice(purchaseNotice(err));
+      }
+    } finally {
+      inFlight.current = false;
+      setBuying(false);
+    }
   }
 
   async function send(
@@ -318,14 +416,9 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   ) {
     setNotice('');
     try {
-      const accepted = await postPOV(id, kind, body, crypto.randomUUID());
-      setSent({ ...next, event_id: accepted.event_id });
-      const initial = waiting(labels);
-      const first = initial[0];
-      if (first) {
-        initial[0] = { id: first.id, label: first.label, state: 'feito' };
-      }
-      setSteps(initial);
+      const done = await postPOV(id, kind, body, crypto.randomUUID());
+      setSent({ ...next, event_id: done.event_id });
+      setSteps(accepted(labels));
       setPanel('done');
       if (kind === 'messages') {
         setExtraChat((rows) => rows.concat([{ text: String(body.text), meta: `agora · ${String(body.channel)}` }]));
@@ -337,14 +430,15 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
         return;
       }
       if (err instanceof ApiError && err.status === 429) {
-        setNotice('Muitas ações em pouco tempo. Espere um minuto e tente de novo.');
+        setNotice(TOO_MANY);
         return;
       }
-      setNotice('Não foi possível registrar a ação.');
+      setNotice(NOT_RECORDED);
     }
   }
 
-  if (error) {
+  // A failed re-read keeps the shell already on view; only a first read is terminal.
+  if (error && !home) {
     return (
       <main className="pov-app">
         <p role="alert">Não foi possível abrir este cliente.</p>
@@ -353,17 +447,15 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     );
   }
   const themeLabel = light ? 'Tema escuro' : 'Tema claro';
-  if (!home || homeScreen.status === 'loading') {
-    // One skeleton until both the first screen request and the phase-2 shell
-    // data settle, so the first paint is already SDUI or the fallback. Each
-    // re-fetch on returning to Início keeps the current home until it settles,
-    // then shows the new screen, or switches to the fallback if it failed.
+  if (!home) {
+    // One skeleton until the shell data settles; the screen area then keeps
+    // its own skeleton until the screen request settles.
     return (
       <main className={light ? 'pov-app pov-app--light' : 'pov-app'} data-layout={wide ? 'desktop' : 'phone'}>
-        <Strip name={home?.name} wide={wide} xray={xray} onXray={undefined} />
+        <Strip wide={wide} xray={xray} onXray={undefined} />
         <div className="pov-app__body">
           <div className="pov-app__main">
-            {wide ? null : <PhoneBar light={light} themeLabel={themeLabel} onTheme={toggleTheme} initials={home ? initials(home.name) : ''} />}
+            {wide ? null : <PhoneBar light={light} themeLabel={themeLabel} onTheme={toggleTheme} initials="" />}
             <div className="sdui-main">
               <SduiLoading />
             </div>
@@ -374,34 +466,32 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     );
   }
 
-  const activity = home.activity;
   const chat = home.messages.concat(extraChat);
-  const first = home.name.split(' ')[0] ?? home.name;
-  const showHome = wide || panel === 'home';
   const closeLabel = wide ? 'Fechar' : 'Voltar';
-  const total = home.assets || 1;
-  const alloc = [
-    ['Ações', home.allocation.acoes, 0],
-    ['ETFs', home.allocation.etfs, 1],
-    ['Renda fixa', home.allocation.renda_fixa, 2],
-    ['Caixa', home.allocation.caixa, 3],
-  ]
-    .map(([label, value, slot]) => ({
-      label: String(label),
-      slot: Number(slot),
-      pct: Math.round((Number(value) / total) * 100),
-    }))
-    .filter((row) => row.pct > 0);
+  const buyingOnView = (panel === 'purchase' && purchase !== null) || (panel === 'bought' && bought !== null);
+  const drawer = panel !== 'home' && panel !== 'purchase' && panel !== 'bought';
+  const showScreen = !buyingOnView && (wide || panel === 'home');
   const complaintText = preset >= 0 ? PRESETS[preset]?.text ?? '' : text.trim();
-  const aumText = hide ? 'US$ ••••••' : formatCents(home.assets);
-  // Raio-X only has something to outline while an SDUI screen is on view.
-  const sduiOnView = showHome && tab === 'home' && homeScreen.status === 'ready';
+  const ready = view.slug === slug && view.status === 'ready' ? view.screen : null;
+  // Raio-X only has something to outline while an SDUI screen of its own tab is on view.
+  const sduiOnView = showScreen && ready !== null && navNote === null;
   const sdui: SduiContextValue = {
     onNavigate: pickNav,
     masked: hide,
     onToggleMask: () => setHide((value) => !value),
     onPanel: open,
+    onPurchase: openPurchase,
   };
+  let area = <SduiLoading />;
+  if (ready) {
+    area = (
+      <SduiContext value={sdui}>
+        <SduiScreen screen={ready} xray={xray && sduiOnView ? { customerID: id } : undefined} />
+      </SduiContext>
+    );
+  } else if (view.slug === slug && view.status === 'error') {
+    area = <SduiError onRetry={retry} />;
+  }
 
   return (
     <main className={light ? 'pov-app pov-app--light' : 'pov-app'} data-layout={wide ? 'desktop' : 'phone'}>
@@ -440,62 +530,26 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
             </div>
           </aside>
         ) : null}
-        {showHome && homeScreen.status === 'ready' ? (
+        {showScreen || buyingOnView ? (
           <div className="pov-app__main">
             {wide ? null : <PhoneBar light={light} themeLabel={themeLabel} onTheme={toggleTheme} initials={initials(home.name)} />}
             <div className="sdui-main">
-              <NavNote name={navNote} />
-              <SduiContext value={sdui}>
-                <SduiScreen screen={homeScreen.screen} xray={xray && sduiOnView ? { customerID: id } : undefined} />
-              </SduiContext>
+              {panel === 'purchase' && purchase ? (
+                <PurchaseForm key={purchase.product.product_id} target={purchase} notice={notice} busy={buying} masked={hide} onBack={() => open('home')} onSubmit={(value) => void buy(purchase, value)} />
+              ) : null}
+              {panel === 'bought' && bought ? <PurchaseSent bought={bought} steps={steps} masked={hide} onHome={() => pickNav('home')} /> : null}
+              {showScreen ? (
+                <>
+                  <NavNote name={navNote} />
+                  {area}
+                </>
+              ) : null}
             </div>
             <p className="pov-app__fine">Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</p>
           </div>
         ) : null}
-        {showHome && homeScreen.status === 'fallback' ? (
-          <div className="pov-app__main">
-            {wide ? (
-              <HomeDesktop
-                first={first}
-                since={home.since}
-                segment={home.segment}
-                aumText={aumText}
-                cash={formatCents(home.caixa)}
-                hide={hide}
-                onHide={() => setHide((value) => !value)}
-                alloc={alloc}
-                advisor={home.advisor}
-                initials={initials(home.name)}
-                activity={activity}
-                last={chat.at(-1)}
-                note={navNote}
-                onOpen={open}
-              />
-            ) : (
-              <HomePhone
-                first={first}
-                since={home.since}
-                segment={home.segment}
-                aumText={aumText}
-                cash={formatCents(home.caixa)}
-                hide={hide}
-                themeLabel={themeLabel}
-                onTheme={toggleTheme}
-                onHide={() => setHide((value) => !value)}
-                alloc={alloc}
-                advisor={home.advisor}
-                initials={initials(home.name)}
-                activity={activity}
-                note={navNote}
-                onOpen={open}
-              />
-            )}
-          </div>
-        ) : null}
-        {panel !== 'home' && wide ? (
-          <button type="button" className="pov-app__scrim" aria-label="Fechar painel" onClick={() => open('home')} />
-        ) : null}
-        {panel !== 'home' ? (
+        {drawer && wide ? <button type="button" className="pov-app__scrim" aria-label="Fechar painel" onClick={() => open('home')} /> : null}
+        {drawer ? (
           <aside className="pov-app__panel" aria-label="Ação">
             {panel === 'deposit' || panel === 'withdraw' ? (
               <MoneyPanel
@@ -722,15 +776,15 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
           </aside>
         ) : null}
       </div>
-      {!wide && panel === 'home' ? <TabBar tab={tab} onPick={pickNav} /> : null}
+      {!wide && !drawer ? <TabBar tab={tab} onPick={pickNav} /> : null}
     </main>
   );
 }
 
 /**
  * The simulation strip. "Raio-X SDUI" ("Raio-X" on the phone) toggles the
- * demo X-ray of the SDUI screen; without `onXray` (loading, the phase-2
- * fallback home, a tab with no SDUI screen) the toggle is not shown.
+ * demo X-ray of the SDUI screen; without `onXray` (loading, the error state,
+ * the purchase form, a tab with no SDUI screen) the toggle is not shown.
  */
 function Strip({ name, wide, xray, onXray }: { name?: string; wide: boolean; xray: boolean; onXray?: () => void }) {
   return (
@@ -928,154 +982,6 @@ function MoneyPanel({
   );
 }
 
-function HomePhone({
-  first,
-  since,
-  segment,
-  aumText,
-  cash,
-  hide,
-  themeLabel,
-  onTheme,
-  onHide,
-  alloc,
-  advisor,
-  initials: mark,
-  activity,
-  note,
-  onOpen,
-}: {
-  first: string;
-  since: string;
-  segment: string;
-  aumText: string;
-  cash: string;
-  hide: boolean;
-  themeLabel: string;
-  onTheme: () => void;
-  onHide: () => void;
-  alloc: { label: string; slot: number; pct: number }[];
-  advisor: string;
-  initials: string;
-  activity: ActivityRow[];
-  note: string | null;
-  onOpen: (panel: Panel) => void;
-}) {
-  return (
-    <>
-      <NavNote name={note} />
-      <div className="pov-app__phone-bar">
-        <p className="pov-app__logo">
-          orla<span>.</span>
-          <em>invest</em>
-        </p>
-        <button type="button" aria-label={themeLabel} onClick={onTheme}>
-          <Icon name={themeLabel === 'Tema claro' ? 'sun' : 'moon'} size={19} />
-        </button>
-        <button type="button" aria-label="Notificações">
-          <Icon name="bell" />
-        </button>
-        <span aria-hidden="true">{mark}</span>
-      </div>
-      <div className="pov-app__hello">
-        <h1>Olá, {first}</h1>
-        <span>Conta em dólar nos EUA{since ? ` · cliente desde ${since}` : ''}</span>
-      </div>
-      <Wealth aumText={aumText} segment={segment} cash={cash} hide={hide} onHide={onHide} alloc={alloc} wide={false} />
-      <Actions onOpen={onOpen} wide={false} />
-      <section className="pov-app__advisor" aria-label="Sua assessoria">
-        <span aria-hidden="true">AP</span>
-        <div>
-          <em>Sua assessora</em>
-          <strong>{advisor}</strong>
-        </div>
-        <button type="button" onClick={() => onOpen('message')}>
-          Conversar
-        </button>
-      </section>
-      <Activity activity={activity} wide={false} />
-      <p className="pov-app__fine">Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</p>
-    </>
-  );
-}
-
-function HomeDesktop({
-  first,
-  since,
-  segment,
-  aumText,
-  cash,
-  hide,
-  onHide,
-  alloc,
-  advisor,
-  activity,
-  last,
-  note,
-  onOpen,
-}: {
-  first: string;
-  since: string;
-  segment: string;
-  aumText: string;
-  cash: string;
-  hide: boolean;
-  onHide: () => void;
-  alloc: { label: string; slot: number; pct: number }[];
-  advisor: string;
-  initials: string;
-  activity: ActivityRow[];
-  last?: ChatRow;
-  note: string | null;
-  onOpen: (panel: Panel) => void;
-}) {
-  return (
-    <div className="pov-app__desk">
-      <NavNote name={note} />
-      <div className="pov-app__desk-top">
-        <div className="pov-app__hello">
-          <h1>Olá, {first}</h1>
-          <span>Conta em dólar nos EUA{since ? ` · cliente desde ${since}` : ''}</span>
-        </div>
-        <Actions onOpen={onOpen} wide />
-        <button type="button" aria-label="Notificações">
-          <Icon name="bell" />
-        </button>
-      </div>
-      <div className="pov-app__desk-grid">
-        <Wealth aumText={aumText} segment={segment} cash={cash} hide={hide} onHide={onHide} alloc={alloc} wide />
-        <div>
-          <section className="pov-app__advisor" aria-label="Sua assessoria">
-            <div>
-              <span aria-hidden="true">AP</span>
-              <div>
-                <em>Sua assessora</em>
-                <strong>{advisor}</strong>
-              </div>
-            </div>
-            {last ? (
-              <blockquote>
-                <em>Sua última mensagem · {last.meta}</em>
-                {last.text}
-              </blockquote>
-            ) : null}
-            <div>
-              <button type="button" onClick={() => onOpen('message')}>
-                Conversar
-              </button>
-              <button type="button" onClick={() => onOpen('complaint')}>
-                Abrir reclamação
-              </button>
-            </div>
-          </section>
-          <p className="pov-app__fine">Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</p>
-        </div>
-      </div>
-      <Activity activity={activity} wide />
-    </div>
-  );
-}
-
 function NavNote({ name }: { name: string | null }) {
   if (!name) {
     return null;
@@ -1084,94 +990,5 @@ function NavNote({ name }: { name: string | null }) {
     <p role="status" className="pov-app__nav-note">
       {name} não entra nesta simulação. O caminho é Depositar, Sacar, Mensagem ou Reclamar.
     </p>
-  );
-}
-
-function Wealth({
-  aumText,
-  segment,
-  cash,
-  hide,
-  onHide,
-  alloc,
-  wide,
-}: {
-  aumText: string;
-  segment: string;
-  cash: string;
-  hide: boolean;
-  onHide: () => void;
-  alloc: { label: string; slot: number; pct: number }[];
-  wide: boolean;
-}) {
-  return (
-    <section className="pov-app__card" aria-label="Patrimônio" data-wide={wide ? 'true' : 'false'}>
-      <div>
-        <span>Patrimônio total</span>
-        <em>Cliente {segment}</em>
-        <button type="button" aria-label={hide ? 'Mostrar valores' : 'Esconder valores'} onClick={onHide}>
-          <Icon name="eye" />
-        </button>
-      </div>
-      <strong>{aumText}</strong>
-      <div className="pov-app__bar" aria-hidden="true">
-        {alloc.map((row) => (
-          <i key={row.label} data-slot={row.slot} style={{ flex: row.pct }} />
-        ))}
-      </div>
-      <ul>
-        {alloc.map((row) => (
-          <li key={row.label}>
-            <i data-slot={row.slot} />
-            <span>{row.label}</span>
-            <b>{row.pct}%</b>
-          </li>
-        ))}
-      </ul>
-      <p>
-        <span>Disponível para saque</span>
-        <b>{cash}</b>
-      </p>
-    </section>
-  );
-}
-
-function Actions({ onOpen, wide }: { onOpen: (panel: Panel) => void; wide: boolean }) {
-  const items: { label: string; icon: string; panel: Panel }[] = [
-    { label: 'Depositar', icon: 'in', panel: 'deposit' },
-    { label: 'Sacar', icon: 'out', panel: 'withdraw' },
-    { label: 'Mensagem', icon: 'msg', panel: 'message' },
-    { label: 'Reclamar', icon: 'flag', panel: 'complaint' },
-  ];
-  return (
-    <nav className={wide ? 'pov-app__pills' : 'pov-app__actions'} aria-label="Ações">
-      {items.map((item, index) => (
-        <button key={item.label} type="button" data-main={index === 0 ? 'true' : 'false'} onClick={() => onOpen(item.panel)}>
-          <Icon name={item.icon} size={wide ? 18 : 22} />
-          {item.label}
-        </button>
-      ))}
-    </nav>
-  );
-}
-
-function Activity({ activity, wide }: { activity: ActivityRow[]; wide: boolean }) {
-  return (
-    <section className="pov-app__activity" aria-label="Atividade recente" data-wide={wide ? 'true' : 'false'}>
-      <h2>Atividade recente</h2>
-      {activity.length === 0 ? <p>Nenhuma movimentação nos últimos 30 dias.</p> : null}
-      {activity.map((row) => (
-        <div key={`${row.title}-${row.meta}`}>
-          <span aria-hidden="true">
-            <Icon name={row.icon} size={18} />
-          </span>
-          <div>
-            <strong>{row.title}</strong>
-            <em>{row.meta}</em>
-          </div>
-          <b data-tone={row.tone}>{row.value}</b>
-        </div>
-      ))}
-    </section>
   );
 }

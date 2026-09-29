@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { Slug } from './types';
 
-/** Panels the client app can open from a panel action today. */
+/** Coded panels a panel action opens without a product. */
 export type OpenPanel = 'deposit' | 'withdraw' | 'message' | 'complaint';
 
 /** What SDUI components need from the screen that hosts them. */
@@ -12,6 +12,8 @@ export interface SduiContextValue {
   masked: boolean;
   onToggleMask: () => void;
   onPanel: (panel: OpenPanel) => void;
+  /** Opens the coded purchase form for one product of the screen on view. */
+  onPurchase: (productID: string) => void;
 }
 
 export const SduiContext = createContext<SduiContextValue | null>(null);

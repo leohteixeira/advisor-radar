@@ -3379,6 +3379,9 @@ a.detail__360 {
   --p-neg-soft: rgb(255 143 133 / 10%);
   --p-info: #8ab4ff;
   --p-info-soft: rgb(138 180 255 / 10%);
+  --p-warn: #f2b544;
+  --p-warn-soft: rgb(242 181 68 / 12%);
+  --p-warn-text: #f2b544;
   --p-dash: #3a4a6d;
   --p-nav: #0e1627;
   --p-scrim: rgb(5 9 18 / 55%);
@@ -3414,6 +3417,9 @@ a.detail__360 {
   --p-neg-soft: rgb(184 53 42 / 9%);
   --p-info: #2f5fb8;
   --p-info-soft: rgb(77 127 219 / 10%);
+  --p-warn: #b9821c;
+  --p-warn-soft: rgb(242 181 68 / 16%);
+  --p-warn-text: #7f5600;
   --p-dash: #aeb8ca;
   --p-nav: #fff;
   --p-scrim: rgb(14 22 38 / 32%);
@@ -3594,7 +3600,6 @@ a.detail__360 {
 
 .pov-app__who > span,
 .pov-app__phone-bar > span,
-.pov-app__advisor > span,
 .pov-app__chat-head > span {
   width: 36px;
   height: 36px;
@@ -3617,9 +3622,7 @@ a.detail__360 {
   font-size: 13.5px;
 }
 
-.pov-app__who em,
-.pov-app__hello span,
-.pov-app__advisor em {
+.pov-app__who em {
   font-style: normal;
   color: var(--p-ink3);
 }
@@ -3648,8 +3651,6 @@ a.detail__360 {
 }
 
 .pov-app__phone-bar > button,
-.pov-app__desk-top > button,
-.pov-app__card > div > button,
 .pov-app__panel-head > button,
 .pov-app__chat-head > button {
   width: 44px;
@@ -3664,7 +3665,6 @@ a.detail__360 {
   justify-content: center;
 }
 
-.pov-app__card > div > button,
 .pov-app__panel-head > button,
 .pov-app__chat-head > button {
   background: none;
@@ -3676,282 +3676,6 @@ a.detail__360 {
   font-size: 13px;
 }
 
-.pov-app__hello {
-  padding: 18px 20px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.pov-app__hello h1 {
-  margin: 0;
-  font: 700 22px/1.2 Manrope, sans-serif;
-  letter-spacing: -0.02em;
-}
-
-.pov-app__hello span {
-  font-size: 13px;
-}
-
-.pov-app__card {
-  margin: 16px 20px 0;
-  padding: 20px;
-  background: var(--p-s1);
-  border: 1px solid var(--p-line);
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.pov-app__card > div {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pov-app__card > div > span {
-  font-size: 13px;
-  color: var(--p-ink2);
-  flex: 1;
-}
-
-.pov-app__card > div > em {
-  font: 700 11px/1 Manrope, sans-serif;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-style: normal;
-  color: var(--p-acc-text);
-  background: var(--p-acc-soft);
-  border-radius: 999px;
-  padding: 6px 10px;
-}
-
-.pov-app__card > strong {
-  font: 800 32px/1.1 Manrope, sans-serif;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-
-.pov-app__bar {
-  display: flex;
-  height: 8px;
-  gap: 2px;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.pov-app__bar i,
-.pov-app__card li i {
-  background: var(--alloc-0);
-}
-
-.pov-app__bar i[data-slot='1'],
-.pov-app__card li i[data-slot='1'] {
-  background: var(--alloc-1);
-}
-
-.pov-app__bar i[data-slot='2'],
-.pov-app__card li i[data-slot='2'] {
-  background: var(--alloc-2);
-}
-
-.pov-app__bar i[data-slot='3'],
-.pov-app__card li i[data-slot='3'] {
-  background: var(--alloc-3);
-}
-
-.pov-app__card ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 16px;
-}
-
-.pov-app__card li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--p-ink2);
-}
-
-.pov-app__card li i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.pov-app__card li span {
-  flex: 1;
-}
-
-.pov-app__card li b,
-.pov-app__card > p b {
-  font-variant-numeric: tabular-nums;
-}
-
-.pov-app__card > p {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 14px;
-  border-top: 1px solid var(--p-line);
-  font-size: 13px;
-  color: var(--p-ink2);
-}
-
-.pov-app__card > p span {
-  flex: 1;
-}
-
-.pov-app__card > p b {
-  color: var(--p-ink);
-  font-size: 15px;
-}
-
-.pov-app__actions {
-  margin: 20px 20px 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.pov-app__actions button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  border: none;
-  background: none;
-  font: 600 12.5px/1.2 Manrope, sans-serif;
-}
-
-.pov-app__actions svg {
-  width: 52px;
-  height: 52px;
-  padding: 15px;
-  box-sizing: border-box;
-  border-radius: 50%;
-  background: var(--p-s2);
-  color: var(--p-acc-text);
-}
-
-.pov-app__advisor {
-  margin: 24px 20px 0;
-  padding: 16px;
-  background: var(--p-s1);
-  border: 1px solid var(--p-line);
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.pov-app__advisor > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-
-.pov-app__advisor em {
-  font-size: 12px;
-}
-
-.pov-app__advisor strong {
-  font-size: 15px;
-}
-
-.pov-app__advisor > button {
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 999px;
-  border: 1.5px solid var(--p-acc-text);
-  background: none;
-  color: var(--p-acc-text);
-  font: 700 13px/1 Manrope, sans-serif;
-}
-
-.pov-app__activity {
-  margin: 24px 20px 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.pov-app__activity h2 {
-  margin: 0 0 6px;
-  font: 700 15px/1.3 Manrope, sans-serif;
-}
-
-.pov-app__activity > p {
-  margin: 0;
-  padding: 20px 16px;
-  border: 1px dashed var(--p-line);
-  border-radius: 12px;
-  font-size: 13.5px;
-  color: var(--p-ink2);
-  text-align: center;
-}
-
-.pov-app__activity > div {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--p-s2);
-}
-
-.pov-app__activity > div > span {
-  width: 36px;
-  height: 36px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--p-s2);
-  color: var(--p-ink2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.pov-app__activity > div > div {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.pov-app__activity strong {
-  font-size: 14px;
-}
-
-.pov-app__activity em {
-  display: block;
-  font-style: normal;
-  font-size: 12.5px;
-  color: var(--p-ink3);
-  font-weight: 500;
-}
-
-.pov-app__activity b {
-  font-size: 14px;
-  white-space: nowrap;
-}
-
-.pov-app__activity b[data-tone='pos'] {
-  color: var(--p-pos);
-}
-
-.pov-app__activity b[data-tone='neg'] {
-  color: var(--p-neg);
-}
-
 .pov-app__nav-note {
   margin: 16px 20px 0;
   padding: 12px 14px;
@@ -3960,10 +3684,6 @@ a.detail__360 {
   font-size: 14px;
   line-height: 1.45;
   color: var(--p-ink2);
-}
-
-.pov-app__desk .pov-app__nav-note {
-  margin: 0;
 }
 
 .pov-app__fine {
@@ -4589,6 +4309,498 @@ a.detail__360 {
   }
 }
 
+/* The screen area when the screen request failed: no hardcoded screen, a retry. */
+.sdui-error {
+  box-sizing: border-box;
+  padding: 20px 16px;
+  border: 1px solid var(--p-line);
+  border-radius: 16px;
+  background: var(--p-s1);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.sdui-error h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sdui-error h1:focus,
+.pov-buy h1:focus {
+  outline: none;
+}
+
+/* Investir (Investir-Thiago, Investir-Desktop). */
+.sdui-invest {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.sdui-invest__cash {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sdui-invest__cash span {
+  font-size: 12.5px;
+  color: var(--p-ink3);
+}
+
+.sdui-invest__cash strong {
+  font: 800 24px/1 Manrope, sans-serif;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.sdui-invest__chip {
+  flex: none;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--p-acc-soft);
+  color: var(--p-acc-text);
+  font: 700 12px/1 Manrope, sans-serif;
+}
+
+.sdui-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sdui-rail__head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sdui-rail__head h2 {
+  margin: 0;
+  font: 800 16px/1.3 Manrope, sans-serif;
+}
+
+.sdui-rail__head p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--p-ink3);
+}
+
+.sdui-rail__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.pov-app[data-layout='desktop'] .sdui-rail__grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sdui-product {
+  gap: 8px;
+}
+
+.sdui-product__name {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.sdui-product__risk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--p-ink3);
+}
+
+.sdui-product__return {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--p-pos);
+}
+
+.sdui-product__min {
+  font-size: 12px;
+  color: var(--p-ink3);
+}
+
+.sdui-product .sdui-btn--primary {
+  margin-top: 4px;
+}
+
+.sdui-risk {
+  flex: none;
+  display: inline-flex;
+  gap: 3px;
+}
+
+.sdui-risk i {
+  width: 6px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--p-line);
+}
+
+.sdui-risk i[data-on='true'] {
+  background: var(--p-acc-text);
+}
+
+.sdui-risk[data-above='true'] i[data-on='true'] {
+  background: var(--p-warn);
+}
+
+.sdui-badge {
+  align-self: flex-start;
+  padding: 6px 10px;
+  border: 1px solid var(--p-warn);
+  border-radius: 999px;
+  background: var(--p-warn-soft);
+  color: var(--p-warn-text);
+  font: 700 11.5px/1 Manrope, sans-serif;
+}
+
+.sdui-products {
+  gap: 4px;
+}
+
+.sdui-products h2 {
+  margin: 0 0 4px;
+  font: 700 15px/1.3 Manrope, sans-serif;
+}
+
+.sdui-products ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sdui-products li {
+  border-top: 1px solid var(--p-line);
+}
+
+.pov-app .sdui-products__row {
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border: none;
+  background: none;
+  color: var(--p-ink3);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sdui-products__body {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.sdui-products__body strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--p-ink);
+}
+
+/* The coded purchase form and its confirmation (Compra-Fernanda-Aviso, Compra-Enviada). */
+.pov-buy {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pov-buy h1 {
+  margin: 0;
+  font: 800 24px/1.2 Manrope, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.pov-app .pov-buy__back {
+  align-self: flex-start;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--p-acc-text);
+  font: 700 14px/1 Manrope, sans-serif;
+  cursor: pointer;
+}
+
+.pov-buy__card {
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid var(--p-line);
+  border-radius: 16px;
+  background: var(--p-s1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pov-buy__return {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--p-pos);
+}
+
+.pov-buy__fine,
+.pov-buy__hint {
+  font-size: 12.5px;
+  color: var(--p-ink3);
+}
+
+.pov-buy__amount {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pov-buy__amount label {
+  font-size: 13px;
+  color: var(--p-ink3);
+}
+
+.pov-buy__amount input {
+  min-height: 56px;
+  box-sizing: border-box;
+  padding: 0 16px;
+  border: 1px solid var(--p-line);
+  border-radius: 12px;
+  background: var(--p-s1);
+  color: var(--p-ink);
+  font: 800 24px/1 Manrope, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.pov-buy__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pov-app .pov-buy__chips button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--p-line);
+  border-radius: 999px;
+  background: none;
+  color: var(--p-ink2);
+  font: 700 13px/1 Manrope, sans-serif;
+  cursor: pointer;
+}
+
+.pov-app .pov-buy__chips button[aria-pressed='true'] {
+  border-color: var(--p-acc);
+  background: var(--p-acc-soft);
+  color: var(--p-acc-text);
+}
+
+.pov-buy__warn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--p-warn);
+  border-radius: 14px;
+  background: var(--p-warn-soft);
+}
+
+.pov-buy__warn strong {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--p-warn-text);
+}
+
+.pov-buy__warn p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--p-ink2);
+}
+
+.pov-buy > p[role='alert'] {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--p-neg);
+}
+
+.pov-app .pov-buy__primary,
+.pov-app .pov-buy__ghost,
+.pov-app .pov-buy__secondary {
+  min-height: 52px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  font: 800 15px/1 Manrope, sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.pov-app .pov-buy__primary {
+  border: none;
+  background: var(--p-acc);
+  color: var(--p-acc-ink);
+}
+
+.pov-app .pov-buy__primary:disabled {
+  background: var(--p-s2);
+  color: var(--p-ink3);
+  cursor: default;
+}
+
+.pov-app .pov-buy__ghost {
+  border: none;
+  background: none;
+  color: var(--p-ink2);
+  font-weight: 700;
+}
+
+.pov-app .pov-buy__secondary {
+  border: 1px solid var(--p-line);
+  color: var(--p-ink);
+  font-weight: 700;
+}
+
+.pov-buy--sent h1 {
+  font-size: 26px;
+}
+
+.pov-buy__ok {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--p-pos-soft);
+  color: var(--p-pos);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pov-buy__lead {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--p-ink2);
+}
+
+.pov-buy__protocol {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pov-buy__protocol span {
+  font-size: 13px;
+  color: var(--p-ink3);
+}
+
+.pov-buy__protocol code {
+  font: 500 15px/1 'JetBrains Mono', monospace;
+}
+
+.pov-buy__bastidores {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--p-line);
+}
+
+.pov-buy__bastidores strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pov-buy__bastidores code {
+  font: 500 12px/1.4 'JetBrains Mono', monospace;
+  color: var(--p-ink2);
+  overflow-wrap: anywhere;
+}
+
+.pov-buy__bastidores code + code {
+  color: var(--p-ink3);
+  word-break: break-all;
+}
+
+.pov-buy__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pov-buy__steps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pov-buy__steps i {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  box-sizing: border-box;
+  border: 2px solid var(--p-line);
+  border-radius: 50%;
+}
+
+.pov-buy__steps span {
+  flex-grow: 1;
+  font-size: 13.5px;
+}
+
+.pov-buy__steps em {
+  font: 500 11.5px/1 'JetBrains Mono', monospace;
+  font-style: normal;
+  color: var(--p-ink3);
+}
+
+.pov-buy__steps li[data-state='feito'] i {
+  border: none;
+  background: var(--p-pos);
+}
+
+.pov-buy__steps li[data-state='feito'] em {
+  color: var(--p-pos);
+}
+
+.pov-buy__steps li[data-state='agora'] i {
+  border: 3px solid var(--p-acc);
+}
+
+.pov-buy__steps li[data-state='agora'] em {
+  color: var(--p-acc-text);
+}
+
 /* Raio-X SDUI: demo tool of the client app (Home-Thiago-RaioX, Home-Desktop-RaioX, Home-Falha-Isolada). */
 .pov-app .pov-app__xray {
   min-height: 44px;
@@ -5210,235 +5422,4 @@ a.detail__360 {
   color: var(--p-ink);
   text-decoration: none;
   font: 700 14px/1 Manrope, sans-serif;
-}
-
-.pov-app__desk {
-  padding: 32px 40px 40px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.pov-app__desk-top {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-}
-
-.pov-app__desk .pov-app__hello {
-  padding: 0;
-  flex: 1;
-  gap: 6px;
-}
-
-.pov-app__desk .pov-app__hello h1 {
-  font: 800 28px/1.15 Manrope, sans-serif;
-}
-
-.pov-app__desk .pov-app__hello span {
-  font-size: 14px;
-}
-
-.pov-app__pills {
-  display: flex;
-  gap: 8px;
-}
-
-.pov-app__pills button {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 18px;
-  border-radius: 999px;
-  border: 1.5px solid var(--p-line);
-  background: var(--p-s1);
-  font: 700 13.5px/1 Manrope, sans-serif;
-}
-
-.pov-app__pills button[data-main='true'] {
-  border: none;
-  background: var(--p-acc);
-  color: var(--p-acc-ink);
-}
-
-.pov-app__desk-top > button {
-  flex: none;
-  border: 1px solid var(--p-line);
-  background: var(--p-s1);
-}
-
-.pov-app__desk-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
-  gap: 24px;
-}
-
-.pov-app__desk .pov-app__card {
-  margin: 0;
-  padding: 28px;
-  border-radius: 18px;
-  gap: 18px;
-}
-
-.pov-app__desk .pov-app__card > div > span,
-.pov-app__desk .pov-app__card > p {
-  font-size: 14px;
-}
-
-.pov-app__desk .pov-app__card > strong {
-  font-size: 44px;
-  letter-spacing: -0.03em;
-}
-
-.pov-app__desk .pov-app__bar {
-  height: 10px;
-  gap: 3px;
-  border-radius: 5px;
-}
-
-.pov-app__desk .pov-app__card ul {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.pov-app__desk .pov-app__card li {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  font-size: 13px;
-}
-
-.pov-app__desk .pov-app__card li b {
-  font-size: 17px;
-  color: var(--p-ink);
-}
-
-.pov-app__desk .pov-app__card > p {
-  padding-top: 18px;
-}
-
-.pov-app__desk .pov-app__card > p b {
-  font-size: 18px;
-  font-weight: 800;
-}
-
-.pov-app__desk .pov-app__advisor {
-  margin: 0;
-  padding: 24px;
-  border-radius: 18px;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 16px;
-}
-
-.pov-app__desk .pov-app__advisor > div:first-child {
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
-}
-
-.pov-app__desk .pov-app__advisor > div:first-child > div {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-.pov-app__desk .pov-app__advisor > div:first-child > span {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--p-s2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font: 700 14px/1 Manrope, sans-serif;
-}
-
-.pov-app__desk .pov-app__advisor blockquote {
-  margin: 0;
-  padding: 12px 14px;
-  background: var(--p-s2);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13.5px;
-  line-height: 1.45;
-}
-
-.pov-app__desk .pov-app__advisor blockquote em {
-  font-size: 12px;
-}
-
-.pov-app__desk .pov-app__advisor > div:last-child {
-  flex-direction: row;
-  gap: 8px;
-}
-
-.pov-app__desk .pov-app__advisor button {
-  flex: 1;
-  min-height: 44px;
-  border-radius: 999px;
-  font: 700 13.5px/1 Manrope, sans-serif;
-}
-
-.pov-app__desk .pov-app__advisor button:first-child {
-  border: none;
-  background: var(--p-acc);
-  color: var(--p-acc-ink);
-  font-weight: 800;
-}
-
-.pov-app__desk .pov-app__advisor button:last-child {
-  border: 1.5px solid var(--p-line);
-  background: none;
-  color: var(--p-ink);
-}
-
-.pov-app__desk .pov-app__fine {
-  padding: 0;
-  font-size: 12px;
-}
-
-.pov-app__desk .pov-app__activity {
-  margin: 0;
-  padding: 8px 28px 12px;
-  background: var(--p-s1);
-  border: 1px solid var(--p-line);
-  border-radius: 18px;
-}
-
-.pov-app__desk .pov-app__activity h2 {
-  padding: 16px 0 8px;
-  font-size: 16px;
-}
-
-.pov-app__desk .pov-app__activity > div {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 200px 160px;
-  gap: 14px;
-  padding: 14px 0;
-  border-top: 1px solid var(--p-s2);
-  border-bottom: none;
-}
-
-.pov-app__desk .pov-app__activity > div > div {
-  display: contents;
-}
-
-.pov-app__desk .pov-app__activity em {
-  font-size: 13px;
-}
-
-.pov-app__desk .pov-app__activity b {
-  text-align: right;
-  font-size: 14.5px;
-}
-
-.pov-app__desk .pov-app__activity > p {
-  margin: 4px 0 16px;
-  padding: 24px 16px;
-  font-size: 14px;
 }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Boundary } from './Boundary';
 import { lookup } from './registry';
 import type { Component, Screen, Slug } from './types';
@@ -72,6 +72,29 @@ export function SduiScreen({ screen, xray }: { screen: Screen; xray?: XrayOption
             ))
           : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The screen area when the screen request failed, timed out, or answered
+ * something that is not an envelope. There is no hardcoded screen to fall
+ * back to; `onRetry` sends the request again.
+ */
+export function SduiError({ onRetry }: { onRetry: () => void }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  // The error replaces the screen, so focus moves to its heading.
+  useEffect(() => heading.current?.focus(), []);
+  return (
+    <div className="sdui-error">
+      <div role="alert">
+        <h1 ref={heading} tabIndex={-1}>
+          Não foi possível montar sua tela.
+        </h1>
+      </div>
+      <button type="button" className="sdui-btn sdui-btn--secondary" onClick={onRetry}>
+        Tentar de novo
+      </button>
     </div>
   );
 }

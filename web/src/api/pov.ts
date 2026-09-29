@@ -45,9 +45,31 @@ export function formatCents(cents: number): string {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'USD' });
 }
 
+/**
+ * Parses a user-typed dollar amount ("1.000,50", "US$ 1.000,00") in pt-BR
+ * notation; anything unreadable is 0.
+ */
+export function dollars(value: string): number {
+  const parsed = Number(value.replace(/[^0-9.,]/g, '').replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** The `error` code of a JSON error body, or '' when there is none. */
+async function errorCode(res: Response): Promise<string> {
+  try {
+    const body: unknown = await res.json();
+    if (typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string') {
+      return (body as { error: string }).error;
+    }
+  } catch {
+    // A body that is not JSON carries no code.
+  }
+  return '';
+}
+
 async function read<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    throw new ApiError(res.status);
+    throw new ApiError(res.status, await errorCode(res));
   }
   return (await res.json()) as T;
 }
@@ -116,7 +138,7 @@ function asMessages(value: unknown): POVMessage[] {
 
 export async function postPOV(
   id: string,
-  kind: 'deposits' | 'withdrawals' | 'complaints' | 'messages',
+  kind: 'deposits' | 'withdrawals' | 'complaints' | 'messages' | 'purchases',
   body: Record<string, unknown>,
   key: string,
 ): Promise<POVAccepted> {
