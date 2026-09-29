@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,10 +13,11 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/outbox"
 )
 
-// PGXStore is the PostgreSQL Store over pov_account, pov_idempotency, and
-// outbox in the account_sim database. Every writer takes a transaction-scoped
-// advisory lock per customer, so commands for one customer run one at a time
-// and a concurrent request with the same key becomes a replay.
+// PGXStore is the PostgreSQL Store over pov_account, pov_position,
+// pov_product, pov_registration, pov_idempotency, and outbox in the
+// account_sim database. Every writer takes a transaction-scoped advisory lock
+// per customer, so commands for one customer run one at a time and a
+// concurrent request with the same key becomes a replay.
 type PGXStore struct {
 	pool *pgxpool.Pool
 }
@@ -67,32 +69,44 @@ func (t *pgxTx) lock(ctx context.Context, customerID string) error {
 	return nil
 }
 
+// GetAccount reads the cash and values the positions at the current day. It
+// takes the customer lock first, so cash and positions come from one state
+// that no command is changing.
 func (t *pgxTx) GetAccount(ctx context.Context, customerID string) (Account, bool, error) {
+	if err := t.lock(ctx, customerID); err != nil {
+		return Account{}, false, err
+	}
 	const q = `
-SELECT acoes, etfs, renda_fixa, caixa
+SELECT caixa
 FROM pov_account
 WHERE customer_id = $1`
-	account := Account{CustomerID: customerID}
-	err := t.tx.QueryRow(ctx, q, customerID).Scan(
-		&account.Acoes, &account.ETFs, &account.RendaFixa, &account.Caixa,
-	)
+	var cash int64
+	err := t.tx.QueryRow(ctx, q, customerID).Scan(&cash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Account{}, false, nil
 	}
 	if err != nil {
 		return Account{}, false, fmt.Errorf("sim pgx: get account: %w", err)
 	}
+	positions, err := t.listPositions(ctx, customerID)
+	if err != nil {
+		return Account{}, false, err
+	}
+	account, err := aggregate(customerID, cash, positions)
+	if err != nil {
+		return Account{}, false, err
+	}
 	return account, true, nil
 }
 
+// PutAccount writes only the cash; the class fields of account are
+// aggregates and positions are never written from them.
 func (t *pgxTx) PutAccount(ctx context.Context, account Account) error {
 	const q = `
 UPDATE pov_account
-SET acoes = $2, etfs = $3, renda_fixa = $4, caixa = $5
+SET caixa = $2
 WHERE customer_id = $1`
-	tag, err := t.tx.Exec(ctx, q,
-		account.CustomerID, account.Acoes, account.ETFs, account.RendaFixa, account.Caixa,
-	)
+	tag, err := t.tx.Exec(ctx, q, account.CustomerID, account.Caixa)
 	if err != nil {
 		return fmt.Errorf("sim pgx: put account: %w", err)
 	}
@@ -100,6 +114,71 @@ WHERE customer_id = $1`
 		return fmt.Errorf("sim pgx: put account: %d rows updated, want 1", tag.RowsAffected())
 	}
 	return nil
+}
+
+// listPositions returns the customer's positions valued at the current day.
+func (t *pgxTx) listPositions(ctx context.Context, customerID string) ([]Position, error) {
+	const q = `
+SELECT p.product_id, pr.asset_class, p.units_cents, p.applied_cents
+FROM pov_position p
+JOIN pov_product pr ON pr.id = p.product_id
+WHERE p.customer_id = $1`
+	rows, err := t.tx.Query(ctx, q, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("sim pgx: list positions: %w", err)
+	}
+	positions, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Position, error) {
+		var position Position
+		err := row.Scan(&position.ProductID, &position.AssetClass, &position.UnitsCents, &position.AppliedCents)
+		return position, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sim pgx: scan positions: %w", err)
+	}
+	return valuePositions(positions, SeedDay), nil
+}
+
+// ListProducts returns the catalog ordered by risk and then id.
+func (t *pgxTx) ListProducts(ctx context.Context) ([]Product, error) {
+	const q = `
+SELECT id, name, asset_class, risk, return_label, minimum_cents
+FROM pov_product
+ORDER BY risk, id`
+	rows, err := t.tx.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("sim pgx: list products: %w", err)
+	}
+	products, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Product, error) {
+		var (
+			product Product
+			risk    int16
+		)
+		err := row.Scan(&product.ID, &product.Name, &product.AssetClass, &risk, &product.ReturnLabel, &product.MinimumCents)
+		product.Risk = int(risk)
+		return product, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sim pgx: scan products: %w", err)
+	}
+	return products, nil
+}
+
+func (t *pgxTx) GetRegistration(ctx context.Context, customerID string) (Registration, bool, error) {
+	const q = `
+SELECT email, phone, city, account_number
+FROM pov_registration
+WHERE customer_id = $1`
+	registration := Registration{CustomerID: customerID}
+	err := t.tx.QueryRow(ctx, q, customerID).Scan(
+		&registration.Email, &registration.Phone, &registration.City, &registration.AccountNumber,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Registration{}, false, nil
+	}
+	if err != nil {
+		return Registration{}, false, fmt.Errorf("sim pgx: get registration: %w", err)
+	}
+	return registration, true, nil
 }
 
 // LookupKey runs first in Apply, so it takes the customer lock before reading
@@ -145,39 +224,80 @@ VALUES ($1::uuid, $2, $3::jsonb)`
 	return nil
 }
 
-// ResetPOV upserts the given balances. It sorts the accounts by customer_id
-// (byte-wise string order, not by lock hash) and takes each customer lock in
-// that order, so it serializes with Apply and two resets acquire their locks
-// in the same order and cannot deadlock.
-func (t *pgxTx) ResetPOV(ctx context.Context, accounts []Account) error {
-	sorted := slices.Clone(accounts)
-	slices.SortFunc(sorted, func(a, b Account) int {
-		switch {
-		case a.CustomerID < b.CustomerID:
-			return -1
-		case a.CustomerID > b.CustomerID:
-			return 1
-		default:
-			return 0
+// ResetPOV upserts the catalog, then restores each seeded account: cash,
+// exactly the seeded positions, and registration. It sorts the accounts by
+// customer_id (byte-wise string order, not by lock hash) and takes each
+// customer lock in that order, so it serializes with Apply and two resets
+// acquire their locks in the same order and cannot deadlock.
+func (t *pgxTx) ResetPOV(ctx context.Context, seed Seed) error {
+	const upsertProduct = `
+INSERT INTO pov_product (id, name, asset_class, risk, return_label, minimum_cents)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  asset_class = EXCLUDED.asset_class,
+  risk = EXCLUDED.risk,
+  return_label = EXCLUDED.return_label,
+  minimum_cents = EXCLUDED.minimum_cents`
+	for _, product := range seed.Products {
+		if _, err := t.tx.Exec(ctx, upsertProduct,
+			product.ID, product.Name, product.AssetClass, product.Risk, product.ReturnLabel, product.MinimumCents,
+		); err != nil {
+			return fmt.Errorf("sim pgx: reset product: %w", err)
 		}
+	}
+
+	accounts := slices.Clone(seed.Accounts)
+	slices.SortFunc(accounts, func(a, b SeedAccount) int {
+		return strings.Compare(a.CustomerID, b.CustomerID)
 	})
-	const q = `
-INSERT INTO pov_account (customer_id, acoes, etfs, renda_fixa, caixa)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (customer_id) DO UPDATE SET
-  acoes = EXCLUDED.acoes,
-  etfs = EXCLUDED.etfs,
-  renda_fixa = EXCLUDED.renda_fixa,
-  caixa = EXCLUDED.caixa`
-	for _, account := range sorted {
+	for _, account := range accounts {
 		if err := t.lock(ctx, account.CustomerID); err != nil {
 			return err
 		}
-		if _, err := t.tx.Exec(ctx, q,
-			account.CustomerID, account.Acoes, account.ETFs, account.RendaFixa, account.Caixa,
-		); err != nil {
-			return fmt.Errorf("sim pgx: reset account: %w", err)
+		if err := t.resetAccount(ctx, account); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+func (t *pgxTx) resetAccount(ctx context.Context, account SeedAccount) error {
+	const upsertAccount = `
+INSERT INTO pov_account (customer_id, caixa)
+VALUES ($1, $2)
+ON CONFLICT (customer_id) DO UPDATE SET caixa = EXCLUDED.caixa`
+	if _, err := t.tx.Exec(ctx, upsertAccount, account.CustomerID, account.CashCents); err != nil {
+		return fmt.Errorf("sim pgx: reset account: %w", err)
+	}
+	if _, err := t.tx.Exec(ctx,
+		`DELETE FROM pov_position WHERE customer_id = $1`, account.CustomerID,
+	); err != nil {
+		return fmt.Errorf("sim pgx: clear positions: %w", err)
+	}
+	const insertPosition = `
+INSERT INTO pov_position (customer_id, product_id, units_cents, applied_cents)
+VALUES ($1, $2, $3, $4)`
+	for _, position := range account.Positions {
+		if _, err := t.tx.Exec(ctx, insertPosition,
+			account.CustomerID, position.ProductID, position.UnitsCents, position.AppliedCents,
+		); err != nil {
+			return fmt.Errorf("sim pgx: reset position: %w", err)
+		}
+	}
+	const upsertRegistration = `
+INSERT INTO pov_registration (customer_id, email, phone, city, account_number)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (customer_id) DO UPDATE SET
+  email = EXCLUDED.email,
+  phone = EXCLUDED.phone,
+  city = EXCLUDED.city,
+  account_number = EXCLUDED.account_number`
+	registration := account.Registration
+	if _, err := t.tx.Exec(ctx, upsertRegistration,
+		account.CustomerID, registration.Email, registration.Phone, registration.City, registration.AccountNumber,
+	); err != nil {
+		return fmt.Errorf("sim pgx: reset registration: %w", err)
 	}
 	return nil
 }

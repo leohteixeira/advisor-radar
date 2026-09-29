@@ -15,6 +15,8 @@ service AccountService {
   rpc FileComplaint(FileComplaintRequest) returns (CommandReply);
   rpc GetAccount(GetAccountRequest) returns (Account);
   rpc ListAccounts(ListAccountsRequest) returns (ListAccountsResponse);
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+  rpc GetRegistration(GetRegistrationRequest) returns (Registration);
 }
 
 message DepositRequest {
@@ -54,17 +56,66 @@ message GetAccountRequest {
   string customer_id = 1;
 }
 
-// Account holds the phase-2 class balances in integer USD cents.
+// Account holds one POV account in integer USD cents (ADR 0010). The three
+// class fields are aggregates: the sum of the market values of the positions
+// of that class at the current simulated day. caixa_cents is the cash
+// balance. patrimony_cents is positions at market value plus cash.
 message Account {
   string customer_id = 1;
   int64 acoes_cents = 2;
   int64 etfs_cents = 3;
   int64 renda_fixa_cents = 4;
   int64 caixa_cents = 5;
+  repeated Position positions = 6;
+  int64 patrimony_cents = 7;
+}
+
+// Position is the holding of one fictional product.
+message Position {
+  string product_id = 1;
+  // asset_class is "acoes", "etfs", or "renda_fixa".
+  string asset_class = 2;
+  // applied_cents is the cash spent on the position.
+  int64 applied_cents = 3;
+  // value_cents is the market value at the current simulated day.
+  int64 value_cents = 4;
 }
 
 message ListAccountsRequest {}
 
 message ListAccountsResponse {
   repeated Account accounts = 1;
+}
+
+message ListProductsRequest {}
+
+// Product is one entry of the fictional product catalog.
+message Product {
+  string id = 1;
+  string name = 2;
+  // asset_class is "acoes", "etfs", or "renda_fixa".
+  string asset_class = 3;
+  // risk is 1 (lowest) to 5 (highest).
+  int32 risk = 4;
+  // return_label is Portuguese display text, e.g. "4,9% a.a.".
+  string return_label = 5;
+  int64 minimum_cents = 6;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+}
+
+message GetRegistrationRequest {
+  string customer_id = 1;
+}
+
+// Registration is the fictional registration data of one POV customer.
+message Registration {
+  string customer_id = 1;
+  string email = 2;
+  // phone is already masked display text.
+  string phone = 3;
+  string city = 4;
+  string account_number = 5;
 }

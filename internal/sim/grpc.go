@@ -75,15 +75,16 @@ func (s *GRPCServer) FileComplaint(ctx context.Context, req *accountv1.FileCompl
 	})
 }
 
-// GetAccount returns one POV account.
+// GetAccount returns one POV account with its positions valued at the
+// current day.
 func (s *GRPCServer) GetAccount(ctx context.Context, req *accountv1.GetAccountRequest) (*accountv1.Account, error) {
 	customerID, err := identity.ParseV7(req.GetCustomerId())
 	if err != nil {
 		return nil, errInvalidCustomer
 	}
-	var account Account
+	var account *accountv1.Account
 	err = s.store.WithTx(ctx, func(tx Tx) error {
-		found, ok, err := tx.GetAccount(ctx, customerID)
+		found, ok, err := loadAccount(ctx, tx, customerID)
 		if err != nil {
 			return err
 		}
@@ -96,21 +97,23 @@ func (s *GRPCServer) GetAccount(ctx context.Context, req *accountv1.GetAccountRe
 	if err != nil {
 		return nil, s.statusOf("GetAccount", err)
 	}
-	return accountToProto(account), nil
+	return account, nil
 }
 
 // ListAccounts returns the seeded POV accounts that exist in the store.
+// POVSeed lists the customers in byte-wise id order, the order ResetPOV locks
+// them in, so the per-customer locks GetAccount takes cannot deadlock.
 func (s *GRPCServer) ListAccounts(ctx context.Context, _ *accountv1.ListAccountsRequest) (*accountv1.ListAccountsResponse, error) {
 	seed := POVSeed()
 	accounts := make([]*accountv1.Account, 0, len(seed))
 	err := s.store.WithTx(ctx, func(tx Tx) error {
 		for _, want := range seed {
-			account, ok, err := tx.GetAccount(ctx, want.CustomerID)
+			account, ok, err := loadAccount(ctx, tx, want.CustomerID)
 			if err != nil {
 				return err
 			}
 			if ok {
-				accounts = append(accounts, accountToProto(account))
+				accounts = append(accounts, account)
 			}
 		}
 		return nil
@@ -119,6 +122,64 @@ func (s *GRPCServer) ListAccounts(ctx context.Context, _ *accountv1.ListAccounts
 		return nil, s.statusOf("ListAccounts", err)
 	}
 	return &accountv1.ListAccountsResponse{Accounts: accounts}, nil
+}
+
+// ListProducts returns the fictional product catalog.
+func (s *GRPCServer) ListProducts(ctx context.Context, _ *accountv1.ListProductsRequest) (*accountv1.ListProductsResponse, error) {
+	var products []Product
+	err := s.store.WithTx(ctx, func(tx Tx) error {
+		found, err := tx.ListProducts(ctx)
+		products = found
+		return err
+	})
+	if err != nil {
+		return nil, s.statusOf("ListProducts", err)
+	}
+	out := make([]*accountv1.Product, 0, len(products))
+	for _, product := range products {
+		out = append(out, productToProto(product))
+	}
+	return &accountv1.ListProductsResponse{Products: out}, nil
+}
+
+// GetRegistration returns the fictional registration data of one customer.
+func (s *GRPCServer) GetRegistration(ctx context.Context, req *accountv1.GetRegistrationRequest) (*accountv1.Registration, error) {
+	customerID, err := identity.ParseV7(req.GetCustomerId())
+	if err != nil {
+		return nil, errInvalidCustomer
+	}
+	var registration Registration
+	err = s.store.WithTx(ctx, func(tx Tx) error {
+		found, ok, err := tx.GetRegistration(ctx, customerID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrUnknownCustomer
+		}
+		registration = found
+		return nil
+	})
+	if err != nil {
+		return nil, s.statusOf("GetRegistration", err)
+	}
+	return &accountv1.Registration{
+		CustomerId:    registration.CustomerID,
+		Email:         registration.Email,
+		Phone:         registration.Phone,
+		City:          registration.City,
+		AccountNumber: registration.AccountNumber,
+	}, nil
+}
+
+// loadAccount reads one customer's cash, positions, and the class aggregates
+// summed from those same positions.
+func loadAccount(ctx context.Context, tx Tx, customerID string) (*accountv1.Account, bool, error) {
+	account, ok, err := tx.GetAccount(ctx, customerID)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	return accountToProto(account), true, nil
 }
 
 var errInvalidCustomer = status.Error(codes.InvalidArgument, "customer_id must be a UUIDv7")
@@ -175,11 +236,33 @@ func failureCause(err error) string {
 }
 
 func accountToProto(a Account) *accountv1.Account {
+	out := make([]*accountv1.Position, 0, len(a.Positions))
+	for _, position := range a.Positions {
+		out = append(out, &accountv1.Position{
+			ProductId:    position.ProductID,
+			AssetClass:   position.AssetClass,
+			AppliedCents: position.AppliedCents,
+			ValueCents:   position.ValueCents,
+		})
+	}
 	return &accountv1.Account{
 		CustomerId:     a.CustomerID,
 		AcoesCents:     a.Acoes,
 		EtfsCents:      a.ETFs,
 		RendaFixaCents: a.RendaFixa,
 		CaixaCents:     a.Caixa,
+		Positions:      out,
+		PatrimonyCents: a.Assets(),
+	}
+}
+
+func productToProto(p Product) *accountv1.Product {
+	return &accountv1.Product{
+		Id:           p.ID,
+		Name:         p.Name,
+		AssetClass:   p.AssetClass,
+		Risk:         int32(p.Risk),
+		ReturnLabel:  p.ReturnLabel,
+		MinimumCents: p.MinimumCents,
 	}
 }

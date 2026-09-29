@@ -19,12 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AccountService_Deposit_FullMethodName       = "/account.v1.AccountService/Deposit"
-	AccountService_Withdraw_FullMethodName      = "/account.v1.AccountService/Withdraw"
-	AccountService_SendMessage_FullMethodName   = "/account.v1.AccountService/SendMessage"
-	AccountService_FileComplaint_FullMethodName = "/account.v1.AccountService/FileComplaint"
-	AccountService_GetAccount_FullMethodName    = "/account.v1.AccountService/GetAccount"
-	AccountService_ListAccounts_FullMethodName  = "/account.v1.AccountService/ListAccounts"
+	AccountService_Deposit_FullMethodName         = "/account.v1.AccountService/Deposit"
+	AccountService_Withdraw_FullMethodName        = "/account.v1.AccountService/Withdraw"
+	AccountService_SendMessage_FullMethodName     = "/account.v1.AccountService/SendMessage"
+	AccountService_FileComplaint_FullMethodName   = "/account.v1.AccountService/FileComplaint"
+	AccountService_GetAccount_FullMethodName      = "/account.v1.AccountService/GetAccount"
+	AccountService_ListAccounts_FullMethodName    = "/account.v1.AccountService/ListAccounts"
+	AccountService_ListProducts_FullMethodName    = "/account.v1.AccountService/ListProducts"
+	AccountService_GetRegistration_FullMethodName = "/account.v1.AccountService/GetRegistration"
 )
 
 // AccountServiceClient is the client API for AccountService service.
@@ -42,6 +44,8 @@ type AccountServiceClient interface {
 	FileComplaint(ctx context.Context, in *FileComplaintRequest, opts ...grpc.CallOption) (*CommandReply, error)
 	GetAccount(ctx context.Context, in *GetAccountRequest, opts ...grpc.CallOption) (*Account, error)
 	ListAccounts(ctx context.Context, in *ListAccountsRequest, opts ...grpc.CallOption) (*ListAccountsResponse, error)
+	ListProducts(ctx context.Context, in *ListProductsRequest, opts ...grpc.CallOption) (*ListProductsResponse, error)
+	GetRegistration(ctx context.Context, in *GetRegistrationRequest, opts ...grpc.CallOption) (*Registration, error)
 }
 
 type accountServiceClient struct {
@@ -112,6 +116,26 @@ func (c *accountServiceClient) ListAccounts(ctx context.Context, in *ListAccount
 	return out, nil
 }
 
+func (c *accountServiceClient) ListProducts(ctx context.Context, in *ListProductsRequest, opts ...grpc.CallOption) (*ListProductsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListProductsResponse)
+	err := c.cc.Invoke(ctx, AccountService_ListProducts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accountServiceClient) GetRegistration(ctx context.Context, in *GetRegistrationRequest, opts ...grpc.CallOption) (*Registration, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Registration)
+	err := c.cc.Invoke(ctx, AccountService_GetRegistration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AccountServiceServer is the server API for AccountService service.
 // All implementations must embed UnimplementedAccountServiceServer
 // for forward compatibility.
@@ -127,6 +151,8 @@ type AccountServiceServer interface {
 	FileComplaint(context.Context, *FileComplaintRequest) (*CommandReply, error)
 	GetAccount(context.Context, *GetAccountRequest) (*Account, error)
 	ListAccounts(context.Context, *ListAccountsRequest) (*ListAccountsResponse, error)
+	ListProducts(context.Context, *ListProductsRequest) (*ListProductsResponse, error)
+	GetRegistration(context.Context, *GetRegistrationRequest) (*Registration, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
 
@@ -154,6 +180,12 @@ func (UnimplementedAccountServiceServer) GetAccount(context.Context, *GetAccount
 }
 func (UnimplementedAccountServiceServer) ListAccounts(context.Context, *ListAccountsRequest) (*ListAccountsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListAccounts not implemented")
+}
+func (UnimplementedAccountServiceServer) ListProducts(context.Context, *ListProductsRequest) (*ListProductsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListProducts not implemented")
+}
+func (UnimplementedAccountServiceServer) GetRegistration(context.Context, *GetRegistrationRequest) (*Registration, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRegistration not implemented")
 }
 func (UnimplementedAccountServiceServer) mustEmbedUnimplementedAccountServiceServer() {}
 func (UnimplementedAccountServiceServer) testEmbeddedByValue()                        {}
@@ -284,6 +316,42 @@ func _AccountService_ListAccounts_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccountService_ListProducts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListProductsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).ListProducts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_ListProducts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).ListProducts(ctx, req.(*ListProductsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AccountService_GetRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRegistrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).GetRegistration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_GetRegistration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).GetRegistration(ctx, req.(*GetRegistrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccountService_ServiceDesc is the grpc.ServiceDesc for AccountService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -314,6 +382,14 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAccounts",
 			Handler:    _AccountService_ListAccounts_Handler,
+		},
+		{
+			MethodName: "ListProducts",
+			Handler:    _AccountService_ListProducts_Handler,
+		},
+		{
+			MethodName: "GetRegistration",
+			Handler:    _AccountService_GetRegistration_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
