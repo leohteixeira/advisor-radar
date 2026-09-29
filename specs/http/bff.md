@@ -49,7 +49,7 @@ The client app gets each screen from the BFF as a page of sections and component
 | GET | `/v1/client-pov/customers/{id}/screens/{slug}` | `200` screen envelope. `slug` is `home`, `investir`, `carteira`, or `perfil` |
 
 - The BFF serves `home` now. `investir`, `carteira`, and `perfil` answer `404` until their stories land and add them here.
-- The phase-2 home route `GET /v1/client-pov/customers/{id}` stays until the web home moves to this screen route.
+- The web home renders from this screen route. The phase-2 home route `GET /v1/client-pov/customers/{id}` stays: web still reads the shell (name, segment) and the coded panels (cash, messages) from it, and falls back to it when the screen request fails or answers something that is not an envelope, until story 10 removes that fallback.
 - Opening a screen is one HTTP request. There is no pagination and no single-section reload.
 - A slug outside the four is `404`. An unknown customer is `404` only when account-sim answers `NotFound` for that customer. Any other source failure never changes the status.
 - Screen responses carry `Cache-Control: no-store`.
