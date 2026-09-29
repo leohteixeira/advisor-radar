@@ -97,3 +97,31 @@ func TestBastidoresPurchaseFollowsAplicacaoAndPerfilAlert(t *testing.T) {
 		t.Fatalf("after perfil alert = %+v", got.Steps)
 	}
 }
+
+// No alert within the quiet window finishes the queue step as not escalated.
+// A later alert still promotes that step to feito.
+func TestBastidoresQuietSettleDoesNotEscalate(t *testing.T) {
+	t.Parallel()
+	hub := newBastidoresHub()
+	hub.markCommand("c-thiago", "evt-buy", sim.CmdPurchase)
+	hub.observe(event.NameAccountEventRecorded, []byte(
+		`{"event_id":"evt-buy","customer_id":"c-thiago"}`))
+	got, ok := hub.snapshot("c-thiago", "evt-buy")
+	if !ok || got.Steps[3].State != "aguardando" {
+		t.Fatalf("before quiet = %+v", got.Steps)
+	}
+	hub.settleQuiet("c-thiago", "evt-buy")
+	got, ok = hub.snapshot("c-thiago", "evt-buy")
+	if !ok || got.Steps[2].State != "feito" || got.Steps[3].State != "não escalado" {
+		t.Fatalf("after quiet = %+v", got.Steps)
+	}
+	if got.Steps[3].Label != "Na fila da assessoria, se uma regra disparar" {
+		t.Fatalf("label = %s", got.Steps[3].Label)
+	}
+	hub.observe(event.NameAlertRaised, []byte(
+		`{"event_id":"alert-late","customer_id":"c-thiago","payload":{"source_event_id":"evt-buy"}}`))
+	got, _ = hub.snapshot("c-thiago", "evt-buy")
+	if got.Steps[3].State != "feito" {
+		t.Fatalf("after late alert = %+v", got.Steps)
+	}
+}
