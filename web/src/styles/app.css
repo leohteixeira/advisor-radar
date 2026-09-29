@@ -5266,6 +5266,15 @@ a.detail__360 {
   color: var(--p-acc-text);
 }
 
+.pov-buy__steps li[data-state='não escalado'] i {
+  border: none;
+  background: var(--p-warn);
+}
+
+.pov-buy__steps li[data-state='não escalado'] em {
+  color: var(--p-warn-text);
+}
+
 /* Raio-X SDUI: demo tool of the client app (Home-Thiago-RaioX, Home-Desktop-RaioX, Home-Falha-Isolada). */
 .pov-app .pov-app__xray {
   min-height: 44px;
@@ -5958,6 +5967,11 @@ a.detail__360 {
 .pov-app__bastidores li[data-state='agora'] i {
   background: #f3e9cf;
   border: 2px solid #b9821c;
+}
+
+.pov-app__bastidores li[data-state='não escalado'] i {
+  background: #b9821c;
+  border: none;
 }
 
 .pov-app__bastidores > p {

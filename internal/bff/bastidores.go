@@ -197,7 +197,7 @@ func (h *bastidoresHub) viewLocked(eventID string, row *bastidoresRow) Bastidore
 			{ID: "outbox", Label: "Gravado na outbox do account-sim", State: stepState(row.outbox, !row.published)},
 			{ID: "broker", Label: "Publicado no RabbitMQ", State: stepState(row.published, row.outbox && !row.published)},
 			{ID: "evaluated", Label: third, State: stepState(row.evaluated, row.published && !row.evaluated)},
-			{ID: "queue", Label: fourth, State: stepState(row.queued, row.evaluated && !row.queued && !row.quiet)},
+			{ID: "queue", Label: fourth, State: queueState(row)},
 		},
 	}
 }
@@ -210,4 +210,13 @@ func stepState(done, current bool) string {
 		return "agora"
 	}
 	return "aguardando"
+}
+
+// A quiet evaluation reached the queue step and nothing was enqueued, so the
+// step is finished rather than still waiting.
+func queueState(row *bastidoresRow) string {
+	if row.quiet && !row.queued {
+		return "não escalado"
+	}
+	return stepState(row.queued, row.evaluated && !row.queued && !row.quiet)
 }
