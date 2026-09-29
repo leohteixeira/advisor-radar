@@ -287,6 +287,44 @@ func TestApply_HappyModel(t *testing.T) {
 	}
 }
 
+func TestApply_CopiesMessageOrigin(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		origin     string
+		wantInBody bool
+	}{
+		{name: "client app message keeps its origin", origin: sim.OriginClientApp, wantInBody: true},
+		{name: "seeded message has no origin", origin: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := newMemStore()
+			clf := &fixedClassifier{result: triage.Result{Intent: triage.IntentReclamacao, IntentProb: 0.9, Classifier: "jev"}}
+			env := messageEnv("md-origin", "c18")
+			env.Payload = sim.MessagePayload{Channel: "chat", Text: "Cobrança indevida", Origin: tt.origin}
+			if err := triagepipe.Apply(context.Background(), store, clf, env); err != nil {
+				t.Fatal(err)
+			}
+			store.mu.Lock()
+			ob := store.outbox["tr-md-origin"]
+			store.mu.Unlock()
+			var body struct {
+				Payload map[string]any `json:"payload"`
+			}
+			if err := json.Unmarshal(ob.row.Payload, &body); err != nil {
+				t.Fatal(err)
+			}
+			got, ok := body.Payload["origin"]
+			if ok != tt.wantInBody || (ok && got != tt.origin) {
+				t.Fatalf("payload origin = %v (present %v), want %q (present %v)", got, ok, tt.origin, tt.wantInBody)
+			}
+		})
+	}
+}
+
 func TestApply_UUIDv7SourceStoresUUIDv7Result(t *testing.T) {
 	t.Parallel()
 

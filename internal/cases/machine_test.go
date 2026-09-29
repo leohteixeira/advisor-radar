@@ -25,6 +25,8 @@ type memStore struct {
 	outbox  map[string]memOutbox
 	order   []string
 	delays  []cases.DelayArm
+	history []cases.HistoryRow
+	locks   map[string]*sync.Mutex
 	failIns string
 }
 
@@ -34,13 +36,15 @@ type memOutbox struct {
 }
 
 type memTx struct {
-	store  *memStore
-	cases  map[string]cases.CaseRow
-	inbox  map[string]struct{}
-	outbox map[string]cases.OutboxRow
-	order  []string
-	delays []cases.DelayArm
-	dirty  map[string]cases.CaseRow
+	store   *memStore
+	cases   map[string]cases.CaseRow
+	inbox   map[string]struct{}
+	outbox  map[string]cases.OutboxRow
+	order   []string
+	delays  []cases.DelayArm
+	history []cases.HistoryRow
+	dirty   map[string]cases.CaseRow
+	held    []*sync.Mutex
 }
 
 func newMemStore() *memStore {
@@ -48,6 +52,7 @@ func newMemStore() *memStore {
 		cases:  make(map[string]cases.CaseRow),
 		inbox:  make(map[string]struct{}),
 		outbox: make(map[string]memOutbox),
+		locks:  make(map[string]*sync.Mutex),
 	}
 }
 
@@ -62,6 +67,13 @@ func (s *memStore) WithTx(ctx context.Context, fn func(cases.Tx) error) error {
 		outbox: make(map[string]cases.OutboxRow),
 		dirty:  make(map[string]cases.CaseRow),
 	}
+	// Customer locks are released after commit or rollback, like
+	// pg_advisory_xact_lock.
+	defer func() {
+		for _, m := range tx.held {
+			m.Unlock()
+		}
+	}()
 	if err := fn(tx); err != nil {
 		return err
 	}
@@ -87,6 +99,7 @@ func (s *memStore) WithTx(ctx context.Context, fn func(cases.Tx) error) error {
 		s.order = append(s.order, id)
 	}
 	s.delays = append(s.delays, tx.delays...)
+	s.history = append(s.history, tx.history...)
 	return nil
 }
 
@@ -98,6 +111,30 @@ func (s *memStore) GetCase(ctx context.Context, id string) (cases.CaseRow, bool,
 	defer s.mu.Unlock()
 	row, ok := s.cases[id]
 	return row, ok, nil
+}
+
+func (s *memStore) InboxSeen(ctx context.Context, eventID string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.inbox[eventID]
+	return ok, nil
+}
+
+func (s *memStore) OpenCaseFor(ctx context.Context, customerID string) (cases.CaseRow, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return cases.CaseRow{}, false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, row := range s.cases {
+		if row.CustomerID == customerID && row.State != cases.StateResolvido {
+			return row, true, nil
+		}
+	}
+	return cases.CaseRow{}, false, nil
 }
 
 func (t *memTx) GetCase(ctx context.Context, id string) (cases.CaseRow, bool, error) {
@@ -120,7 +157,10 @@ func (t *memTx) ClaimInbox(ctx context.Context, eventID string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if _, ok := t.store.inbox[eventID]; ok {
+	t.store.mu.Lock()
+	_, seen := t.store.inbox[eventID]
+	t.store.mu.Unlock()
+	if seen {
 		return false, nil
 	}
 	if _, ok := t.inbox[eventID]; ok {
@@ -137,7 +177,10 @@ func (t *memTx) InsertCase(ctx context.Context, row cases.CaseRow) error {
 	if t.store.failIns == "case" {
 		return errForcedCaseInsert
 	}
-	if _, ok := t.store.cases[row.ID]; ok {
+	t.store.mu.Lock()
+	_, exists := t.store.cases[row.ID]
+	t.store.mu.Unlock()
+	if exists {
 		return nil
 	}
 	if _, ok := t.cases[row.ID]; ok {
@@ -178,6 +221,60 @@ func (t *memTx) ArmDelay(ctx context.Context, caseID string, ttlMs int) error {
 		return errors.New("forced delay arm failure")
 	}
 	t.delays = append(t.delays, cases.DelayArm{CaseID: caseID, TTLMs: ttlMs})
+	return nil
+}
+
+func (t *memTx) LockCustomer(ctx context.Context, customerID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t.store.mu.Lock()
+	m, ok := t.store.locks[customerID]
+	if !ok {
+		m = &sync.Mutex{}
+		t.store.locks[customerID] = m
+	}
+	t.store.mu.Unlock()
+	m.Lock()
+	t.held = append(t.held, m)
+	return nil
+}
+
+func (t *memTx) OpenCaseFor(ctx context.Context, customerID string) (cases.CaseRow, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return cases.CaseRow{}, false, err
+	}
+	for _, row := range t.dirty {
+		if row.CustomerID == customerID && row.State != cases.StateResolvido {
+			return row, true, nil
+		}
+	}
+	for _, row := range t.cases {
+		if row.CustomerID == customerID && row.State != cases.StateResolvido {
+			return row, true, nil
+		}
+	}
+	t.store.mu.Lock()
+	defer t.store.mu.Unlock()
+	for id, row := range t.store.cases {
+		if _, shadowed := t.dirty[id]; shadowed {
+			continue
+		}
+		if row.CustomerID == customerID && row.State != cases.StateResolvido {
+			return row, true, nil
+		}
+	}
+	return cases.CaseRow{}, false, nil
+}
+
+func (t *memTx) InsertHistory(ctx context.Context, row cases.HistoryRow) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if t.store.failIns == "history" {
+		return errors.New("forced history insert failure")
+	}
+	t.history = append(t.history, row)
 	return nil
 }
 
@@ -590,7 +687,18 @@ func TestPublish_BrokerRefusesThenAccepts(t *testing.T) {
 	}
 
 	refuse := errors.New("broker refused")
-	broker := &fakeBroker{refuseID: "breach-k-pub", refuseErr: refuse}
+	breachID := ""
+	store.mu.Lock()
+	for id, r := range store.outbox {
+		if r.row.RoutingKey == event.NameCaseSLABreached {
+			breachID = id
+		}
+	}
+	store.mu.Unlock()
+	if breachID == "" {
+		t.Fatal("no breach outbox row")
+	}
+	broker := &fakeBroker{refuseID: breachID, refuseErr: refuse}
 	err := cases.Publish(ctx, store, broker)
 	if err == nil {
 		t.Fatal("Publish error = nil, want wrapped broker error")

@@ -367,6 +367,9 @@ func TestGRPCServer_MessageAndComplaint(t *testing.T) {
 			if !strings.Contains(string(rows[0].Payload), `"channel":"`+tt.wantChannel+`"`) {
 				t.Fatalf("payload = %s, want channel %s", rows[0].Payload, tt.wantChannel)
 			}
+			if !strings.Contains(string(rows[0].Payload), `"origin":"`+sim.OriginClientApp+`"`) {
+				t.Fatalf("payload = %s, want origin %s", rows[0].Payload, sim.OriginClientApp)
+			}
 			if got := caixaOf(t, client, sim.CustomerMariana); got != caixa {
 				t.Fatalf("caixa = %d, want %d", got, caixa)
 			}

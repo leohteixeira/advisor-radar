@@ -196,6 +196,23 @@ func TestHeuristicTreatsBrokerSwitchAsComplaint(t *testing.T) {
 	}
 }
 
+// The client-app complaint preset "Estou pensando em sair"
+// (web/src/screens/ClientAppScreen.tsx) must open a case even when the model
+// is down, so the heuristic alone classifies it as a complaint with churn.
+func TestHeuristicClassifiesLeavingPresetAsComplaint(t *testing.T) {
+	t.Parallel()
+
+	r, err := HeuristicClassifier{}.Classify(context.Background(), Message{
+		Text: "Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Intent != IntentReclamacao || r.ChurnRisk < 0.5 {
+		t.Fatalf("intent=%s churn=%v, want reclamacao with churn", r.Intent, r.ChurnRisk)
+	}
+}
+
 func TestHeuristicMatchesLabeledSet(t *testing.T) {
 	t.Parallel()
 
