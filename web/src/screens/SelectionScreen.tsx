@@ -200,7 +200,7 @@ export function SelectionScreen() {
 
       <section id="arquitetura" className="selection__walk" aria-labelledby="selection-walk">
         <div className="selection__walk-head">
-          <div>
+          <div className="selection__walk-title">
             <p className="selection__eyebrow">Arquitetura</p>
             <h2 id="selection-walk">Como uma reclamação chega à fila do assessor</h2>
           </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { dollars, formatCents, protocolOf } from '../api/pov';
 import { RiskBars } from '../sdui/components/RiskBars';
@@ -74,6 +74,7 @@ export function PurchaseForm({
   masked,
   onBack,
   onSubmit,
+  head,
 }: {
   target: PurchaseTarget;
   notice: string;
@@ -81,6 +82,8 @@ export function PurchaseForm({
   masked: boolean;
   onBack: () => void;
   onSubmit: (cents: number) => void;
+  /** The side panel header with its close control; it replaces the back link in the desktop drawer. */
+  head?: ReactNode;
 }) {
   const { product, cash } = target;
   const cap = cash?.cents;
@@ -111,10 +114,12 @@ export function PurchaseForm({
 
   return (
     <form className="pov-buy" aria-label={`Investir em ${product.name}`} onSubmit={submit}>
-      <button type="button" className="pov-buy__back" aria-label="Voltar para Investir" onClick={onBack}>
-        <BackChevron />
-        Investir
-      </button>
+      {head ?? (
+        <button type="button" className="pov-buy__back" aria-label="Voltar para Investir" onClick={onBack}>
+          <BackChevron />
+          Investir
+        </button>
+      )}
       <h1 ref={heading} tabIndex={-1}>
         Investir em {product.name}
       </h1>
@@ -190,16 +195,20 @@ export function PurchaseSent({
   steps,
   masked,
   onHome,
+  head,
 }: {
   bought: Bought;
   steps: LiveStep[];
   masked: boolean;
   onHome: () => void;
+  /** The side panel header with its close control, in the desktop drawer. */
+  head?: ReactNode;
 }) {
   const labels = purchaseSteps(bought.product);
   const heading = useFocusedHeading();
   return (
     <section className="pov-buy pov-buy--sent" aria-label="Compra enviada">
+      {head}
       <span className="pov-buy__ok" aria-hidden="true">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M5 12l5 5 9-10" />

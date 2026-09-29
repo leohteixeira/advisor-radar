@@ -2018,8 +2018,14 @@ a.detail__360 {
 
 .selection__walk-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
+}
+
+/* On the phone the heading takes its own line, so the step dots and the pause control fit in 390 px. */
+.selection:not(.selection--wide) .selection__walk-title {
+  flex-basis: 100%;
 }
 
 .selection__walk-head h2 {
@@ -4548,7 +4554,8 @@ a.detail__360 {
   gap: 12px;
 }
 
-.pov-app[data-layout='desktop'] .sdui-rail__grid {
+/* Two columns on desktop (Investir-Desktop); ProductRail sets data-columns from the app layout. */
+.sdui-rail__grid[data-columns='2'] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -4720,7 +4727,8 @@ a.detail__360 {
   gap: 10px;
 }
 
-.pov-app[data-layout='desktop'] .sdui-scale__levels {
+/* Three columns on desktop (Perfil-Desktop); ProfileScale sets data-columns from the app layout. */
+.sdui-scale__levels[data-columns='3'] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -5359,6 +5367,12 @@ a.detail__360 {
   flex: none;
   border-left: 1px solid var(--p-line);
   box-shadow: -24px 0 48px -24px var(--p-shadow);
+}
+
+/* On desktop the purchase form and its confirmation open in the side panel. */
+.pov-app[data-layout='desktop'] .pov-app__panel > .pov-buy {
+  box-sizing: border-box;
+  padding: 8px 24px 24px;
 }
 
 .pov-app__form,

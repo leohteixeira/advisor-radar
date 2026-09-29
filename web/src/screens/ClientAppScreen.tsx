@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { apiPath } from '../api/base';
 import { ApiError } from '../api/bff';
@@ -26,8 +26,9 @@ interface ChatRow {
 
 /**
  * What is open over the screen. The coded side panels (`deposit` … `done`)
- * open as a drawer on desktop and full screen on the phone; the purchase form
- * and its confirmation take the screen area, as in Compra-Fernanda-Aviso.
+ * open as a drawer on desktop and full screen on the phone. The purchase form
+ * and its confirmation open in the same drawer on desktop and take the screen
+ * area on the phone, as in Compra-Fernanda-Aviso.
  */
 type Panel = 'home' | 'deposit' | 'withdraw' | 'complaint' | 'message' | 'done' | 'purchase' | 'bought';
 
@@ -371,6 +372,9 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
       return;
     }
     buyKey.current = null;
+    // A form opened over another one is a new form: a late answer for the
+    // previous product must not land on it, even when `panel` stays 'purchase'.
+    form.current += 1;
     setPurchase(target);
     open('purchase');
   }
@@ -470,8 +474,9 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const chat = home.messages.concat(extraChat);
   const closeLabel = wide ? 'Fechar' : 'Voltar';
   const buyingOnView = (panel === 'purchase' && purchase !== null) || (panel === 'bought' && bought !== null);
-  const drawer = panel !== 'home' && panel !== 'purchase' && panel !== 'bought';
-  const showScreen = !buyingOnView && (wide || panel === 'home');
+  const buyInScreen = buyingOnView && !wide;
+  const drawer = (panel !== 'home' && panel !== 'purchase' && panel !== 'bought') || (buyingOnView && wide);
+  const showScreen = !buyInScreen && (wide || panel === 'home');
   const complaintText = preset >= 0 ? PRESETS[preset]?.text ?? '' : text.trim();
   const ready = view.slug === slug && view.status === 'ready' ? view.screen : null;
   // Raio-X only has something to outline while an SDUI screen of its own tab is on view.
@@ -485,7 +490,27 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     light,
     onToggleTheme: toggleTheme,
     onPreferences: savePreferences,
+    wide,
   };
+  // In the desktop drawer the purchase views carry the panel header and its close control.
+  const buyHead = wide ? <PanelHead closeLabel={closeLabel} onClose={() => open('home')} /> : undefined;
+  let buyView: ReactNode = null;
+  if (panel === 'purchase' && purchase) {
+    buyView = (
+      <PurchaseForm
+        key={purchase.product.product_id}
+        target={purchase}
+        notice={notice}
+        busy={buying}
+        masked={hide}
+        head={buyHead}
+        onBack={() => open('home')}
+        onSubmit={(value) => void buy(purchase, value)}
+      />
+    );
+  } else if (panel === 'bought' && bought) {
+    buyView = <PurchaseSent bought={bought} steps={steps} masked={hide} head={buyHead} onHome={() => pickNav('home')} />;
+  }
   let area = <SduiLoading />;
   if (ready) {
     area = (
@@ -499,7 +524,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
 
   return (
     <main className={light ? 'pov-app pov-app--light' : 'pov-app'} data-layout={wide ? 'desktop' : 'phone'}>
-      <Strip name={home.name} wide={wide} xray={xray} onXray={sduiOnView ? toggleXray : undefined} />
+      <Strip name={home.name} wide={wide} xray={xray} onXray={sduiOnView && !buyingOnView ? toggleXray : undefined} />
       <div className="pov-app__body">
         {wide ? (
           <aside className="pov-app__side">
@@ -534,14 +559,12 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
             </div>
           </aside>
         ) : null}
-        {showScreen || buyingOnView ? (
-          <div className="pov-app__main">
+        {showScreen || buyInScreen ? (
+          // Behind the desktop drawer the screen is visible but out of reach.
+          <div className="pov-app__main" inert={drawer && wide}>
             {wide ? null : <PhoneBar light={light} themeLabel={themeLabel} onTheme={toggleTheme} initials={initials(home.name)} />}
             <div className="sdui-main">
-              {panel === 'purchase' && purchase ? (
-                <PurchaseForm key={purchase.product.product_id} target={purchase} notice={notice} busy={buying} masked={hide} onBack={() => open('home')} onSubmit={(value) => void buy(purchase, value)} />
-              ) : null}
-              {panel === 'bought' && bought ? <PurchaseSent bought={bought} steps={steps} masked={hide} onHome={() => pickNav('home')} /> : null}
+              {buyInScreen ? buyView : null}
               {showScreen ? area : null}
             </div>
             <p className="pov-app__fine">Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</p>
@@ -550,6 +573,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
         {drawer && wide ? <button type="button" className="pov-app__scrim" aria-label="Fechar painel" onClick={() => open('home')} /> : null}
         {drawer ? (
           <aside className="pov-app__panel" aria-label="Ação">
+            {buyInScreen ? null : buyView}
             {panel === 'deposit' || panel === 'withdraw' ? (
               <MoneyPanel
                 kind={panel}
@@ -841,13 +865,14 @@ function BackIcon({ wide }: { wide: boolean }) {
   );
 }
 
-function PanelHead({ title, closeLabel, onClose }: { title: string; closeLabel: string; onClose: () => void }) {
+/** A panel's close control and title; the purchase views bring their own heading, so they pass no title. */
+function PanelHead({ title, closeLabel, onClose }: { title?: string; closeLabel: string; onClose: () => void }) {
   return (
     <div className="pov-app__panel-head">
       <button type="button" aria-label={closeLabel} onClick={onClose}>
         <BackIcon wide={closeLabel === 'Fechar'} />
       </button>
-      <h1>{title}</h1>
+      {title ? <h1>{title}</h1> : null}
     </div>
   );
 }

@@ -22,6 +22,11 @@ export interface SduiContextValue {
    * when the write fails, so the caller keeps the previous value.
    */
   onPreferences: (next: Preferences) => Promise<void>;
+  /**
+   * The client app layout: true on desktop (the app's `data-layout="desktop"`,
+   * at 900 px and up). Components read it only for their column counts.
+   */
+  wide: boolean;
 }
 
 export const SduiContext = createContext<SduiContextValue | null>(null);

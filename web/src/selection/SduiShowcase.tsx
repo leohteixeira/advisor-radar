@@ -44,6 +44,8 @@ const PREVIEW: SduiContextValue = {
   light: false,
   onToggleTheme: () => undefined,
   onPreferences: async () => undefined,
+  // The preview is the phone app, whatever the page width.
+  wide: false,
 };
 
 function initials(name: string): string {

@@ -1,3 +1,4 @@
+import { useSdui } from '../context';
 import type { SduiComponentProps } from '../registry';
 import type { ProfileScaleProps } from '../types';
 import { RiskBars } from './RiskBars';
@@ -5,17 +6,19 @@ import { RiskBars } from './RiskBars';
 /**
  * Perfil `suitability`: the three investor profile levels with the client's
  * own marked. Each level's `max_risk` comes from advisory and fills the bars;
- * web holds no max-risk table. One column on the phone, three on desktop (CSS).
+ * web holds no max-risk table. The levels are one column on the phone and
+ * three on desktop (Perfil-Desktop); `data-columns` carries the count to the CSS.
  */
 export function ProfileScale({ props }: SduiComponentProps) {
   const p = props as unknown as ProfileScaleProps;
+  const { wide } = useSdui();
   return (
     <section className="sdui-card sdui-scale" aria-label={p.title}>
       <div className="sdui-rail__head">
         <h2>{p.title}</h2>
         <p>{p.subtitle}</p>
       </div>
-      <ul className="sdui-scale__levels">
+      <ul className="sdui-scale__levels" data-columns={wide ? 3 : 1}>
         {p.levels.map((level, index) => (
           <li key={`${level.key}-${index}`} className="sdui-level" data-current={level.current ? 'true' : 'false'} aria-current={level.current ? 'true' : undefined}>
             <div className="sdui-level__head">
