@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiPath } from '../api/base';
 import { ApiError } from '../api/bff';
 import { SEED, thiagoHome, thiagoPhase2 } from '../test/sduiFixtures';
-import { fetchScreen, InvalidScreenError, isScreen } from './api';
+import { fetchScreen, fetchScreenResponse, InvalidScreenError, isScreen } from './api';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -21,6 +21,17 @@ function live(): AbortSignal {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe('fetchScreenResponse', () => {
+  it('returns the normalized screen and the body as the BFF sent it', async () => {
+    const sent = { ...thiagoHome(), subtitle: '', extra: 'kept' };
+    stubFetch(json(sent));
+    const { screen, status, body } = await fetchScreenResponse(SEED.thiago, 'home', live());
+    expect(status).toBe(200);
+    expect(body).toEqual(sent);
+    expect(screen).toEqual({ ...thiagoHome(), subtitle: undefined });
+  });
 });
 
 describe('fetchScreen', () => {
