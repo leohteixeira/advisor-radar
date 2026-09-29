@@ -30,5 +30,12 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
     setupFiles: ['src/test/setup.ts'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/sdui/**'],
+      exclude: ['src/sdui/**/*.test.{ts,tsx}'],
+      reporter: ['text', 'text-summary'],
+      thresholds: { lines: 100, branches: 100, functions: 100, statements: 100 },
+    },
   },
 });
