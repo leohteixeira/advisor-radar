@@ -39,3 +39,143 @@ Money fields are integer USD cents. Every POST requires `Idempotency-Key`. A mis
 `202` has `event_id` and no protocol field. The UI formats the protocol as the first two UUID groups, uppercased.
 
 Deposit and withdrawal become `account.event.recorded` at schema version 2. Message and complaint become `message.received`. The BFF does not publish. account-sim writes state and the outbox row in one transaction.
+
+## Screens (phase 3)
+
+The client app gets each screen from the BFF as a page of sections and components, already filled for that client. Web renders by `type` and computes no percentage, currency, date, validation, or SLA. The decision is ADR 0009.
+
+| Method | Path | Result |
+|---|---|---|
+| GET | `/v1/client-pov/customers/{id}/screens/{slug}` | `200` screen envelope. `slug` is `home`, `investir`, `carteira`, or `perfil` |
+
+- The phase-2 home route `GET /v1/client-pov/customers/{id}` stays until the web home moves to this screen route.
+- Opening a screen is one HTTP request. There is no pagination and no single-section reload.
+- A slug outside the four is `404`. An unknown customer is `404` only when account-sim answers `NotFound` for that customer. Any other source failure never changes the status.
+- Screen responses carry `Cache-Control: no-store`.
+- `X-SDUI-Schema` is an optional request header with the range of `schema_version` values the client renders: one integer (`1`) or an inclusive range (`1-2`). A range needs `1 ≤ min ≤ max`. The BFF serves only its current `schema_version`, never a lower one. Without the header, it serves that version. When the range excludes it, the answer is `406 Not Acceptable` with the supported range in the body, `{"supported":{"min":1,"max":1}}`. A malformed header or an invalid range is `400`. On `406`, web shows "Atualize o app para ver esta tela." with a reload button; the simulation strip and the tabs stay.
+
+### Envelope
+
+```json
+{
+  "schema_version": 1,
+  "slug": "home",
+  "revision": "v1",
+  "title": "Olá, Thiago",
+  "subtitle": "Cliente Advance desde 2023",
+  "sections": [
+    { "id": "moment", "components": [
+      { "type": "moment_card", "variant": "idle_cash",
+        "props": { "kicker": "Caixa parado",
+                   "title": "Thiago, 89% do seu patrimônio está em caixa",
+                   "body": "US$ 60.520,00 parados há 4 dias. Veja produtos para o seu perfil arrojado.",
+                   "tone": "info",
+                   "action": { "type": "navigate", "label": "Ver produtos", "target": "investir" } } } ] }
+  ]
+}
+```
+
+- `schema_version` is an integer, the version of this envelope and of the component table below.
+- A section object has `id` and `components`, an array of `{type, variant, props}`.
+- `title` and `subtitle` are the screen heading, filled from the catalog: home "Olá, {{first}}" / "Cliente {{segment}} desde {{since}}", investir "Investir" / "Produtos fictícios · preço fixo da simulação", carteira "Carteira" / "Valores de mercado no dia simulado {{day}}", perfil "Perfil" / "Seus dados, seu perfil de investidor e suas preferências".
+- `revision` names the catalog revision of the screen. A client outside the beta gets `v1`. A beta client gets home `v2`, which inserts the `highlights` section right after `moment`. Investir, Carteira, and Perfil stay at `v1`.
+- Section order in the array is the render order. Web owns style, the breakpoint grid, and the span of each section.
+- `variant` is informational for web: it drives Raio-X and telemetry, never rendering logic. A new variant of an existing type needs no web change. A new `type` needs web code and a row in the table below.
+- An unknown `type` renders nothing and is reported: web logs it with `console.error`. A component that throws is caught by its own boundary. The rest of the screen stays.
+
+### Values
+
+- Money, percentages, dates, and counts arrive as display strings formatted in Go, for example `"US$ 48.210,00"`, `"62%"`, `"− US$ 38.502,00 (−15,5%) no dia 3"`, and `"12/03/2026"`.
+- A value a form needs as a number is also sent as an integer USD cents field named `*_cents`.
+- Every visible label is a prop, so copy changes need no web change. Copy is Portuguese.
+- Negative signs use U+2212 "−", not the hyphen-minus.
+- Shares use largest-remainder rounding in Go, so the allocation shares of one component sum to 100%.
+- `tone` is `pos`, `neg`, `info`, `gold`, or `neutral`. Each type lists the tones it accepts. Web maps tone to color, and renders an unknown `tone` as `neutral`.
+- `icon` is an optional semantic name from the web icon set (`in`, `out`, `msg`, `alert`, `segment`, `drop`, `inbox`, `cash`, `calendar`, `spark`, `deposit`, `withdraw`). An unknown name renders no icon.
+- `bar_width` is a number from 0 to 100, computed in Go. Web uses it as a width and never derives it.
+- A field marked `?` may be absent.
+
+### Actions
+
+An action is an object with `type` and `label`. There are four types:
+
+- **navigate** opens another SDUI screen of the same customer: `{"type":"navigate","label":"Ver carteira","target":"carteira"}`. `target` is one of the four slugs.
+- **panel** opens a coded panel: `{"type":"panel","label":"Depositar","target":"deposit"}`. `target` is `deposit`, `withdraw`, `message`, `complaint`, or `purchase`. A `purchase` panel also carries `product_id`.
+- **note** shows a notice in place: `{"type":"note","label":"Saiba mais","text":"…"}`.
+- **link** opens an external URL: `{"type":"link","label":"…","href":"https://…"}`.
+
+- An unknown action `type` or `target` hides the control and is reported with `console.error`.
+- A `purchase` panel without `product_id` is hidden.
+- `link.href` must use `https:` and opens with `rel="noopener noreferrer"`. Any other scheme is refused and the control is hidden.
+
+The `deposit`, `withdraw`, `message`, and `complaint` panels submit through the POV routes above. The route behind the `purchase` panel arrives with the purchase story and is documented here then. The over-cash check runs inside the account-sim transaction and answers `422`. Capping a form's input at a `*_cents` value the BFF sent is only a form convenience.
+
+### Failure policy
+
+- The BFF reads account-sim, advisory, cases, and timeline in parallel under one screen deadline. One source failing never cancels the others.
+- A section whose source failed or ran past the deadline falls back to its default variant when the default does not need that source. Example: `moment` becomes `welcome` when moment facts fail.
+- A section that depends only on the failed source is omitted, and so is a section whose default also needs the failed source. Example: `activity` without timeline.
+- When cases fails, `case_open` does not match and moment evaluation continues down the priority list.
+- When the beta flag is unavailable, the BFF serves revision `v1`.
+- When the investor profile fact fails, the sections whose variant depends on it (`highlights` and `suitability`) are omitted.
+- `title` and `subtitle` fall back to "Olá" and no subtitle when their source fails.
+- A `Build` error drops only that component. A section left with zero components is omitted.
+- The response is still `200` with the remaining sections. When every section is omitted, it is `200` with `"sections": []`.
+
+### Home moment priority
+
+Advisory evaluates each moment condition and returns the result as a moment fact. Cases supplies the open-case fact. The BFF compares no threshold and computes no segmentation; it only applies this fixed priority order to the facts, top to bottom, for the home `moment` section.
+
+| # | Variant | Fact | Evaluated by |
+|---:|---|---|---|
+| 1 | `portfolio_drop` | The latest `reavaliacao` loss is above 15% of patrimony before the revaluation | advisory |
+| 2 | `case_open` | The client has an open case (cases, filtered by customer) | cases |
+| 3 | `segment_upgraded` | A live POV account event (`schema_version` 2 or later) raised a segment upgrade for the client in the last 24 h | advisory |
+| 4 | `segment_upgrade_near` | `750000 ≤ patrimony_cents < 1000000` | advisory |
+| 5 | `idle_cash` | Patrimony is above 0 and cash is at or above 50% of patrimony | advisory |
+| 6 | `portfolio_review` | The client is Singular | advisory |
+| 7 | `welcome` | Default, including when moment facts fail | none |
+
+A segment downgrade has no variant and falls through the list.
+
+Moment tones: `portfolio_drop` is `neg`; `case_open` and `idle_cash` are `info`; `segment_upgraded` and `segment_upgrade_near` are `gold`; `portfolio_review` and `welcome` are `neutral`.
+
+### Sections per screen
+
+The catalog's starting order. The server may change it without a web change.
+
+- **home:** `moment`, `wealth`, `actions`, `advisor`, `activity`. Revision `v2` adds `highlights` after `moment`.
+- **investir:** `cash`, `highlights`, `fixed_income`, `etfs`, `stocks`.
+- **carteira:** `summary`, `allocation`, `positions_stocks`, `positions_etf`, `positions_fixed_income`, `history`. A class with no position has no section.
+- **perfil:** `header`, `suitability`, `registration`, `preferences`, `advisor`.
+
+### Components (15 types)
+
+Shared objects used in the table:
+
+- **Product:** `product_id`, `name`, `class_label` (`"ETF"`), `risk` (integer 1–5, for the bars), `risk_label` (`"Risco 3 de 5"`), `return_label` (`"+11,2% em 12 meses"`), `minimum` (`"Mínimo US$ 50"`), `minimum_cents`, `above_profile` (boolean), `badge?` (`"Acima do seu perfil"`, set only when above profile), `warning?` (the above-profile text for the purchase form, set only when above profile), `action` (`panel` `purchase` with `product_id`).
+- **Allocation row:** `class` (`stocks`, `etfs`, `fixed_income`, or `cash`; web maps it to a color), `label`, `share` (`"62%"`), `bar_width`.
+- **Activity item:** `icon?`, `title`, `meta`, `value?` (signed money), `tone?` (`pos`, `neg`, or `neutral`).
+- **Stat:** `label`, `value`, `tone?` (`pos`, `neg`, or `neutral`).
+
+The Variants column is not evaluation order; the catalog holds each section's ordered list. Each section's default variant: `moment` is `welcome`; `wealth` and `summary` are `default`; `advisor` is `default`; `activity` is `recent` or `empty`, chosen by item count; `history` is `history`; every other section has a single variant, or the profile variant for `highlights` and `suitability`, and that is its default.
+
+| Type | Sections | Variants | Props |
+|---|---|---|---|
+| `moment_card` | home `moment` | `portfolio_drop`, `case_open`, `segment_upgraded`, `segment_upgrade_near`, `idle_cash`, `portfolio_review`, `welcome` (default) | `kicker`, `title`, `body`, `meta?` (`case_open`: "Protocolo … · aberto há …"), `tone` (`neg`, `info`, `gold`, or `neutral`), `icon?`, `action?` (`welcome` has none) |
+| `wealth_summary` | home `wealth` | `default`, `with_day_change` | `total_label`, `total`, `cash_label`, `cash`, `cash_cents`, `allocation` (allocation rows); `with_day_change` adds `day_change` (`"− US$ 38.502,00 (−15,5%) no dia 3"`) and `day_change_tone` (`pos`, `neg`, or `neutral` at zero). Masking values is web presentation only |
+| `action_grid` | home `actions` | `default` | `items`: `[{label, icon?, action}]`, four `panel` actions: Depositar `deposit`, Sacar `withdraw`, Mensagem `message`, Reclamar `complaint` |
+| `advisor_card` | home `advisor`, perfil `advisor` | `default`, `dedicated` (Singular) | `kicker` ("Sua assessora" or "Sua assessora dedicada"), `name`, `initials`, `meta` ("Resposta em até … · cliente …"), `action?` (`panel` `message`) |
+| `activity_list` | home `activity`, carteira `history` | `recent`, `empty`, `history` | `title`, `items` (activity items; empty for `empty`), `empty_text?` (`empty`: "Suas movimentações aparecem aqui assim que acontecerem."; `history` with no items: "Nenhuma movimentação ainda.") |
+| `invest_summary` | investir `cash` | `default` | `cash_label`, `cash`, `cash_cents`, `profile_chip` ("Perfil moderado") |
+| `product_rail` | investir `highlights`; home `highlights` in beta revision `v2` | `profile_conservador`, `profile_moderado`, `profile_arrojado` | `title` ("Para o seu perfil …"), `subtitle`, `products` (products) |
+| `product_list` | investir `fixed_income`, `etfs`, `stocks` | `fixed_income`, `etf`, `stocks` | `title` ("Renda fixa", "ETFs", or "Ações"), `products` (products) |
+| `portfolio_summary` | carteira `summary` | `default`, `with_day_change` | `total_label`, `total`, `stats` (stats: "Valor aplicado", "Rentabilidade" signed with percentage, "Caixa", "Dia simulado"); `with_day_change` adds `day_change` and `day_change_tone` |
+| `allocation_breakdown` | carteira `allocation` | `default` | `title`, `rows`: allocation rows plus `value` (money) for Ações, ETFs, Renda fixa, and Caixa |
+| `position_list` | carteira `positions_stocks`, `positions_etf`, `positions_fixed_income` | `stocks`, `etf`, `fixed_income` | `title`, `subtotal`, `applied_label` ("Aplicado"), `items`: `[{product_id, name, applied, value, return, return_tone}]`, `return` signed percentage, `return_tone` `pos`, `neg`, or `neutral` at zero |
+| `profile_header` | perfil `header` | `default` | `initials`, `name`, `subtitle` ("Cliente … desde …"), `account` ("Conta 3301-7 · Orla Invest") |
+| `profile_scale` | perfil `suitability` | `conservador`, `moderado`, `arrojado` | `title`, `subtitle`, `current_label` ("Seu perfil"), `levels`: `[{key, label, description, limit, max_risk, current}]` for conservador, moderado, and arrojado, `limit` "Produtos até risco …", `max_risk` integer for the bars, `current` boolean; `footer` ("Última avaliação em …") |
+| `profile_field_list` | perfil `registration` | `default` | `title`, `fields`: `[{label, value}]` for Nome, E-mail, Telefone (masked), Cidade, Segmento, Cliente desde; `footnote` |
+| `preference_list` | perfil `preferences` | `default` | `title`; `theme`: `{label, hint}`, local to the browser; `channel`: `{label, hint, value, options: [{value, label}]}`, `value` `chat` or `email`; `beta`: `{label, hint, enabled}`, `hint` for the current state |
+
+`preference_list` shows the stored channel and beta flag. Its channel vocabulary is `chat` or `email`, distinct from the messages route, which takes `chat` or `e-mail`. The route that writes them arrives with the Perfil story and is documented here then. Web reloads the screen after a change. Later stories that refine a prop list update this table in the same change.
