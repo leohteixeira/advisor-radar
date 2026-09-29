@@ -54,13 +54,27 @@ func stateIndex(state string) int {
 	return 0
 }
 
-// ListCases returns every case with history.
-func (r *CaseReader) ListCases(ctx context.Context) ([]CaseView, error) {
-	const q = `
+// ListCases returns every case with history, newest first. A non-empty
+// customerID keeps only that customer's cases.
+func (r *CaseReader) ListCases(ctx context.Context, customerID string) ([]CaseView, error) {
+	const all = `
 SELECT id, customer_id, COALESCE(signal_id::text, ''), advisor_id, state, sla_total_minutes, escalated, opened_at
 FROM cases
 ORDER BY opened_at DESC`
-	rows, err := r.pool.Query(ctx, q)
+	const byCustomer = `
+SELECT id, customer_id, COALESCE(signal_id::text, ''), advisor_id, state, sla_total_minutes, escalated, opened_at
+FROM cases
+WHERE customer_id = $1
+ORDER BY opened_at DESC`
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if customerID == "" {
+		rows, err = r.pool.Query(ctx, all)
+	} else {
+		rows, err = r.pool.Query(ctx, byCustomer, customerID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("cases: list: %w", err)
 	}
@@ -163,7 +177,7 @@ func (r *CaseReader) viewOf(ctx context.Context, row CaseRow) (CaseView, error) 
 
 // ListAtRisk returns non-resolved cases within the at-risk window.
 func (r *CaseReader) ListAtRisk(ctx context.Context) ([]CaseView, error) {
-	all, err := r.ListCases(ctx)
+	all, err := r.ListCases(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +192,7 @@ func (r *CaseReader) ListAtRisk(ctx context.Context) ([]CaseView, error) {
 
 // Backlog aggregates open/risk/overdue counts by advisor_id.
 func (r *CaseReader) Backlog(ctx context.Context) (map[string]struct{ Open, Risk, Overdue int }, error) {
-	all, err := r.ListCases(ctx)
+	all, err := r.ListCases(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -227,9 +241,18 @@ func toProto(c CaseView) *casesv1.Case {
 	}
 }
 
-// ListCases implements CasesService.
-func (s *GRPCServer) ListCases(ctx context.Context, _ *casesv1.ListCasesRequest) (*casesv1.ListCasesResponse, error) {
-	items, err := s.reader.ListCases(ctx)
+// ListCases implements CasesService. An empty customer_id lists every case;
+// a set one must be a UUIDv7 and keeps only that customer's cases.
+func (s *GRPCServer) ListCases(ctx context.Context, req *casesv1.ListCasesRequest) (*casesv1.ListCasesResponse, error) {
+	customerID := req.GetCustomerId()
+	if customerID != "" {
+		id, err := identity.ParseV7(customerID)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid customer id")
+		}
+		customerID = id
+	}
+	items, err := s.reader.ListCases(ctx, customerID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list cases: %v", err)
 	}

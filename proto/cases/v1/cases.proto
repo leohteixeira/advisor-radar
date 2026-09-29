@@ -11,7 +11,11 @@ service CasesService {
   rpc BacklogByAdvisor(BacklogByAdvisorRequest) returns (BacklogByAdvisorResponse);
 }
 
-message ListCasesRequest {}
+// ListCasesRequest filters by customer_id when set (a UUIDv7); empty lists
+// every case.
+message ListCasesRequest {
+  string customer_id = 1;
+}
 
 message CaseHistoryEntry {
   int32 ago = 1;

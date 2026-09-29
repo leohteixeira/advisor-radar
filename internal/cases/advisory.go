@@ -26,14 +26,9 @@ func NewAdvisoryLookup(client advisoryv1.AdvisoryServiceClient) *AdvisoryLookup 
 	return &AdvisoryLookup{client: client, timeout: DefaultLookupTimeout}
 }
 
-// Lookup reads the customer's segment and advisor from advisory. A
-// GetCustomer NotFound, InvalidArgument, or Unimplemented maps to
-// ErrUnknownCustomer, and the same ListOperators codes map to
-// ErrUnusableCustomer; any other failure is transient.
-//
-// GetCustomer returns the advisor's display name, not the operator id, so the
-// id is resolved through ListOperators under the same deadline. A name that
-// matches no operator, or more than one, leaves AdvisorID empty.
+// Lookup reads the customer's segment and advisor id from advisory
+// GetCustomer. NotFound, InvalidArgument, or Unimplemented maps to
+// ErrUnknownCustomer; any other failure is transient.
 func (l *AdvisoryLookup) Lookup(ctx context.Context, customerID string) (Customer, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -45,26 +40,7 @@ func (l *AdvisoryLookup) Lookup(ctx context.Context, customerID string) (Custome
 	if err != nil {
 		return Customer{}, classifyAdvisoryError("get customer", err, ErrUnknownCustomer)
 	}
-	customer := Customer{Segment: res.GetSegment()}
-	if res.GetAdvisor() == "" {
-		return customer, nil
-	}
-
-	ops, err := l.client.ListOperators(ctx, &advisoryv1.ListOperatorsRequest{})
-	if err != nil {
-		return Customer{}, classifyAdvisoryError("list operators", err, ErrUnusableCustomer)
-	}
-	matches := 0
-	for _, op := range ops.GetItems() {
-		if op.GetName() == res.GetAdvisor() {
-			customer.AdvisorID = op.GetId()
-			matches++
-		}
-	}
-	if matches != 1 {
-		customer.AdvisorID = ""
-	}
-	return customer, nil
+	return Customer{Segment: res.GetSegment(), AdvisorID: res.GetAdvisorId()}, nil
 }
 
 // classifyAdvisoryError wraps codes that a retry cannot change with the
