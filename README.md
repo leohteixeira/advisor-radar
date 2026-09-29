@@ -49,7 +49,7 @@ Services read their settings from environment variables, loaded from the local r
 | `ACCOUNT_SIM_DATABASE_URL` | `postgres://…@127.0.0.1:5435/account_sim` | account-sim PostgreSQL database (state, idempotency keys, outbox). Unset, account-sim only waits for a signal. |
 | `ACCOUNT_SIM_BROKER_URL` | `amqp://…@127.0.0.1:5673/` | RabbitMQ the outbox relay publishes to. Unset, the relay does not run. |
 | `ACCOUNT_SIM_GRPC_ADDR` | `0.0.0.0:8460` | account-sim gRPC listen address. The server starts only when `ACCOUNT_SIM_DATABASE_URL` is also set. |
-| `ACCOUNT_SIM_GRPC_TARGET` | `127.0.0.1:8460` | account-sim target the BFF dials (used from story 3). |
+| `ACCOUNT_SIM_GRPC_TARGET` | `127.0.0.1:8460` | account-sim target the BFF dials. The BFF requires it for the client POV; unset, the POV home is `404` and POV commands are `502`. |
 
 `ACCOUNT_SIM_TEST_DATABASE_URL` points the gated `internal/sim` PostgreSQL tests at a database; each test migrates and drops its own schema. Unset, those tests skip.
 

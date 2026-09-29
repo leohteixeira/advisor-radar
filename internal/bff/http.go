@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 	"time"
@@ -30,6 +31,7 @@ type Handler struct {
 	limits     *povLimiter
 	counts     *povCounts
 	bastidores *bastidoresHub
+	logger     *slog.Logger
 }
 
 // NewHandler returns an HTTP handler. Nil sources are treated as empty.
@@ -37,6 +39,16 @@ type Handler struct {
 type Server struct {
 	http.Handler
 	bastidores *bastidoresHub
+	h          *Handler
+}
+
+// SetLogger replaces the handler logger, slog.Default() until set. Call it
+// before the server handles requests.
+func (s *Server) SetLogger(logger *slog.Logger) {
+	if s == nil || s.h == nil || logger == nil {
+		return
+	}
+	s.h.logger = logger
 }
 
 // ObservePOV advances Bastidores from a broker body.
@@ -85,6 +97,7 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 		limits:     newPOVLimiter(),
 		counts:     newPOVCounts(),
 		bastidores: newBastidoresHub(),
+		logger:     slog.Default(),
 	}
 	if h.now == nil {
 		h.now = time.Now
@@ -113,7 +126,7 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	mux.HandleFunc("POST /v1/client-pov/customers/{id}/complaints", h.postPOVComplaint)
 	mux.HandleFunc("GET /v1/client-pov/counters", h.povCounters)
 	mux.HandleFunc("GET /v1/client-pov/customers/{id}/stream", h.povStream)
-	return &Server{Handler: mux, bastidores: h.bastidores}
+	return &Server{Handler: mux, bastidores: h.bastidores, h: h}
 }
 
 func (h *Handler) getCustomer(w http.ResponseWriter, r *http.Request) {

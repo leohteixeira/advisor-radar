@@ -6,9 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/leohteixeira/advisor-radar/internal/identity"
 	"github.com/leohteixeira/advisor-radar/internal/sim"
@@ -30,6 +34,57 @@ type POVAccount struct {
 	Caixa      int64
 }
 
+// assets is the sum of the four classes.
+func (a POVAccount) assets() int64 {
+	return a.Acoes + a.ETFs + a.RendaFixa + a.Caixa
+}
+
+// The POV response DTOs keep the phase-2 JSON. Fields are declared in key
+// order, so the encoding is byte-identical to the former map[string]any
+// output, whose keys encoding/json sorted.
+
+// povList is the GET /v1/client-pov/customers body.
+type povList struct {
+	Items []povListItem `json:"items"`
+}
+
+// povListItem is one client in the persona list. Assets is integer cents.
+type povListItem struct {
+	Advisor    string `json:"advisor"`
+	Assets     int64  `json:"assets"`
+	CustomerID string `json:"customer_id"`
+	Hint       string `json:"hint"`
+	Name       string `json:"name"`
+	Segment    string `json:"segment"`
+	Since      string `json:"since"`
+	SLA        string `json:"sla"`
+}
+
+// povHome is the GET /v1/client-pov/customers/{id} body. Money is integer
+// cents. Activity and Messages are always empty in phase 2 and must be
+// non-nil so they encode as [] rather than null.
+type povHome struct {
+	Activity   []any         `json:"activity"`
+	Advisor    string        `json:"advisor"`
+	Allocation povAllocation `json:"allocation"`
+	Assets     int64         `json:"assets"`
+	Caixa      int64         `json:"caixa"`
+	CustomerID string        `json:"customer_id"`
+	Messages   []any         `json:"messages"`
+	Name       string        `json:"name"`
+	Segment    string        `json:"segment"`
+	Since      string        `json:"since"`
+	SLA        string        `json:"sla"`
+}
+
+// povAllocation is the balance per asset class in integer cents.
+type povAllocation struct {
+	Acoes     int64 `json:"acoes"`
+	Caixa     int64 `json:"caixa"`
+	ETFs      int64 `json:"etfs"`
+	RendaFixa int64 `json:"renda_fixa"`
+}
+
 // POVCommand is one client action. Amount is integer cents.
 type POVCommand struct {
 	CustomerID     string
@@ -42,13 +97,18 @@ type POVCommand struct {
 	Text           string
 }
 
-// POVResult is the account-sim outcome for one command.
+// POVResult is the account-sim outcome for one command. Retried reports that
+// the command was sent more than once in this request, so a Replay may be the
+// answer to this request's own earlier, lost attempt.
 type POVResult struct {
 	EventID string
 	Replay  bool
+	Retried bool
 }
 
-// POVSource is the account-sim port. The BFF does not publish.
+// POVSource is the account-sim port. The BFF does not publish. Refusals are
+// the sim sentinels: ErrInsufficient, ErrUnknownCustomer, ErrAmount, and
+// ErrCommand; any other error is an upstream failure.
 type POVSource interface {
 	List(ctx context.Context) ([]POVAccount, error)
 	Get(ctx context.Context, customerID string) (POVAccount, error)
@@ -93,7 +153,7 @@ func newPOVLimiter() *povLimiter {
 	}
 }
 
-func (l *povLimiter) allow(customerID, key string, now time.Time) (ok bool, window string, spend func(replay, remember bool)) {
+func (l *povLimiter) allow(customerID, key string, now time.Time) (ok bool, window string, spend func(refund, remember bool)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	id := customerID + "\x00" + key
@@ -125,13 +185,13 @@ func (l *povLimiter) allow(customerID, key string, now time.Time) (ok bool, wind
 	kept = append(kept, now)
 	l.hits[customerID] = kept
 	spent := true
-	return true, "", func(replay, remember bool) {
+	return true, "", func(refund, remember bool) {
 		l.mu.Lock()
 		defer l.mu.Unlock()
 		if remember {
 			l.known[id] = struct{}{}
 		}
-		if replay && spent {
+		if refund && spent {
 			hits := l.hits[customerID]
 			if len(hits) > 0 {
 				l.hits[customerID] = hits[:len(hits)-1]
@@ -187,6 +247,7 @@ func (c *povCounts) snapshot() (actions, refusals map[string]int, duplicates int
 func (h *Handler) listPOV(w http.ResponseWriter, r *http.Request) {
 	accounts, err := h.pov.List(r.Context())
 	if err != nil {
+		h.upstreamFailed(r, "pov.list", "", err)
 		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
 		return
 	}
@@ -194,21 +255,21 @@ func (h *Handler) listPOV(w http.ResponseWriter, r *http.Request) {
 	for _, account := range accounts {
 		byID[account.CustomerID] = account
 	}
-	items := make([]map[string]any, 0, len(povCatalog))
+	items := make([]povListItem, 0, len(povCatalog))
 	for _, meta := range povCatalog {
 		account := byID[meta.id]
-		items = append(items, map[string]any{
-			"customer_id": meta.id,
-			"name":        meta.name,
-			"segment":     meta.segment,
-			"assets":      account.Acoes + account.ETFs + account.RendaFixa + account.Caixa,
-			"sla":         meta.sla,
-			"advisor":     meta.advisor,
-			"since":       h.customerSince(r.Context(), meta.id),
-			"hint":        meta.hint,
+		items = append(items, povListItem{
+			Advisor:    meta.advisor,
+			Assets:     account.assets(),
+			CustomerID: meta.id,
+			Hint:       meta.hint,
+			Name:       meta.name,
+			Segment:    meta.segment,
+			Since:      h.customerSince(r.Context(), meta.id),
+			SLA:        meta.sla,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, povList{Items: items})
 }
 
 func (h *Handler) getPOV(w http.ResponseWriter, r *http.Request) {
@@ -223,24 +284,28 @@ func (h *Handler) getPOV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		h.upstreamFailed(r, "pov.get", id, err)
 		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
 		return
 	}
 	meta := catalog(id)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"customer_id": id,
-		"name":        meta.name,
-		"segment":     meta.segment,
-		"advisor":     meta.advisor,
-		"sla":         meta.sla,
-		"since":       h.customerSince(r.Context(), id),
-		"assets":      account.Acoes + account.ETFs + account.RendaFixa + account.Caixa,
-		"caixa":       account.Caixa,
-		"allocation": map[string]int64{
-			"acoes": account.Acoes, "etfs": account.ETFs, "renda_fixa": account.RendaFixa, "caixa": account.Caixa,
+	writeJSON(w, http.StatusOK, povHome{
+		Activity: []any{},
+		Advisor:  meta.advisor,
+		Allocation: povAllocation{
+			Acoes:     account.Acoes,
+			Caixa:     account.Caixa,
+			ETFs:      account.ETFs,
+			RendaFixa: account.RendaFixa,
 		},
-		"activity": []any{},
-		"messages": []any{},
+		Assets:     account.assets(),
+		Caixa:      account.Caixa,
+		CustomerID: id,
+		Messages:   []any{},
+		Name:       meta.name,
+		Segment:    meta.segment,
+		Since:      h.customerSince(r.Context(), id),
+		SLA:        meta.sla,
 	})
 }
 
@@ -301,26 +366,37 @@ func (h *Handler) postPOV(w http.ResponseWriter, r *http.Request, kind string) {
 		Text:           body.Text,
 	})
 	if err != nil {
+		refused := errors.Is(err, sim.ErrInsufficient) || errors.Is(err, sim.ErrAmount) ||
+			errors.Is(err, sim.ErrCommand) || errors.Is(err, sim.ErrUnknownCustomer)
 		if spend != nil {
-			spend(false, false)
+			// A refusal spends the budget. So does any failure that may have
+			// committed in account-sim (deadline, cancel, internal). Only
+			// Unavailable, left after the client retries, means the command never
+			// reached account-sim, so it spends nothing. No failure remembers
+			// the key.
+			spend(!refused && status.Code(err) == codes.Unavailable, false)
 		}
 		if errors.Is(err, sim.ErrInsufficient) {
 			h.counts.addRefusal("insufficient")
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "insufficient"})
 			return
 		}
-		if errors.Is(err, sim.ErrAmount) || errors.Is(err, sim.ErrCommand) || errors.Is(err, sim.ErrUnknownCustomer) {
+		if refused {
 			h.counts.addRefusal("invalid")
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid"})
 			return
 		}
+		h.upstreamFailed(r, "pov."+kind, id, err)
 		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
 		return
 	}
+	// A replay that answers this request's own retry is the first commit of
+	// the command: it spends the budget and counts as an action.
+	replay := result.Replay && !result.Retried
 	if spend != nil {
-		spend(result.Replay, true)
+		spend(replay, true)
 	}
-	if result.Replay {
+	if replay {
 		h.counts.addDuplicate()
 	} else {
 		h.counts.addAction(kind)
@@ -371,6 +447,17 @@ func (h *Handler) povCounters(w http.ResponseWriter, r *http.Request) {
 		"refusals":   refusals,
 		"duplicates": duplicates,
 	})
+}
+
+// upstreamFailed logs a POV call that answers 502. It records the operation,
+// the gRPC code, and the customer, never the request body.
+func (h *Handler) upstreamFailed(r *http.Request, op, customerID string, err error) {
+	h.logger.LogAttrs(r.Context(), slog.LevelWarn, "account-sim call failed",
+		slog.String("service", "bff"),
+		slog.String("operation", op),
+		slog.String("code", status.Code(err).String()),
+		slog.String("customer_id", customerID),
+	)
 }
 
 func (h *Handler) customerSince(ctx context.Context, id string) string {

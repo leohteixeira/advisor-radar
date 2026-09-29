@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
+	accountv1 "github.com/leohteixeira/advisor-radar/gen/account/v1"
 	advisoryv1 "github.com/leohteixeira/advisor-radar/gen/advisory/v1"
 	casesv1 "github.com/leohteixeira/advisor-radar/gen/cases/v1"
 	triagev1 "github.com/leohteixeira/advisor-radar/gen/triage/v1"
@@ -57,6 +57,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	var queue bff.QueueSource = bff.EmptyQueue{}
 	var review bff.ReviewSource = bff.EmptyReview{}
 	var casesSrc bff.CaseSource = bff.EmptyCases{}
+	var pov bff.POVSource // nil keeps the handler's empty POV source
 	var cleanups []func()
 	defer func() {
 		for i := len(cleanups) - 1; i >= 0; i-- {
@@ -88,6 +89,16 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		cleanups = append(cleanups, func() { _ = conn.Close() })
 		casesSrc = bff.NewGRPCCases(casesv1.NewCasesServiceClient(conn))
 	}
+	if target := os.Getenv("ACCOUNT_SIM_GRPC_TARGET"); target != "" {
+		conn, err := bff.DialAccountSim(target)
+		if err != nil {
+			return fmt.Errorf("bff: dial account-sim: %w", err)
+		}
+		cleanups = append(cleanups, func() { _ = conn.Close() })
+		pov = bff.NewGRPCPOV(accountv1.NewAccountServiceClient(conn))
+	} else {
+		logger.Warn("client POV disabled: ACCOUNT_SIM_GRPC_TARGET is not set", "service", "bff")
+	}
 
 	if addr == "" && brokerURL == "" {
 		<-ctx.Done()
@@ -101,7 +112,6 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	var httpSrv *http.Server
 	var amqpCleanup func()
 
-	pov := newMemoryPOV()
 	var session *amqpSession
 	if brokerURL != "" {
 		opened, cleanup, err := dialAMQP(ctx, brokerURL)
@@ -110,27 +120,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		}
 		amqpCleanup = cleanup
 		session = opened
-		pubCh, err := session.conn.Channel()
-		if err != nil {
-			cleanup()
-			return fmt.Errorf("bff: open publish channel: %w", err)
-		}
-		pov.pub = &amqpPublisher{ch: pubCh, exchange: session.exchange}
-		go func() {
-			ticker := time.NewTicker(time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-runCtx.Done():
-					return
-				case <-ticker.C:
-					_ = pov.flush(runCtx)
-				}
-			}
-		}()
 	}
 
 	server := bff.NewHandlerWithPOV(board, actions, tl, queue, review, casesSrc, pov, nil)
+	server.SetLogger(logger)
 	if addr != "" {
 		httpSrv = &http.Server{
 			Addr:              addr,
@@ -210,29 +203,6 @@ func run(ctx context.Context, logger *slog.Logger) error {
 type amqpSession struct {
 	conn     *amqp.Connection
 	exchange string
-}
-
-type amqpPublisher struct {
-	mu       sync.Mutex
-	ch       *amqp.Channel
-	exchange string
-}
-
-func (p *amqpPublisher) Publish(ctx context.Context, routingKey string, body []byte) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	err := p.ch.PublishWithContext(ctx, p.exchange, routingKey, false, false, amqp.Publishing{
-		ContentType:  "application/json",
-		DeliveryMode: amqp.Persistent,
-		Body:         body,
-	})
-	if err != nil {
-		return fmt.Errorf("bff: publish pov outbox: %w", err)
-	}
-	return nil
 }
 
 func dialAMQP(ctx context.Context, url string) (*amqpSession, func(), error) {
