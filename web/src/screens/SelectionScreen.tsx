@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { SduiShowcase } from '../selection/SduiShowcase';
 import { WALK_INTERVAL_MS, WALK_STEPS, walkStep } from '../selection/steps';
 
 const EDGES: Record<string, string> = {
@@ -69,7 +70,14 @@ export function SelectionScreen() {
     <main className={wide ? 'selection selection--wide' : 'selection'}>
       <header className="selection__bar">
         <span className="selection__brand">Advisor Radar</span>
-        <span className="selection__demo">Demo técnica · dados fictícios</span>
+        <nav aria-label="Nesta página" className="selection__anchors">
+          <a href="#arquitetura">Arquitetura</a>
+          <a href="#sdui" className="selection__anchor--new">
+            {wide ? 'Server-Driven UI' : 'SDUI'}
+            <span className="selection__new">Novo</span>
+          </a>
+        </nav>
+        {wide ? <span className="selection__demo">Demo técnica · dados fictícios</span> : null}
       </header>
 
       <section className="selection__hero" aria-labelledby="selection-headline">
@@ -127,20 +135,41 @@ export function SelectionScreen() {
         </Link>
       </section>
 
+      <section className="selection__band" aria-labelledby="selection-band">
+        <span className="selection__band-mark" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <div>
+          <p className="selection__band-kicker">Novo nesta versão · Server-Driven UI</p>
+          <h2 id="selection-band">Três clientes, três inícios diferentes, nenhuma linha de front escrita para cada um.</h2>
+          <p>O bff devolve a tela como página, seções e componentes, já preenchida para o momento do cliente. O app só renderiza.</p>
+        </div>
+        <a href="#sdui" className="selection__band-cta">
+          Ver como funciona
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 5v14M6 13l6 6 6-6" />
+          </svg>
+        </a>
+      </section>
+
       <section className="selection__product" aria-labelledby="selection-product">
-        <p className="selection__eyebrow">O produto</p>
-        <h2 id="selection-product">Quem precisa de atenção agora, e por quê.</h2>
-        <p>
-          O Advisor Radar junta o que acontece na conta do cliente e o que ele escreve, e transforma
-          isso em ações priorizadas para a assessoria.
-        </p>
+        <div className="selection__product-intro">
+          <p className="selection__eyebrow">O produto</p>
+          <h2 id="selection-product">Quem precisa de atenção agora, e por quê.</h2>
+          <p>
+            O Advisor Radar junta o que acontece na conta do cliente e o que ele escreve, e transforma
+            isso em ações priorizadas para a assessoria.
+          </p>
+        </div>
         <div className="selection__pillars">
           <article>
             <h3>Alertas proativos</h3>
             <p>
               {wide
-                ? 'Regras determinísticas sobre eventos de conta: saque relevante, queda de patrimônio, aporte grande, mudança de segmento e cliente sem contato.'
-                : 'Saque relevante, queda de patrimônio, aporte grande, mudança de segmento e cliente sem contato.'}
+                ? 'Regras determinísticas sobre eventos de conta: saque relevante, queda de patrimônio, aporte grande, mudança de segmento, cliente sem contato e compra acima do perfil.'
+                : 'Saque relevante, queda de patrimônio, aporte grande, mudança de segmento, cliente sem contato e compra acima do perfil.'}
             </p>
           </article>
           <article>
@@ -159,10 +188,17 @@ export function SelectionScreen() {
                 : 'SLA por segmento, com escalonamento por fila com TTL, sem cron.'}
             </p>
           </article>
+          <article className="selection__pillar--new">
+            <h3>Telas pelo servidor</h3>
+            <p>
+              O app do cliente é server-driven. O backend escolhe a variante de cada seção pelo momento
+              do cliente, e o front só desenha um catálogo fixo de componentes.
+            </p>
+          </article>
         </div>
       </section>
 
-      <section className="selection__walk" aria-labelledby="selection-walk">
+      <section id="arquitetura" className="selection__walk" aria-labelledby="selection-walk">
         <div className="selection__walk-head">
           <div>
             <p className="selection__eyebrow">Arquitetura</p>
@@ -295,6 +331,8 @@ export function SelectionScreen() {
           </div>
         </div>
       </section>
+
+      <SduiShowcase wide={wide} />
 
       <footer className="selection__foot">
         <ul>
