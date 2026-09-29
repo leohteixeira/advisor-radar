@@ -16,7 +16,7 @@ The BFF stores nothing durable. POV progress lives in an in-memory hub. Requests
 | PUT | `/v1/actions/{id}` | Contatado or Adiar 1 h |
 | DELETE | `/v1/actions/{id}` | Undo |
 | GET | `/v1/customers/{id}` | Customer book row |
-| GET | `/v1/customers/{id}/timeline` | Customer 360 rows. Each row may carry `source`, the routing key of its event, and `occurred_at`, the event time in RFC 3339; `ago` stays as indexed |
+| GET | `/v1/customers/{id}/timeline` | Customer 360 rows. Each row may carry `source`, the routing key of its event, and `occurred_at`, the event time in RFC 3339; `ago` stays as indexed. An account row may also carry `product_id` (a purchase) and `amount_cents`, the event amount in USD cents (v1 dollars are scaled by 100; an amount that is not a number or is past 2^53 cents is left out) |
 | GET | `/v1/review` | Triage review queue |
 | PUT | `/v1/review/{id}` | Correct an intent |
 | GET | `/v1/manager` | Manager snapshot |
@@ -51,8 +51,8 @@ The client app gets each screen from the BFF as a page of sections and component
 |---|---|---|
 | GET | `/v1/client-pov/customers/{id}/screens/{slug}` | `200` screen envelope. `slug` is `home`, `investir`, `carteira`, or `perfil` |
 
-- The BFF serves `home` and `investir` now. `carteira` and `perfil` answer `404` until their stories land and add them here.
-- The web home and Investir render from this screen route. The phase-2 home route `GET /v1/client-pov/customers/{id}` stays: web still reads the shell (name, segment) and the coded panels (cash, messages) from it. There is no fallback screen: when the screen request fails, times out, or answers something that is not an envelope, the screen area shows an error state with a retry, and the shell, tabs, and panels stay.
+- The BFF serves `home`, `investir`, and `carteira` now. `perfil` answers `404` until its story lands and adds it here.
+- The web home, Investir, and Carteira render from this screen route. The phase-2 home route `GET /v1/client-pov/customers/{id}` stays: web still reads the shell (name, segment) and the coded panels (cash, messages) from it. There is no fallback screen: when the screen request fails, times out, or answers something that is not an envelope, the screen area shows an error state with a retry, and the shell, tabs, and panels stay.
 - Opening a screen is one HTTP request. There is no pagination and no single-section reload.
 - A slug outside the four is `404`. An unknown customer is `404` only when account-sim answers `NotFound` for that customer. Any other source failure never changes the status.
 - Screen responses carry `Cache-Control: no-store`.
@@ -87,7 +87,7 @@ Thiago's home with the timeline down. Only the `moment` section is shown; `wealt
 
 - `schema_version` is an integer, the version of this envelope and of the component table below.
 - A section object has `id` and `components`, an array of `{type, variant, props}`.
-- `omitted` is always present: one `{id, type, reason}` per catalog section this response left out, in catalog order, so Raio-X can draw a placeholder. `reason` is the failed source (`account-sim`, `catalog`, `advisory`, `timeline`, `moments`, `profile`, or `cases`) or `build_error`. `account-sim` is the account read and `catalog` the account-sim product catalog (`ListProducts`); `advisory` is the customer read; `moments` and `profile` are the advisory moment facts and investor profile. Web renders nothing for an omitted section outside Raio-X.
+- `omitted` is always present: one `{id, type, reason}` per catalog section this response left out because a source failed or a build broke, in catalog order, so Raio-X can draw a placeholder. `reason` is the failed source (`account-sim`, `catalog`, `advisory`, `timeline`, `moments`, `profile`, or `cases`) or `build_error`. `account-sim` is the account read and `catalog` the account-sim product catalog (`ListProducts`); `advisory` is the customer read; `moments` and `profile` are the advisory moment facts and investor profile. Web renders nothing for an omitted section outside Raio-X. A section that is absent by design, such as a Carteira class with no position, is neither in `sections` nor in `omitted`.
 - `title` and `subtitle?` are the screen heading, filled from the catalog: home "Olá, {{first}}" / "Cliente {{segment}} desde {{since}}", investir "Investir" / "Produtos fictícios · preço fixo da simulação", carteira "Carteira" / "Valores de mercado no dia simulado {{day}}", perfil "Perfil" / "Seus dados, seu perfil de investidor e suas preferências".
 - `revision` names the catalog revision of the screen. A client outside the beta gets `v1`. A beta client gets home `v2`, which inserts the `highlights` section right after `moment`. Investir, Carteira, and Perfil stay at `v1`.
 - Section order in the array is the render order. Web owns style, the breakpoint grid, and the span of each section.
@@ -100,6 +100,7 @@ Thiago's home with the timeline down. Only the `moment` section is shown; `wealt
 - A value a form needs as a number is also sent as an integer USD cents field named `*_cents`.
 - Every visible label is a prop, so copy changes need no web change. Copy is Portuguese.
 - Negative signs use U+2212 "−", not the hyphen-minus.
+- A signed amount puts its sign right before the currency, with no space: "+US$ 19.400,00", "−US$ 250,00", and "US$ 0,00" at zero. A signed percentage has one decimal, rounded half away from zero: "+11,5%", "−0,4%", and "0,0%" at zero or when there is nothing to measure against.
 - Relative times read "agora" (under a minute), "há 5 min", "há 3 h", "ontem" (24 to 48 hours), and "há 4 dias".
 - Shares use largest-remainder rounding in Go, so the allocation shares of one component sum to 100%.
 - `tone` is `pos`, `neg`, `info`, `gold`, or `neutral`. Each type lists the tones it accepts. Web maps tone to color, and renders an unknown `tone` as `neutral`.
@@ -133,7 +134,7 @@ The `deposit`, `withdraw`, `message`, and `complaint` panels submit through the 
 - When the beta flag is unavailable, the BFF serves revision `v1`.
 - When the investor profile fact fails, `idle_cash` does not match, and the sections whose variant depends on it (`highlights` and `suitability`) are omitted. On Investir, `cash` then has no `profile_chip` and every product carries `above_profile: false` with no `badge` or `warning`.
 - When the catalog fails, the Investir `highlights`, `fixed_income`, `etfs`, and `stocks` sections are omitted with reason `catalog`.
-- `title` and `subtitle` fall back to "Olá" and no subtitle when their source fails. A heading with no customer field (Investir) keeps its title and subtitle.
+- `title` and `subtitle` fall back to "Olá" and no subtitle when their source fails. The subtitle's source is the one its fields read: advisory for the home fields, account-sim for the Carteira `{{day}}`. A subtitle whose source failed is left out and the title stays; a heading with no field (Investir) keeps its title and subtitle.
 - A `Build` error drops only that component. A section left with zero components is omitted with reason `build_error`.
 - Every omitted section is listed in `omitted` with its reason.
 - The response is still `200` with the remaining sections. When every section is omitted, it is `200` with `"sections": []`.
@@ -188,7 +189,7 @@ The BFF serves home `v1` with every moment variant of the priority list except `
 - `wealth`: `total_label` "Patrimônio total" with the patrimony account-sim reports, `cash_label` "Disponível para saque", and one allocation row per non-zero class in the order Ações (`stocks`), ETFs (`etfs`), Renda fixa (`fixed_income`), Caixa (`cash`). `bar_width` equals the rounded share.
 - `actions`: Depositar (`deposit` icon), Sacar (`withdraw`), Mensagem (`msg`), and Reclamar (`alert`), each a `panel` action.
 - `advisor`: `name` is the advisory book advisor, `initials` its first two name initials, `meta` "Resposta em até {{sla}} · cliente {{segment}}" with the catalog SLA per segment (Essencial 24 h, Advance 4 h, Singular 1 h), and action "Conversar" → `panel` `message`. An unknown segment is a `build_error`.
-- `activity`: title "Atividade recente". `recent` holds the five most recent client-facing timeline rows as `{icon, title, meta}`. A row is client-facing when its timeline `source` is `account.event.recorded` or `message.received`; rows from `alert.raised`, `message.triaged`, `case.*`, advisor notes, and calls never reach the client, and neither does a row without `source`. `meta` is the relative time from the row's `occurred_at` to the request time, or from the indexed `ago` when `occurred_at` is absent. Icons are `aporte` `in`, `saque` and `aplicacao` `out`, and `mensagem` `msg`; any other kind has no icon. With no client-facing row, `empty` carries `items: []` and the empty text.
+- `activity`: title "Atividade recente". `recent` holds the five most recent client-facing timeline rows as `{icon, title, meta, value?, tone?}`. A row is client-facing when its timeline `source` is `account.event.recorded` or `message.received`; rows from `alert.raised`, `message.triaged`, `case.*`, advisor notes, and calls never reach the client, and neither does a row without `source`. `meta` is the relative time from the row's `occurred_at` to the request time, or from the indexed `ago` when `occurred_at` is absent. Icons are `aporte` `in`, `saque` and `aplicacao` `out`, and `mensagem` `msg`; any other kind has no icon. Every row except `aplicacao` keeps its indexed title. With `amount_cents`, an `aporte` carries `value` signed positive ("+US$ 60.000,00") with `tone` `pos`, and a `saque` carries it signed negative ("−US$ 20.000,00") with `tone` `neg`. An `aplicacao` reads "Compra · {{product}}" with the catalog product name ("Compra" when the catalog failed or does not name the product; never the id) and carries `value`, the purchase amount signed negative ("−US$ 250,00"), when the row has `amount_cents`. With no client-facing row, `empty` carries `items: []` and the empty text.
 
 ### Investir `v1` served now
 
@@ -208,14 +209,34 @@ The BFF serves investir `v1` under the same screen deadline. The heading is "Inv
 - Products: `class_label` "Renda fixa", "ETF", or "Ação"; `risk_label` "Risco {{risk}} de 5"; `minimum` "Mínimo {{minimum}}" with whole dollars written without cents ("Mínimo US$ 1.000"); `above_profile` is true when `risk` is above the profile's `max_risk`, which is the same test the advisory suitability rule applies to a purchase. Above the profile, `badge` is "Acima do seu perfil" and `warning` is "Este produto tem risco {{risk}}. Seu perfil é {{profile}}, que vai até risco {{max_risk}}. Você pode investir mesmo assim, e a sua assessora será avisada." The action is "Investir" → `panel` `purchase` with the `product_id`.
 - On day 0 of the seed, Thiago (arrojado) has nothing above his profile; Fernanda (conservador, max 2) sees `acoesg`, `farol`, and `cobalto` above it; Mariana (moderado, max 3) sees `farol` and `cobalto` above it.
 
+### Carteira `v1` served now
+
+The BFF serves carteira `v1` under the same screen deadline. The heading is "Carteira" / "Valores de mercado no dia simulado {{day}}"; without account-sim the subtitle is left out.
+
+| Section | Type | Variants | Source | When the source fails |
+|---|---|---|---|---|
+| `summary` | `portfolio_summary` | `default` | account-sim | omitted, reason `account-sim` |
+| `allocation` | `allocation_breakdown` | `default` | account-sim | omitted, reason `account-sim` |
+| `positions_stocks` | `position_list` | `stocks` | account-sim, catalog | omitted, reason `account-sim` or `catalog` |
+| `positions_etf` | `position_list` | `etf` | account-sim, catalog | as `positions_stocks` |
+| `positions_fixed_income` | `position_list` | `fixed_income` | account-sim, catalog | as `positions_stocks` |
+| `history` | `activity_list` | `history` | timeline; catalog for product names | timeline: omitted, reason `timeline`; catalog: purchase rows read "Compra" |
+
+- `summary`: `total_label` "Patrimônio total" and `total` the account-sim patrimony at market value. `stats`, in order: "Valor aplicado" (the sum of the positions' applied amounts), "Rentabilidade" ("{{amount}} ({{percent}})": the market value of the positions minus what was applied, signed, and its percentage of the applied amount, for example "+US$ 19.400,00 (+11,5%)", `tone` `pos`, `neg`, or `neutral` at zero), "Caixa", and "Dia simulado", the account-sim simulated day, `0` until the market-day story makes account-sim report it. Every money stat carries `money: true`.
+- `allocation`: `title` "Alocação" and four rows, always in the order Ações (`stocks`), ETFs (`etfs`), Renda fixa (`fixed_income`), Caixa (`cash`), zero classes included, each with `value`, the largest-remainder `share` of the patrimony, and `bar_width` equal to it.
+- Position lists: one section per class with at least one position; a class with none has no section and is not listed in `omitted`. Titles "Ações", "ETFs", and "Renda fixa"; `subtotal` is the market value of the class; `applied_label` "Aplicado". Items are ordered by `value` descending, then `product_id`. `name` comes from the catalog; a position the catalog does not name is a `build_error`. `return` is the signed percentage of value over applied with one decimal, "0,0%" with nothing applied. When the catalog fails, all three lists are omitted with reason `catalog`, including a class with no position.
+- `history`: `title` "Movimentações" and up to 20 client-facing timeline rows through the home activity mapping (the home keeps five). With no row, `items: []` and `empty_text` "Nenhuma movimentação ainda.".
+- The response is `200` with whatever remains: without account-sim only `history`, without the catalog no position list, without the timeline no `history`.
+- On day 0 of the seed, Mariana and Fernanda have all three position lists and Thiago has no `positions_fixed_income`.
+
 ### Components (15 types)
 
 Shared objects used in the table:
 
 - **Product:** `product_id`, `name`, `class_label` (`"ETF"`), `risk` (integer 1–5, for the bars), `risk_label` (`"Risco 3 de 5"`), `return_label` (`"+11,2% em 12 meses"`), `minimum` (`"Mínimo US$ 50"`), `minimum_cents`, `above_profile` (boolean), `badge?` (`"Acima do seu perfil"`, set only when above profile), `warning?` (the above-profile text for the purchase form, set only when above profile), `action` (`panel` `purchase` with `product_id`).
 - **Allocation row:** `class` (`stocks`, `etfs`, `fixed_income`, or `cash`; web maps it to a color), `label`, `share` (`"62%"`), `bar_width`.
-- **Activity item:** `icon?`, `title`, `meta`, `value?` (signed money), `tone?` (`pos`, `neg`, or `neutral`).
-- **Stat:** `label`, `value`, `tone?` (`pos`, `neg`, or `neutral`).
+- **Activity item:** `icon?`, `title`, `meta`, `value?` (signed money, `"−US$ 250,00"` on a purchase), `tone?` (`pos`, `neg`, or `neutral`).
+- **Stat:** `label`, `value`, `tone?` (`pos`, `neg`, or `neutral`), `money?` (`true` when `value` is money; web masks it with the eye toggle).
 
 The Variants column is not evaluation order; the catalog holds each section's ordered list. Each section's default variant: `moment` is `welcome`; `wealth` and `summary` are `default`; `advisor` is `default`; `activity` is `recent` or `empty`, chosen by item count; `history` is `history`; every other section has a single variant, or the profile variant for `highlights` and `suitability`, and that is its default.
 
@@ -225,13 +246,13 @@ The Variants column is not evaluation order; the catalog holds each section's or
 | `wealth_summary` | home `wealth` | `default`, `with_day_change` | `total_label`, `total`, `cash_label`, `cash`, `cash_cents`, `allocation` (allocation rows); `with_day_change` adds `day_change` (`"− US$ 38.502,00 (−15,5%) no dia 3"`) and `day_change_tone` (`pos`, `neg`, or `neutral` at zero). Masking values is web presentation only |
 | `action_grid` | home `actions` | `default` | `items`: `[{label, icon?, action}]`, four `panel` actions: Depositar `deposit`, Sacar `withdraw`, Mensagem `message`, Reclamar `complaint` |
 | `advisor_card` | home `advisor`, perfil `advisor` | `default`, `dedicated` (Singular) | `kicker` ("Sua assessora" or "Sua assessora dedicada"), `name`, `initials`, `meta` ("Resposta em até … · cliente …"), `action?` (`panel` `message`) |
-| `activity_list` | home `activity`, carteira `history` | `recent`, `empty`, `history` | `title`, `items` (activity items; empty for `empty`), `empty_text?` (`empty`: "Suas movimentações aparecem aqui assim que acontecerem."; `history` with no items: "Nenhuma movimentação ainda.") |
+| `activity_list` | home `activity`, carteira `history` | `recent`, `empty`, `history` | `title` ("Atividade recente" or "Movimentações"), `items` (activity items: at most 5 on home, 20 in `history`; empty for `empty`), `empty_text?` (`empty`: "Suas movimentações aparecem aqui assim que acontecerem."; `history` with no items: "Nenhuma movimentação ainda.") |
 | `invest_summary` | investir `cash` | `default` | `cash_label`, `cash`, `cash_cents`, `profile_chip?` ("Perfil moderado", left out without a profile) |
 | `product_rail` | investir `highlights`; home `highlights` in beta revision `v2` | `profile_conservador`, `profile_moderado`, `profile_arrojado` | `title` ("Para o seu perfil …"), `subtitle`, `products` (products) |
 | `product_list` | investir `fixed_income`, `etfs`, `stocks` | `fixed_income`, `etf`, `stocks` | `title` ("Renda fixa", "ETFs", or "Ações"), `products` (products) |
-| `portfolio_summary` | carteira `summary` | `default`, `with_day_change` | `total_label`, `total`, `stats` (stats: "Valor aplicado", "Rentabilidade" signed with percentage, "Caixa", "Dia simulado"); `with_day_change` adds `day_change` and `day_change_tone` |
-| `allocation_breakdown` | carteira `allocation` | `default` | `title`, `rows`: allocation rows plus `value` (money) for Ações, ETFs, Renda fixa, and Caixa |
-| `position_list` | carteira `positions_stocks`, `positions_etf`, `positions_fixed_income` | `stocks`, `etf`, `fixed_income` | `title`, `subtotal`, `applied_label` ("Aplicado"), `items`: `[{product_id, name, applied, value, return, return_tone}]`, `return` signed percentage, `return_tone` `pos`, `neg`, or `neutral` at zero |
+| `portfolio_summary` | carteira `summary` | `default`, `with_day_change` (not served yet; the market-day story, 13, serves it) | `total_label`, `total`, `stats` (stats: "Valor aplicado", "Rentabilidade" signed with percentage, "Caixa", "Dia simulado"); `with_day_change` adds `day_change` and `day_change_tone` |
+| `allocation_breakdown` | carteira `allocation` | `default` | `title`, `rows`: allocation rows plus `value` (money) for Ações, ETFs, Renda fixa, and Caixa, zero classes included. Money values are masked by the eye toggle |
+| `position_list` | carteira `positions_stocks`, `positions_etf`, `positions_fixed_income` | `stocks`, `etf`, `fixed_income` | `title`, `subtotal`, `applied_label` ("Aplicado"), `items`: `[{product_id, name, applied, value, return, return_tone}]`, `return` signed percentage, `return_tone` `pos`, `neg`, or `neutral` at zero. `subtotal`, `applied`, and `value` are masked by the eye toggle; `return` is not |
 | `profile_header` | perfil `header` | `default` | `initials`, `name`, `subtitle` ("Cliente … desde …"), `account` ("Conta 3301-7 · Orla Invest") |
 | `profile_scale` | perfil `suitability` | `conservador`, `moderado`, `arrojado` | `title`, `subtitle`, `current_label` ("Seu perfil"), `levels`: `[{key, label, description, limit, max_risk, current}]` for conservador, moderado, and arrojado, `limit` "Produtos até risco …", `max_risk` integer for the bars, `current` boolean; `footer` ("Última avaliação em …") |
 | `profile_field_list` | perfil `registration` | `default` | `title`, `fields`: `[{label, value}]` for Nome, E-mail, Telefone (masked), Cidade, Segmento, Cliente desde; `footnote` |
