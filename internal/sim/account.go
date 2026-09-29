@@ -26,10 +26,14 @@ const (
 	CmdComplaint  = "complaint"
 )
 
+// MaxAmountCents caps one deposit or withdrawal at USD 1 billion, which keeps
+// balances in int64 cents far from overflow. A larger amount is ErrAmount.
+const MaxAmountCents int64 = 100_000_000_000
+
 var (
 	ErrUnknownCustomer = errors.New("sim: unknown customer")
 	ErrInsufficient    = errors.New("sim: withdrawal exceeds caixa")
-	ErrAmount          = errors.New("sim: amount must be a positive number of cents")
+	ErrAmount          = errors.New("sim: amount must be between 1 and 100000000000 cents")
 	ErrKey             = errors.New("sim: idempotency key is required")
 	ErrCommand         = errors.New("sim: command is not accepted")
 )
@@ -192,7 +196,7 @@ func schemaVersion(routing string) int {
 func build(account Account, cmd Command) (any, string, Account, error) {
 	switch cmd.Kind {
 	case CmdDeposit:
-		if cmd.Amount <= 0 {
+		if cmd.Amount <= 0 || cmd.Amount > MaxAmountCents {
 			return nil, "", Account{}, ErrAmount
 		}
 		if cmd.Origin == "" {
@@ -209,7 +213,7 @@ func build(account Account, cmd Command) (any, string, Account, error) {
 			Origin: cmd.Origin,
 		}, event.NameAccountEventRecorded, next, nil
 	case CmdWithdrawal:
-		if cmd.Amount <= 0 {
+		if cmd.Amount <= 0 || cmd.Amount > MaxAmountCents {
 			return nil, "", Account{}, ErrAmount
 		}
 		if cmd.Destination == "" {
