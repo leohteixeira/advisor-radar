@@ -165,3 +165,44 @@ export interface ProductListProps {
   title: string;
   products: ProductItem[];
 }
+
+/** One labelled value. `money` marks a value the eye toggle masks. */
+export interface Stat {
+  label: string;
+  value: string;
+  tone?: 'pos' | 'neg' | 'neutral';
+  money?: boolean;
+}
+
+export interface PortfolioSummaryProps {
+  total_label: string;
+  total: string;
+  stats: Stat[];
+}
+
+/** An allocation row with the class value as money. */
+export interface BreakdownRow extends AllocationRow {
+  value: string;
+}
+
+export interface AllocationBreakdownProps {
+  title: string;
+  rows: BreakdownRow[];
+}
+
+/** One position: `return` is the signed percentage the BFF computed. */
+export interface PositionItem {
+  product_id: string;
+  name: string;
+  applied: string;
+  value: string;
+  return: string;
+  return_tone: 'pos' | 'neg' | 'neutral';
+}
+
+export interface PositionListProps {
+  title: string;
+  subtotal: string;
+  applied_label: string;
+  items: PositionItem[];
+}

@@ -2,8 +2,11 @@ import type { ComponentType } from 'react';
 import { ActionGrid } from './components/ActionGrid';
 import { ActivityList } from './components/ActivityList';
 import { AdvisorCard } from './components/AdvisorCard';
+import { AllocationBreakdown } from './components/AllocationBreakdown';
 import { InvestSummary } from './components/InvestSummary';
 import { MomentCard } from './components/MomentCard';
+import { PortfolioSummary } from './components/PortfolioSummary';
+import { PositionList } from './components/PositionList';
 import { ProductList } from './components/ProductList';
 import { ProductRail } from './components/ProductRail';
 import { WealthSummary } from './components/WealthSummary';
@@ -28,6 +31,9 @@ const REGISTRY: Readonly<Record<string, ComponentType<SduiComponentProps>>> = {
   invest_summary: InvestSummary,
   product_rail: ProductRail,
   product_list: ProductList,
+  portfolio_summary: PortfolioSummary,
+  allocation_breakdown: AllocationBreakdown,
+  position_list: PositionList,
 };
 
 /** Finds the component for a type, or undefined when web does not know it. */

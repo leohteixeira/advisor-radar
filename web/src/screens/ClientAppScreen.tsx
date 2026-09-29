@@ -40,8 +40,8 @@ type Panel = 'home' | 'deposit' | 'withdraw' | 'complaint' | 'message' | 'done' 
 type ScreenView = { slug: Slug; status: 'loading' } | { slug: Slug; status: 'ready'; screen: Screen } | { slug: Slug; status: 'error' };
 
 /**
- * Client app tabs. Início and Investir render their SDUI screens; Carteira
- * and Perfil still render the home with a note until their stories.
+ * Client app tabs. Início, Investir, and Carteira render their SDUI screens;
+ * Perfil still renders the home with a note until its story.
  */
 const TABS = [
   { slug: 'home', label: 'Início', icon: 'home' },
@@ -54,7 +54,7 @@ type TabSlug = (typeof TABS)[number]['slug'];
 
 /** The screen a tab fetches. */
 function screenSlug(tab: TabSlug): Slug {
-  return tab === 'investir' ? 'investir' : 'home';
+  return tab === 'perfil' ? 'home' : tab;
 }
 
 const PRESETS = [
@@ -252,7 +252,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const buyKey = useRef<{ cents: number; key: string } | null>(null);
   const form = useRef(0);
   const inFlight = useRef(false);
-  const navNote = tab === 'carteira' || tab === 'perfil' ? (TABS.find((item) => item.slug === tab)?.label ?? null) : null;
+  const navNote = tab === 'perfil' ? (TABS.find((item) => item.slug === tab)?.label ?? null) : null;
   const liveEvent = panel === 'done' ? sent?.event_id : panel === 'bought' ? bought?.event_id : undefined;
 
   useEffect(() => {
