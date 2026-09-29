@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { fetchPOVClients, type POVClient } from '../api/pov';
-import { fetchScreenResponse } from '../sdui/api';
+import { fetchScreenResponse, UnsupportedSchemaError } from '../sdui/api';
 import { SduiContext, type SduiContextValue } from '../sdui/context';
 import { SduiScreen } from '../sdui/SduiScreen';
 import type { Screen } from '../sdui/types';
@@ -32,6 +32,7 @@ type Live =
   | { status: 'loading'; who: SduiClientName }
   | { status: 'ready'; who: SduiClientName; client: RosterClient; screen: Screen; httpStatus: number; json: string }
   | { status: 'down'; who: SduiClientName }
+  | { status: 'unsupported'; who: SduiClientName }
   | { status: 'missing'; who: SduiClientName };
 
 /** The rendered home is a picture of the app: its controls do nothing here. */
@@ -83,7 +84,8 @@ function momentVariant(screen: Screen): string | undefined {
  * The selection screen's #sdui section: client tabs, the live home envelope of
  * the selected seed client, the moment variant and its documented rule, the
  * rendered home in a phone frame, then the composition steps and principles.
- * When the BFF is unreachable it shows a neutral note in place of the demo.
+ * When the BFF is unreachable it shows a neutral note in place of the demo,
+ * and when it serves a schema this build does not render, the update note.
  */
 export function SduiShowcase({ wide }: { wide: boolean }) {
   const [roster, setRoster] = useState<Roster>({ status: 'loading' });
@@ -134,9 +136,9 @@ export function SduiShowcase({ wide }: { wide: boolean }) {
           setLive({ status: 'ready', who, client, screen, httpStatus: status, json: JSON.stringify(body, null, 2) });
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!gone) {
-          setLive({ status: 'down', who });
+          setLive({ status: err instanceof UnsupportedSchemaError ? 'unsupported' : 'down', who });
         }
       });
     return () => {
@@ -229,6 +231,13 @@ function LiveDemo({ live, wide }: { live: Live; wide: boolean }) {
     return (
       <p role="status" className="selection__sdui-note">
         Esse cliente não está na lista do bff agora.
+      </p>
+    );
+  }
+  if (live.status === 'unsupported') {
+    return (
+      <p role="status" className="selection__sdui-note">
+        Atualize o app para ver esta tela.
       </p>
     );
   }

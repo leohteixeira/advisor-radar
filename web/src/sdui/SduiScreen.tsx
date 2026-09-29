@@ -99,6 +99,29 @@ export function SduiError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+/**
+ * The screen area when the BFF serves no `schema_version` this app renders
+ * (a 406, or an envelope of another version). Only a newer app can show the
+ * screen, so the button reloads the page to pick one up.
+ */
+export function SduiUpdate() {
+  const heading = useRef<HTMLHeadingElement>(null);
+  // The notice replaces the screen, so focus moves to its heading.
+  useEffect(() => heading.current?.focus(), []);
+  return (
+    <div className="sdui-error">
+      <div role="alert">
+        <h1 ref={heading} tabIndex={-1}>
+          Atualize o app para ver esta tela.
+        </h1>
+      </div>
+      <button type="button" className="sdui-btn sdui-btn--secondary" onClick={() => window.location.reload()}>
+        Recarregar
+      </button>
+    </div>
+  );
+}
+
 /** The screen skeleton while the one screen request is in flight. */
 export function SduiLoading() {
   return (

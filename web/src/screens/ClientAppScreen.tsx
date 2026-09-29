@@ -3,10 +3,10 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { apiPath } from '../api/base';
 import { ApiError } from '../api/bff';
 import { dollars, fetchPOVHome, fetchSimulation, formatCents, postAdvanceDay, postPOV, protocolOf, putPreferences, type POVHome } from '../api/pov';
-import { fetchScreen } from '../sdui/api';
+import { fetchScreen, UnsupportedSchemaError } from '../sdui/api';
 import { SduiContext, type SduiContextValue } from '../sdui/context';
 import { findPurchase, type PurchaseTarget } from '../sdui/purchase';
-import { SduiError, SduiLoading, SduiScreen } from '../sdui/SduiScreen';
+import { SduiError, SduiLoading, SduiScreen, SduiUpdate } from '../sdui/SduiScreen';
 import type { Preferences, Screen, Slug } from '../sdui/types';
 import { purchaseSteps, PurchaseForm, PurchaseSent, type Bought, type LiveStep } from './PurchasePanel';
 
@@ -36,9 +36,15 @@ type Panel = 'home' | 'deposit' | 'withdraw' | 'complaint' | 'message' | 'done' 
  * The SDUI screen of the current tab. `slug` says which request the state
  * belongs to, so a tab change shows the skeleton instead of the previous
  * tab's screen. There is no hardcoded screen to fall back to: a failed,
- * timed out, or non-envelope response is the error state with a retry.
+ * timed out, or non-envelope response is the error state with a retry, and a
+ * schema this build does not render (a 406, or another `schema_version`) is
+ * the unsupported state with the update notice.
  */
-type ScreenView = { slug: Slug; status: 'loading' } | { slug: Slug; status: 'ready'; screen: Screen } | { slug: Slug; status: 'error' };
+type ScreenView =
+  | { slug: Slug; status: 'loading' }
+  | { slug: Slug; status: 'ready'; screen: Screen }
+  | { slug: Slug; status: 'error' }
+  | { slug: Slug; status: 'unsupported' };
 
 /**
  * Client app tabs; each renders the SDUI screen of the same slug.
@@ -361,9 +367,9 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
           setView({ slug, status: 'ready', screen });
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!gone) {
-          setView({ slug, status: 'error' });
+          setView({ slug, status: err instanceof UnsupportedSchemaError ? 'unsupported' : 'error' });
         }
       });
     return () => {
@@ -594,6 +600,8 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
         <SduiScreen screen={ready} xray={xray && sduiOnView ? { customerID: id } : undefined} />
       </SduiContext>
     );
+  } else if (view.slug === slug && view.status === 'unsupported') {
+    area = <SduiUpdate />;
   } else if (view.slug === slug && view.status === 'error') {
     area = <SduiError onRetry={retry} />;
   }

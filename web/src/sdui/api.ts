@@ -2,6 +2,21 @@ import { apiPath } from '../api/base';
 import { ApiError } from '../api/bff';
 import type { Component, Omitted, Screen, Section, Slug } from './types';
 
+/** The envelope `schema_version` web renders; sent as `X-SDUI-Schema` on every screen request. */
+export const SUPPORTED_SCHEMA = 1;
+
+/**
+ * The BFF cannot serve a screen this app renders: it answered 406 to
+ * `X-SDUI-Schema`, or a 200 envelope whose `schema_version` is not
+ * SUPPORTED_SCHEMA. The app shows an update notice instead of the screen.
+ */
+export class UnsupportedSchemaError extends Error {
+  constructor() {
+    super('sdui: screen schema_version is not supported');
+    this.name = 'UnsupportedSchemaError';
+  }
+}
+
 /** The screen route answered 200 with a body that is not a screen envelope. */
 export class InvalidScreenError extends Error {
   constructor() {
@@ -58,24 +73,30 @@ export interface ScreenResponse {
 }
 
 /**
- * Fetches one SDUI screen. A non-2xx answer throws ApiError; a 200 whose body
- * is not JSON, not an envelope, or an envelope of another slug throws
- * InvalidScreenError. The request aborts on `signal` or after
- * SCREEN_TIMEOUT_MS. Malformed sections, components, and omitted rows are
- * dropped.
+ * Fetches one SDUI screen. A 406, or a 200 envelope of another
+ * `schema_version`, throws UnsupportedSchemaError; any other non-2xx answer
+ * throws ApiError; a 200 whose body is not JSON, not an envelope, or an
+ * envelope of another slug throws InvalidScreenError. The request aborts on
+ * `signal` or after SCREEN_TIMEOUT_MS. Malformed sections, components, and
+ * omitted rows are dropped.
  */
 export async function fetchScreen(customerID: string, slug: Slug, signal: AbortSignal): Promise<Screen> {
   return (await fetchScreenResponse(customerID, slug, signal)).screen;
 }
 
 /**
- * Like fetchScreen, and also returns the body as the BFF sent it, for the
- * selection screen that shows the live response next to the rendered screen.
+ * Like fetchScreen, with the same errors, and also returns the HTTP status and
+ * the body as the BFF sent it, for the selection screen that shows the live
+ * response next to the rendered screen.
  */
 export async function fetchScreenResponse(customerID: string, slug: Slug, signal: AbortSignal): Promise<ScreenResponse> {
   const res = await fetch(apiPath(`v1/client-pov/customers/${encodeURIComponent(customerID)}/screens/${slug}`), {
+    headers: { 'X-SDUI-Schema': String(SUPPORTED_SCHEMA) },
     signal: AbortSignal.any([signal, AbortSignal.timeout(SCREEN_TIMEOUT_MS)]),
   });
+  if (res.status === 406) {
+    throw new UnsupportedSchemaError();
+  }
   if (!res.ok) {
     throw new ApiError(res.status);
   }
@@ -84,6 +105,10 @@ export async function fetchScreenResponse(customerID: string, slug: Slug, signal
     body = await res.json();
   } catch {
     throw new InvalidScreenError();
+  }
+  // A newer envelope may not match this shape at all, so its version is checked first.
+  if (isRecord(body) && typeof body.schema_version === 'number' && body.schema_version !== SUPPORTED_SCHEMA) {
+    throw new UnsupportedSchemaError();
   }
   if (!isScreen(body) || body.slug !== slug) {
     throw new InvalidScreenError();
