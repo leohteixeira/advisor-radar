@@ -39,6 +39,9 @@ Names, balances, and Orla Invest are fictional. No message is sent to a real per
 4. Open `/advisor-radar/fila`. The churn alert is at the top of the queue with the Singular SLA.
 5. Return as Fernanda Lima, deposit US$ 10.000, and show the large-deposit and segment-change alerts.
 6. Submit the same withdrawal twice with the same idempotency key and show a single event.
+7. Press "Avançar um dia" three times. On day 3 Cobalto Semicondutores falls 53,5%: Mariana's home shows "Mariana, sua carteira caiu 15,5% hoje" with the day-change pill, the team queue shows her `queda` alert, and Thiago, who holds little Cobalto, gets no alert.
+
+The simulated day is global. The day-3 shock hits every account that holds Cobalto, not only the demo clients, so a non-demo account with a large Cobalto position may raise its own drop alert. Advancing is limited to 20 days per 10 minutes for everyone; a reseed (`go run ./cmd/db seed`) returns the day to 0 and the values to the seed.
 
 ## Configuration
 
@@ -61,6 +64,8 @@ After `go run ./cmd/db migrate` applies `account_sim/004_pov_positions.sql`, run
 After `go run ./cmd/db migrate` applies `account_sim/005_pov_preferences.sql`, run `go run ./cmd/db seed` (reseed) to write each client's preferences row; until then Perfil shows `chat` with beta off for every client.
 
 After `go run ./cmd/db migrate` applies `advisory/003_investor_profile.sql`, run `go run ./cmd/db seed` (reseed): 003 gives every existing book row the migration default profile (conservador, assessed 2026-01-01) until the seed writes each customer's profile.
+
+`account_sim/006_pov_sim_day.sql` adds the global simulated day, starting at 0, and `advisory/004_revaluation.sql` the latest revaluation per client; neither needs a reseed.
 
 Deploy advisory before cases. Cases intake reads the advisor from advisory `GetCustomer.advisor_id`; against an advisory that does not send it yet, cases drops every qualifying message as `ErrUnusableCustomer` (dead-lettered, no case opened).
 

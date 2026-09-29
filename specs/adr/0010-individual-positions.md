@@ -54,6 +54,21 @@ segment rules see it as an account event. Every consumer of
 Readers that still expect four class balances read the aggregate instead of a
 stored column.
 
+## Note: values are computed at read time
+
+The market day (story 13) keeps positions as units and never rewrites them. A
+position stores its units in day-0 cents; its value is
+`Value(product, units, sim_day)`, computed on every read from the stored day,
+with half-away-from-zero rounding. Advancing the day therefore writes only the
+new `sim_day` (singleton `pov_sim`, migration 006) and one `reavaliacao` outbox
+row per account, in one transaction under a global advisory lock taken before
+any per-customer lock. Deposits, withdrawals, and purchases value positions at
+the stored day, and a purchase buys units at that day's price. A reseed sets the
+day back to 0 and starts a new epoch, the UUID namespace of the `reavaliacao`
+event ids (carried as `epoch` in each `reavaliacao` payload), and forgets the
+advance idempotency keys, so the days replayed after a reseed publish new events instead of
+colliding with the inbox entries of the previous run.
+
 ## Reassessment trigger
 
 Revisit if positions need real quotes, lots, sells, or pending orders, or if the
