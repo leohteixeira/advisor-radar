@@ -307,6 +307,9 @@ func TestApply_CrossingDeposit(t *testing.T) {
 	if payload.From != "Essencial" || payload.To != "Advance" {
 		t.Fatalf("segment from/to = %s/%s, want Essencial/Advance", payload.From, payload.To)
 	}
+	if seg.SourceSchemaVersion != event.SchemaVersionMVP || aporte.SourceSchemaVersion != event.SchemaVersionMVP {
+		t.Fatalf("source schema versions = %d/%d, want 1", seg.SourceSchemaVersion, aporte.SourceSchemaVersion)
+	}
 	var aportePayload advisory.AlertPayload
 	if err := json.Unmarshal(aporte.Payload, &aportePayload); err != nil {
 		t.Fatalf("unmarshal aporte payload: %v", err)
@@ -358,6 +361,9 @@ func TestApply_SchemaVersionCentsDeposit(t *testing.T) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	for _, row := range store.alerts {
+		if row.SourceSchemaVersion != event.SchemaVersionCents {
+			t.Fatalf("%s source schema version = %d, want 2", row.Kind, row.SourceSchemaVersion)
+		}
 		var payload advisory.AlertPayload
 		if err := json.Unmarshal(row.Payload, &payload); err != nil {
 			t.Fatalf("unmarshal: %v", err)

@@ -92,3 +92,97 @@ func TestFailureClass(t *testing.T) {
 		t.Errorf("class = %q, want panic", got)
 	}
 }
+
+// momentQueue answers the moment and profile reads with fixed values or err.
+type momentQueue struct {
+	EmptyQueue
+	facts   MomentFacts
+	profile InvestorProfile
+	err     error
+}
+
+func (q momentQueue) MomentFacts(context.Context, string) (MomentFacts, error) { return q.facts, q.err }
+func (q momentQueue) InvestorProfile(context.Context, string) (InvestorProfile, error) {
+	return q.profile, q.err
+}
+
+func TestScreenMoments_Moments(t *testing.T) {
+	t.Parallel()
+	facts := MomentFacts{
+		SegmentUpgraded: true, UpgradedSegment: "Advance", SegmentUpgradeNear: true, UpgradeGapCents: 1,
+		IdleCash: true, CashCents: 2, PatrimonyCents: 3, PortfolioReview: true, PortfolioDrop: true,
+	}
+	got, err := screenMoments{queue: momentQueue{facts: facts}}.Moments(t.Context(), "c")
+	if err != nil {
+		t.Fatalf("Moments error = %v", err)
+	}
+	want := screen.MomentFacts{
+		SegmentUpgraded: true, UpgradedSegment: "Advance", SegmentUpgradeNear: true, UpgradeGapCents: 1,
+		IdleCash: true, CashCents: 2, PatrimonyCents: 3, PortfolioReview: true, PortfolioDrop: true,
+	}
+	if got != want {
+		t.Errorf("moments = %+v, want %+v", got, want)
+	}
+	down := errors.New("down")
+	if _, err := (screenMoments{queue: momentQueue{err: down}}).Moments(t.Context(), "c"); !errors.Is(err, down) {
+		t.Errorf("failure error = %v", err)
+	}
+}
+
+func TestScreenProfiles_Profile(t *testing.T) {
+	t.Parallel()
+	on := time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)
+	got, err := screenProfiles{queue: momentQueue{profile: InvestorProfile{Profile: "arrojado", MaxRisk: 5, AssessedOn: on}}}.Profile(t.Context(), "c")
+	if err != nil {
+		t.Fatalf("Profile error = %v", err)
+	}
+	if got != (screen.InvestorProfile{Profile: "arrojado", MaxRisk: 5, AssessedOn: on}) {
+		t.Errorf("profile = %+v", got)
+	}
+	down := errors.New("down")
+	if _, err := (screenProfiles{queue: momentQueue{err: down}}).Profile(t.Context(), "c"); !errors.Is(err, down) {
+		t.Errorf("failure error = %v", err)
+	}
+}
+
+// customerCases answers CustomerCases with fixed items or err.
+type customerCases struct {
+	EmptyCases
+	items []Case
+	err   error
+}
+
+func (c customerCases) CustomerCases(context.Context, string) ([]Case, []string, error) {
+	return c.items, CaseStates, c.err
+}
+
+func TestScreenCases_OpenCases(t *testing.T) {
+	t.Parallel()
+	src := screenCases{cases: customerCases{items: []Case{
+		{ID: "open", State: 0, OpenedAgo: 3},
+		{ID: "working", State: 1, OpenedAgo: 60},
+		{ID: "resolved", State: 3, OpenedAgo: 5},
+		{ID: "unknown state", State: 9, OpenedAgo: -4},
+	}}}
+	got, err := src.OpenCases(t.Context(), "c")
+	if err != nil {
+		t.Fatalf("OpenCases error = %v", err)
+	}
+	want := []screen.OpenCase{
+		{ID: "open", State: "Aberto", Age: 3 * time.Minute},
+		{ID: "working", State: "Em atendimento", Age: time.Hour},
+		{ID: "unknown state", State: "", Age: 0},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("open cases = %+v, want %+v", got, want)
+	}
+
+	none, err := screenCases{cases: EmptyCases{}}.OpenCases(t.Context(), "c")
+	if err != nil || none == nil || len(none) != 0 {
+		t.Errorf("no cases = %v, %v, want an empty list", none, err)
+	}
+	down := errors.New("down")
+	if _, err := (screenCases{cases: customerCases{err: down}}).OpenCases(t.Context(), "c"); !errors.Is(err, down) {
+		t.Errorf("failure error = %v", err)
+	}
+}

@@ -165,3 +165,28 @@ func TestInitials(t *testing.T) {
 		})
 	}
 }
+
+func TestDays(t *testing.T) {
+	t.Parallel()
+	for n, expected := range map[int]string{1: "1 dia", 2: "2 dias", 4: "4 dias", 30: "30 dias"} {
+		if got := Days(n); got != expected {
+			t.Errorf("Days(%d) = %q, want %q", n, got, expected)
+		}
+	}
+}
+
+func TestProtocol(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"01a0e3a5-2f4c-7b1e-9d2a-5c6f7e8a9b0c": "01A0E3A5-2F4C",
+		"01A0E3A5-2F4C-7B1E-9D2A-5C6F7E8A9B0C": "01A0E3A5-2F4C",
+		"01a0e3a5-2f4c":                        "01A0E3A5-2F4C",
+		"abc":                                  "ABC",
+		"":                                     "",
+	}
+	for id, expected := range tests {
+		if got := Protocol(id); got != expected {
+			t.Errorf("Protocol(%q) = %q, want %q", id, got, expected)
+		}
+	}
+}

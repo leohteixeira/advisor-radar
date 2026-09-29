@@ -91,7 +91,7 @@ func TestNew(t *testing.T) {
 		t.Error("New without a source returned no error")
 	}
 
-	variants := builtinVariants()
+	variants := builtinVariants(embedded(t))
 	delete(variants, variantKey{typ: typeAdvisorCard, name: "dedicated"})
 	if _, err := newEngine(thiagoFixture().sources(), embedded(t), variants); !errors.Is(err, errCatalog) {
 		t.Errorf("newEngine with an unimplemented variant error = %v, want %v", err, errCatalog)
@@ -147,21 +147,22 @@ func TestEngine_Build_SeedClients(t *testing.T) {
 		advisor  string
 		activity string
 		total    string
+		moment   string
 	}{
 		{
 			name: "fernanda", fixture: fernandaFixture(),
 			title: "Olá, Fernanda", subtitle: "Cliente Essencial desde 2024",
-			advisor: "default", activity: "empty", total: "US$ 8.200,00",
+			advisor: "default", activity: "empty", total: "US$ 8.200,00", moment: "segment_upgrade_near",
 		},
 		{
 			name: "thiago", fixture: thiagoFixture(),
 			title: "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
-			advisor: "default", activity: "recent", total: "US$ 68.000,00",
+			advisor: "default", activity: "recent", total: "US$ 68.000,00", moment: "idle_cash",
 		},
 		{
 			name: "mariana", fixture: marianaFixture(),
 			title: "Olá, Mariana", subtitle: "Cliente Singular desde 2021",
-			advisor: "dedicated", activity: "recent", total: "US$ 248.300,00",
+			advisor: "dedicated", activity: "recent", total: "US$ 248.300,00", moment: "portfolio_review",
 		},
 	}
 	for _, tt := range tests {
@@ -186,8 +187,8 @@ func TestEngine_Build_SeedClients(t *testing.T) {
 			if len(p.Omitted) != 0 || len(res.Failures) != 0 || len(reporter.all()) != 0 {
 				t.Errorf("omitted %v, failures %v, drops %v", p.Omitted, res.Failures, reporter.all())
 			}
-			if got := variantOf(t, p, "moment"); got != "welcome" {
-				t.Errorf("moment = %q, want welcome", got)
+			if got := variantOf(t, p, "moment"); got != tt.moment {
+				t.Errorf("moment = %q, want %q", got, tt.moment)
 			}
 			if got := variantOf(t, p, "advisor"); got != tt.advisor {
 				t.Errorf("advisor = %q, want %q", got, tt.advisor)
@@ -224,6 +225,8 @@ func TestEngine_Build_FailurePolicy(t *testing.T) {
 		omitted  []Omitted
 		title    string
 		subtitle string
+		moment   string
+		failures int
 	}{
 		{
 			name:     "timeline down",
@@ -231,6 +234,7 @@ func TestEngine_Build_FailurePolicy(t *testing.T) {
 			sections: []string{"moment", "wealth", "actions", "advisor"},
 			omitted:  []Omitted{{ID: "activity", Type: "activity_list", Reason: "timeline"}},
 			title:    "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
+			moment: "idle_cash", failures: 1,
 		},
 		{
 			name:     "advisory down",
@@ -238,6 +242,7 @@ func TestEngine_Build_FailurePolicy(t *testing.T) {
 			sections: []string{"moment", "wealth", "actions", "activity"},
 			omitted:  []Omitted{{ID: "advisor", Type: "advisor_card", Reason: "advisory"}},
 			title:    "Olá", subtitle: "",
+			moment: "idle_cash", failures: 1,
 		},
 		{
 			name:     "account down",
@@ -245,6 +250,28 @@ func TestEngine_Build_FailurePolicy(t *testing.T) {
 			sections: []string{"moment", "actions", "advisor", "activity"},
 			omitted:  []Omitted{{ID: "wealth", Type: "wealth_summary", Reason: "account-sim"}},
 			title:    "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
+			moment: "idle_cash", failures: 1,
+		},
+		{
+			name:     "moments down",
+			change:   func(s *Sources) { s.Moments = fakeMoments{err: errDown} },
+			sections: all,
+			title:    "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
+			moment: "welcome", failures: 1,
+		},
+		{
+			name:     "profile down",
+			change:   func(s *Sources) { s.Profiles = fakeProfiles{err: errDown} },
+			sections: all,
+			title:    "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
+			moment: "welcome", failures: 1,
+		},
+		{
+			name:     "cases down",
+			change:   func(s *Sources) { s.Cases = fakeCases{err: errDown} },
+			sections: all,
+			title:    "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
+			moment: "idle_cash", failures: 1,
 		},
 		{
 			name: "every source down",
@@ -252,6 +279,9 @@ func TestEngine_Build_FailurePolicy(t *testing.T) {
 				s.Accounts = fakeAccounts{err: errDown}
 				s.Customers = fakeCustomers{err: errDown}
 				s.Activity = fakeActivity{err: errDown}
+				s.Moments = fakeMoments{err: errDown}
+				s.Profiles = fakeProfiles{err: errDown}
+				s.Cases = fakeCases{err: errDown}
 			},
 			sections: []string{"moment", "actions"},
 			omitted: []Omitted{
@@ -260,6 +290,7 @@ func TestEngine_Build_FailurePolicy(t *testing.T) {
 				{ID: "activity", Type: "activity_list", Reason: "timeline"},
 			},
 			title: "Olá", subtitle: "",
+			moment: "welcome", failures: 6,
 		},
 	}
 	for _, tt := range tests {
@@ -284,8 +315,8 @@ func TestEngine_Build_FailurePolicy(t *testing.T) {
 			if p.Title != tt.title || p.Subtitle != tt.subtitle {
 				t.Errorf("heading = %q / %q, want %q / %q", p.Title, p.Subtitle, tt.title, tt.subtitle)
 			}
-			if got := variantOf(t, p, "moment"); got != "welcome" {
-				t.Errorf("moment = %q, want welcome", got)
+			if got := variantOf(t, p, "moment"); got != tt.moment {
+				t.Errorf("moment = %q, want %q", got, tt.moment)
 			}
 			drops := reporter.all()
 			if len(drops) != len(tt.omitted) {
@@ -296,8 +327,8 @@ func TestEngine_Build_FailurePolicy(t *testing.T) {
 					t.Errorf("drop %d = %+v, want %+v", i, drops[i], want)
 				}
 			}
-			if len(res.Failures) != len(tt.omitted) {
-				t.Errorf("failures = %+v, want one per failed source", res.Failures)
+			if len(res.Failures) != tt.failures {
+				t.Errorf("failures = %+v, want %d, one per failed source", res.Failures, tt.failures)
 			}
 			for _, failure := range res.Failures {
 				if !errors.Is(failure.Err, errDown) || failure.Source == "" {
@@ -380,7 +411,7 @@ func TestEngine_Build_BuildError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			variants := builtinVariants()
+			variants := builtinVariants(embedded(t))
 			variants[variantKey{typ: typeWealthSummary, name: "default"}] = registered{variant: tt.broken, needs: []Source{SourceAccount}}
 			reporter := &recordingReporter{}
 			f := thiagoFixture()
@@ -426,7 +457,7 @@ func (v stubVariant) Build(Snapshot, Catalog) (Component, error) {
 // fails, the section falls back to its default instead of being omitted.
 func TestEngine_Build_FallsBackWhenVariantSourceFails(t *testing.T) {
 	t.Parallel()
-	variants := builtinVariants()
+	variants := builtinVariants(embedded(t))
 	variants[variantKey{typ: typeAdvisorCard, name: "dedicated"}] = registered{
 		variant: stubVariant{typ: typeAdvisorCard, name: "dedicated"},
 		needs:   []Source{SourceTimeline},

@@ -20,18 +20,18 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/identity"
 )
 
-// stubAdvisory answers GetCustomer and ListOperators from fixed values and
-// records the deadline each call carried.
+// stubAdvisory answers GetCustomer from fixed values and records the
+// deadline each call carried. ListOperators records its call and fails, so a
+// lookup that still resolves the advisor by name is caught.
 type stubAdvisory struct {
 	advisoryv1.UnimplementedAdvisoryServiceServer
 
-	customer  *advisoryv1.Customer
-	getErr    error
-	listErr   error
-	operators []*advisoryv1.Operator
+	customer *advisoryv1.Customer
+	getErr   error
 
 	mu        sync.Mutex
 	deadlines []time.Duration // remaining time at arrival; <0 means none
+	listCalls int
 }
 
 func (s *stubAdvisory) record(ctx context.Context) {
@@ -53,18 +53,23 @@ func (s *stubAdvisory) GetCustomer(ctx context.Context, _ *advisoryv1.GetCustome
 	return s.customer, nil
 }
 
-func (s *stubAdvisory) ListOperators(ctx context.Context, _ *advisoryv1.ListOperatorsRequest) (*advisoryv1.ListOperatorsResponse, error) {
-	s.record(ctx)
-	if s.listErr != nil {
-		return nil, s.listErr
-	}
-	return &advisoryv1.ListOperatorsResponse{Items: s.operators}, nil
+func (s *stubAdvisory) ListOperators(context.Context, *advisoryv1.ListOperatorsRequest) (*advisoryv1.ListOperatorsResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.listCalls++
+	return nil, status.Error(codes.Internal, "lookup must not list operators")
 }
 
 func (s *stubAdvisory) recorded() []time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]time.Duration(nil), s.deadlines...)
+}
+
+func (s *stubAdvisory) operatorLists() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.listCalls
 }
 
 func startAdvisory(t *testing.T, stub *stubAdvisory) advisoryv1.AdvisoryServiceClient {
@@ -90,10 +95,6 @@ func TestAdvisoryLookup_Lookup(t *testing.T) {
 	t.Parallel()
 
 	advisorID := identity.MustNewV7()
-	operators := []*advisoryv1.Operator{
-		{Id: identity.MustNewV7(), Name: "Carlos Mendes"},
-		{Id: advisorID, Name: "Ana Paula Ribeiro"},
-	}
 	tests := []struct {
 		name          string
 		stub          *stubAdvisory
@@ -102,32 +103,19 @@ func TestAdvisoryLookup_Lookup(t *testing.T) {
 		wantTransient bool
 	}{
 		{
-			name: "maps segment and advisor name to operator id",
-			stub: &stubAdvisory{
-				customer:  &advisoryv1.Customer{Segment: book.SegmentSingular, Advisor: "Ana Paula Ribeiro"},
-				operators: operators,
-			},
+			name: "segment and advisor id from get customer",
+			stub: &stubAdvisory{customer: &advisoryv1.Customer{
+				Segment: book.SegmentSingular, Advisor: "Ana Paula Ribeiro", AdvisorId: advisorID,
+			}},
 			want: cases.Customer{Segment: book.SegmentSingular, AdvisorID: advisorID},
 		},
 		{
-			name: "unknown advisor name leaves advisor empty",
-			stub: &stubAdvisory{
-				customer:  &advisoryv1.Customer{Segment: book.SegmentSingular, Advisor: "Nobody"},
-				operators: operators,
-			},
-			want: cases.Customer{Segment: book.SegmentSingular},
-		},
-		{
-			name: "ambiguous advisor name leaves advisor empty",
-			stub: &stubAdvisory{
-				customer: &advisoryv1.Customer{Segment: book.SegmentAdvance, Advisor: "Ana Paula Ribeiro"},
-				operators: append([]*advisoryv1.Operator{{Id: identity.MustNewV7(), Name: "Ana Paula Ribeiro"}},
-					operators...),
-			},
+			name: "advisor name is not used to find the id",
+			stub: &stubAdvisory{customer: &advisoryv1.Customer{Segment: book.SegmentAdvance, Advisor: "Ana Paula Ribeiro"}},
 			want: cases.Customer{Segment: book.SegmentAdvance},
 		},
 		{
-			name: "no advisor name",
+			name: "no advisor",
 			stub: &stubAdvisory{customer: &advisoryv1.Customer{Segment: book.SegmentEssencial}},
 			want: cases.Customer{Segment: book.SegmentEssencial},
 		},
@@ -157,6 +145,9 @@ func TestAdvisoryLookup_Lookup(t *testing.T) {
 			t.Parallel()
 			lookup := cases.NewAdvisoryLookup(startAdvisory(t, tt.stub))
 			got, err := lookup.Lookup(t.Context(), identity.MustNewV7())
+			if n := tt.stub.operatorLists(); n != 0 {
+				t.Errorf("ListOperators calls = %d, want 0", n)
+			}
 			switch {
 			case tt.wantUnknown:
 				if !errors.Is(err, cases.ErrUnknownCustomer) {
@@ -182,58 +173,19 @@ func TestAdvisoryLookup_Lookup(t *testing.T) {
 	}
 }
 
-func TestAdvisoryLookup_ListOperatorsErrors(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name          string
-		err           error
-		wantPermanent bool
-	}{
-		{"not found is permanent", status.Error(codes.NotFound, "no operators"), true},
-		{"invalid argument is permanent", status.Error(codes.InvalidArgument, "bad"), true},
-		{"unimplemented is permanent", status.Error(codes.Unimplemented, "no such method"), true},
-		{"unavailable is transient", status.Error(codes.Unavailable, "down"), false},
-		{"internal is transient", status.Error(codes.Internal, "boom"), false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			stub := &stubAdvisory{
-				customer: &advisoryv1.Customer{Segment: book.SegmentSingular, Advisor: "Ana"},
-				listErr:  tt.err,
-			}
-			_, err := cases.NewAdvisoryLookup(startAdvisory(t, stub)).Lookup(t.Context(), identity.MustNewV7())
-			if err == nil {
-				t.Fatal("Lookup error = nil, want error")
-			}
-			if got := errors.Is(err, cases.ErrUnusableCustomer); got != tt.wantPermanent {
-				t.Fatalf("ErrUnusableCustomer = %v, want %v (%v)", got, tt.wantPermanent, err)
-			}
-			if errors.Is(err, cases.ErrUnknownCustomer) {
-				t.Fatalf("err = %v, want no ErrUnknownCustomer from ListOperators", err)
-			}
-			if status.Code(errors.Unwrap(err)) != status.Code(tt.err) && !tt.wantPermanent {
-				t.Fatalf("err = %v, want the status kept", err)
-			}
-		})
-	}
-}
-
 func TestAdvisoryLookup_DefaultDeadline(t *testing.T) {
 	t.Parallel()
 
 	stub := &stubAdvisory{
-		customer:  &advisoryv1.Customer{Segment: book.SegmentSingular, Advisor: "Ana"},
-		operators: []*advisoryv1.Operator{{Id: identity.MustNewV7(), Name: "Ana"}},
+		customer: &advisoryv1.Customer{Segment: book.SegmentSingular, Advisor: "Ana", AdvisorId: identity.MustNewV7()},
 	}
 	lookup := cases.NewAdvisoryLookup(startAdvisory(t, stub))
 	if _, err := lookup.Lookup(context.Background(), identity.MustNewV7()); err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
 	got := stub.recorded()
-	if len(got) != 2 {
-		t.Fatalf("calls = %d, want GetCustomer and ListOperators", len(got))
+	if len(got) != 1 {
+		t.Fatalf("calls = %d, want GetCustomer only", len(got))
 	}
 	for i, d := range got {
 		if d <= 0 || d > cases.DefaultLookupTimeout {

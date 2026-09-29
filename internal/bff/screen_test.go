@@ -28,13 +28,26 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/timeline"
 )
 
-// screenBook is the advisory book row of the three seed clients.
+// screenBook is the advisory book row, moment facts, and investor profile of
+// the three seed clients on day 0, as advisory evaluates them.
 func screenBook() stubQueue {
-	return stubQueue{customers: map[string]bff.Customer{
-		sim.CustomerFernanda: {ID: sim.CustomerFernanda, Name: "Fernanda Lima", Segment: "Essencial", AUM: 8200, Advisor: "Ana Paula Ribeiro", Since: "2024"},
-		sim.CustomerThiago:   {ID: sim.CustomerThiago, Name: "Thiago Azevedo", Segment: "Advance", AUM: 68000, Advisor: "Ana Paula Ribeiro", Since: "2024"},
-		sim.CustomerMariana:  {ID: sim.CustomerMariana, Name: "Mariana Costa", Segment: "Singular", AUM: 248300, Advisor: "Ana Paula Ribeiro", Since: "2021"},
-	}}
+	return stubQueue{
+		customers: map[string]bff.Customer{
+			sim.CustomerFernanda: {ID: sim.CustomerFernanda, Name: "Fernanda Lima", Segment: "Essencial", AUM: 8200, Advisor: "Ana Paula Ribeiro", Since: "2024"},
+			sim.CustomerThiago:   {ID: sim.CustomerThiago, Name: "Thiago Azevedo", Segment: "Advance", AUM: 68000, Advisor: "Ana Paula Ribeiro", Since: "2024"},
+			sim.CustomerMariana:  {ID: sim.CustomerMariana, Name: "Mariana Costa", Segment: "Singular", AUM: 248300, Advisor: "Ana Paula Ribeiro", Since: "2021"},
+		},
+		moments: map[string]bff.MomentFacts{
+			sim.CustomerFernanda: {SegmentUpgradeNear: true, UpgradeGapCents: 180_000, CashCents: 114_800, PatrimonyCents: 820_000},
+			sim.CustomerThiago:   {IdleCash: true, CashCents: 6_052_000, PatrimonyCents: 6_800_000},
+			sim.CustomerMariana:  {PortfolioReview: true, CashCents: 6_000_000, PatrimonyCents: 24_830_000},
+		},
+		profiles: map[string]bff.InvestorProfile{
+			sim.CustomerFernanda: {Profile: "conservador", MaxRisk: 2, AssessedOn: time.Date(2026, 3, 12, 0, 0, 0, 0, time.UTC)},
+			sim.CustomerThiago:   {Profile: "arrojado", MaxRisk: 5, AssessedOn: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)},
+			sim.CustomerMariana:  {Profile: "moderado", MaxRisk: 3, AssessedOn: time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC)},
+		},
+	}
 }
 
 // stubTimeline answers every customer with rows, or fails with err.
@@ -199,8 +212,24 @@ type momentProps struct {
 	Kicker string `json:"kicker"`
 	Title  string `json:"title"`
 	Body   string `json:"body"`
+	Meta   string `json:"meta"`
 	Tone   string `json:"tone"`
 	Icon   string `json:"icon"`
+	Action *struct {
+		Type   string `json:"type"`
+		Label  string `json:"label"`
+		Target string `json:"target"`
+	} `json:"action"`
+}
+
+// line is the moment as one comparable string: variant, tone, title, body,
+// meta, and action.
+func (m momentProps) line(kind string) string {
+	action := ""
+	if m.Action != nil {
+		action = m.Action.Type + " " + m.Action.Target + " " + m.Action.Label
+	}
+	return strings.Join([]string{kind, m.Tone, m.Title, m.Body, m.Meta, action}, " | ")
 }
 
 type activityProps struct {
@@ -255,6 +284,7 @@ func TestGetScreen_SeedClients(t *testing.T) {
 		activity   string
 		activityN  int
 		firstTitle string
+		moment     string
 	}{
 		{
 			name: "fernanda", id: sim.CustomerFernanda,
@@ -263,6 +293,8 @@ func TestGetScreen_SeedClients(t *testing.T) {
 			shares:  []string{"stocks 20%", "etfs 45%", "fixed_income 21%", "cash 14%"},
 			advisor: "advisor_card/default", kicker: "Sua assessora", meta: "Resposta em até 24 h · cliente Essencial",
 			activity: "activity_list/empty",
+			moment: "moment_card/segment_upgrade_near | gold | Fernanda, faltam US$ 1.800,00 para o Advance | " +
+				"A partir de US$ 10.000,00 você vira cliente Advance, com resposta da assessoria em até 4 h. |  | panel deposit Depositar",
 		},
 		{
 			name: "thiago", id: sim.CustomerThiago,
@@ -271,6 +303,8 @@ func TestGetScreen_SeedClients(t *testing.T) {
 			shares:  []string{"stocks 3%", "etfs 8%", "cash 89%"},
 			advisor: "advisor_card/default", kicker: "Sua assessora", meta: "Resposta em até 4 h · cliente Advance",
 			activity: "activity_list/recent", activityN: 1, firstTitle: "Aporte",
+			moment: "moment_card/idle_cash | info | Thiago, 89% do seu patrimônio está em caixa | " +
+				"US$ 60.520,00 parados há 1 dia. Veja produtos para o seu perfil arrojado. |  | navigate investir Ver produtos",
 		},
 		{
 			name: "mariana", id: sim.CustomerMariana,
@@ -279,6 +313,8 @@ func TestGetScreen_SeedClients(t *testing.T) {
 			shares:  []string{"stocks 37%", "etfs 24%", "fixed_income 15%", "cash 24%"},
 			advisor: "advisor_card/dedicated", kicker: "Sua assessora dedicada", meta: "Resposta em até 1 h · cliente Singular",
 			activity: "activity_list/recent", activityN: 1, firstTitle: "Mensagem · e-mail",
+			moment: "moment_card/portfolio_review | neutral | Mariana, sua revisão de carteira está disponível | " +
+				"A Ana Paula Ribeiro separou 30 minutos nesta semana para revisar a carteira com você. |  | panel message Conversar",
 		},
 	}
 	for _, tt := range tests {
@@ -310,8 +346,8 @@ func TestGetScreen_SeedClients(t *testing.T) {
 			kind, raw := body.component(t, "moment")
 			var moment momentProps
 			decodeProps(t, raw, &moment)
-			if kind != "moment_card/welcome" || moment.Title != tt.title+". Sua conta está em dia." || moment.Tone != "neutral" || moment.Kicker != "Tudo em dia" {
-				t.Errorf("moment = %s %+v", kind, moment)
+			if got := moment.line(kind); got != tt.moment {
+				t.Errorf("moment = %q, want %q", got, tt.moment)
 			}
 
 			kind, raw = body.component(t, "wealth")
@@ -402,10 +438,12 @@ func TestGetScreen_SourceFailures(t *testing.T) {
 		pov      bff.POVSource
 		queue    bff.QueueSource
 		timeline bff.TimelineClient
+		cases    bff.CaseSource
 		sections []string
-		omitted  string
+		omitted  []string
 		title    string
 		subtitle string
+		moment   string
 	}{
 		{
 			name:     "timeline down",
@@ -413,8 +451,9 @@ func TestGetScreen_SourceFailures(t *testing.T) {
 			queue:    screenBook(),
 			timeline: stubTimeline{err: errors.New("timeline unavailable")},
 			sections: []string{"moment", "wealth", "actions", "advisor"},
-			omitted:  "activity/activity_list/timeline",
+			omitted:  []string{"activity/activity_list/timeline"},
 			title:    "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
+			moment: "moment_card/idle_cash",
 		},
 		{
 			name:     "advisory down",
@@ -422,8 +461,9 @@ func TestGetScreen_SourceFailures(t *testing.T) {
 			queue:    bff.EmptyQueue{},
 			timeline: bff.EmptyTimeline{},
 			sections: []string{"moment", "wealth", "actions", "activity"},
-			omitted:  "advisor/advisor_card/advisory",
+			omitted:  []string{"advisor/advisor_card/advisory"},
 			title:    "Olá", subtitle: "",
+			moment: "moment_card/welcome",
 		},
 		{
 			name:     "account down",
@@ -431,14 +471,54 @@ func TestGetScreen_SourceFailures(t *testing.T) {
 			queue:    screenBook(),
 			timeline: bff.EmptyTimeline{},
 			sections: []string{"moment", "actions", "advisor", "activity"},
-			omitted:  "wealth/wealth_summary/account-sim",
+			omitted:  []string{"wealth/wealth_summary/account-sim"},
 			title:    "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
+			moment: "moment_card/idle_cash",
+		},
+		{
+			name: "moments down",
+			pov:  &fakePOV{accounts: []bff.POVAccount{thiagoAccount}},
+			queue: func() stubQueue {
+				q := screenBook()
+				q.moments = nil
+				return q
+			}(),
+			timeline: bff.EmptyTimeline{},
+			sections: []string{"moment", "wealth", "actions", "advisor", "activity"},
+			omitted:  []string{},
+			title:    "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
+			moment: "moment_card/welcome",
+		},
+		{
+			name: "profile down",
+			pov:  &fakePOV{accounts: []bff.POVAccount{thiagoAccount}},
+			queue: func() stubQueue {
+				q := screenBook()
+				q.profiles = nil
+				return q
+			}(),
+			timeline: bff.EmptyTimeline{},
+			sections: []string{"moment", "wealth", "actions", "advisor", "activity"},
+			omitted:  []string{},
+			title:    "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
+			moment: "moment_card/welcome",
+		},
+		{
+			name:     "cases down",
+			pov:      &fakePOV{accounts: []bff.POVAccount{thiagoAccount}},
+			queue:    screenBook(),
+			cases:    stubCases{customerErr: errors.New("cases unavailable")},
+			timeline: bff.EmptyTimeline{},
+			sections: []string{"moment", "wealth", "actions", "advisor", "activity"},
+			omitted:  []string{},
+			title:    "Olá, Thiago", subtitle: "Cliente Advance desde 2024",
+			moment: "moment_card/idle_cash",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, tt.timeline, tt.queue, nil, nil, tt.pov, nil)
+			h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, tt.timeline, tt.queue, nil, tt.cases, tt.pov, nil)
 			rr, body := getScreen(t, h, sim.CustomerThiago, "home")
 			if rr.Code != http.StatusOK {
 				t.Fatalf("status = %d %s", rr.Code, rr.Body.String())
@@ -450,8 +530,11 @@ func TestGetScreen_SourceFailures(t *testing.T) {
 			for _, o := range body.Omitted {
 				omitted = append(omitted, o.ID+"/"+o.Type+"/"+o.Reason)
 			}
-			if !slices.Equal(omitted, []string{tt.omitted}) {
-				t.Errorf("omitted = %v, want [%s]", omitted, tt.omitted)
+			if !slices.Equal(omitted, tt.omitted) {
+				t.Errorf("omitted = %v, want %v", omitted, tt.omitted)
+			}
+			if kind, _ := body.component(t, "moment"); kind != tt.moment {
+				t.Errorf("moment = %s, want %s", kind, tt.moment)
 			}
 			if body.Title != tt.title || body.Subtitle != tt.subtitle {
 				t.Errorf("heading = %q / %q, want %q / %q", body.Title, body.Subtitle, tt.title, tt.subtitle)
@@ -480,7 +563,7 @@ func TestGetScreen_LogsNoCopyOrValues(t *testing.T) {
 			t.Errorf("logs lack %s: %s", want, logs)
 		}
 	}
-	for _, leak := range []string{"US$", "Olá", "Mariana", "Ana Paula", "248.300", "Singular", "Resposta"} {
+	for _, leak := range []string{"US$", "Olá", "Mariana", "Ana Paula", "248.300", "Singular", "Resposta", "revisão", "Conversar", "moderado", "60.000"} {
 		if strings.Contains(logs, leak) {
 			t.Errorf("logs contain %q: %s", leak, logs)
 		}
@@ -608,5 +691,72 @@ func TestGetScreen_ClientGone(t *testing.T) {
 	}
 	if logs := buf.String(); logs != "" {
 		t.Errorf("logs for a gone client: %s", logs)
+	}
+}
+
+// TestGetScreen_MomentTransitions serves the two live changes of the demo:
+// Fernanda after the US$ 10.000 deposit, and Mariana after she files a
+// complaint. A resolved case leaves Mariana on her portfolio review.
+func TestGetScreen_MomentTransitions(t *testing.T) {
+	t.Parallel()
+	const caseID = "01a0e3a5-2f4c-7b1e-9d2a-5c6f7e8a9b0c"
+	upgraded := screenBook()
+	fernanda := upgraded.customers[sim.CustomerFernanda]
+	fernanda.Segment = "Advance"
+	upgraded.customers[sim.CustomerFernanda] = fernanda
+	upgraded.moments[sim.CustomerFernanda] = bff.MomentFacts{
+		SegmentUpgraded: true, UpgradedSegment: "Advance",
+		IdleCash: true, CashCents: 1_114_800, PatrimonyCents: 1_820_000,
+	}
+	pov := &fakePOV{accounts: []bff.POVAccount{
+		{CustomerID: sim.CustomerFernanda, Caixa: 1_114_800, Patrimony: 1_820_000},
+		{CustomerID: sim.CustomerMariana, Caixa: 6_000_000, Patrimony: 24_830_000},
+	}}
+	tests := []struct {
+		name     string
+		id       string
+		cases    stubCases
+		expected string
+	}{
+		{
+			name: "fernanda after the deposit", id: sim.CustomerFernanda,
+			expected: "moment_card/segment_upgraded | gold | Fernanda, você agora é cliente Advance | " +
+				"Sua assessoria passa a responder em até 4 h. |  | navigate investir Ver produtos",
+		},
+		{
+			name: "mariana after a complaint", id: sim.CustomerMariana,
+			cases: stubCases{items: []bff.Case{
+				{ID: identity.MustNewV7(), Client: sim.CustomerFernanda, State: 0, OpenedAgo: 1},
+				{ID: caseID, Client: sim.CustomerMariana, State: 0, OpenedAgo: 3},
+			}},
+			expected: "moment_card/case_open | info | Sua reclamação está com a Ana Paula Ribeiro | " +
+				"Como cliente Singular, você recebe resposta em até 1 h. | Protocolo 01A0E3A5-2F4C · aberto há 3 min | " +
+				"panel message Ver conversa",
+		},
+		{
+			name: "mariana with a resolved case", id: sim.CustomerMariana,
+			cases: stubCases{items: []bff.Case{{ID: caseID, Client: sim.CustomerMariana, State: 3, OpenedAgo: 90}}},
+			expected: "moment_card/portfolio_review | neutral | Mariana, sua revisão de carteira está disponível | " +
+				"A Ana Paula Ribeiro separou 30 minutos nesta semana para revisar a carteira com você. |  | panel message Conversar",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, bff.EmptyTimeline{}, upgraded, nil, tt.cases, pov, nil)
+			rr, body := getScreen(t, h, tt.id, "home")
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d %s", rr.Code, rr.Body.String())
+			}
+			kind, raw := body.component(t, "moment")
+			var moment momentProps
+			decodeProps(t, raw, &moment)
+			if got := moment.line(kind); got != tt.expected {
+				t.Errorf("moment = %q, want %q", got, tt.expected)
+			}
+			if len(body.Omitted) != 0 {
+				t.Errorf("omitted = %+v", body.Omitted)
+			}
+		})
 	}
 }

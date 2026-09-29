@@ -52,7 +52,11 @@ func TestParseCatalog_Embedded(t *testing.T) {
 func TestCatalog_EveryTemplateExecutes(t *testing.T) {
 	t.Parallel()
 	cat := embedded(t)
-	full := Fields{FirstName: "Thiago", AdvisorName: "Ana Paula Ribeiro", Segment: "Advance", Since: "2024", SLA: "4 h"}
+	full := Fields{
+		FirstName: "Thiago", AdvisorName: "Ana Paula Ribeiro", Segment: "Advance", Since: "2024", SLA: "4 h",
+		Gap: "US$ 1.800,00", Threshold: "US$ 10.000,00", Cash: "US$ 60.520,00", CashShare: "89%", IdleDays: "4 dias", Profile: "arrojado",
+		Protocol: "01A0E3A5-2F4C", Age: "há 3 min",
+	}
 	for key, tmpl := range cat.copy {
 		for _, f := range []Fields{full, {}} {
 			out, err := execute(tmpl, f)

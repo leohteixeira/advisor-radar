@@ -114,4 +114,5 @@ jobs:
         env:
           ACCOUNT_SIM_TEST_DATABASE_URL: postgres://citest:citest@localhost:5432/account_sim_test?sslmode=disable
           CASES_TEST_DATABASE_URL: postgres://citest:citest@localhost:5432/account_sim_test?sslmode=disable
+          ADVISORY_TEST_DATABASE_URL: postgres://citest:citest@localhost:5432/account_sim_test?sslmode=disable
         run: go test -race -shuffle=on ./...

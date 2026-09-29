@@ -17,6 +17,8 @@ type stubQueue struct {
 	customers map[string]bff.Customer
 	ops       []bff.Operator
 	queue     []bff.Signal
+	moments   map[string]bff.MomentFacts
+	profiles  map[string]bff.InvestorProfile
 }
 
 func (s stubQueue) ListQueue(context.Context) ([]bff.Signal, error) { return s.queue, nil }
@@ -28,16 +30,46 @@ func (s stubQueue) GetCustomer(_ context.Context, id string) (bff.Customer, erro
 	return c, nil
 }
 func (s stubQueue) ListOperators(context.Context) ([]bff.Operator, error) { return s.ops, nil }
+func (s stubQueue) MomentFacts(_ context.Context, id string) (bff.MomentFacts, error) {
+	f, ok := s.moments[id]
+	if !ok {
+		return bff.MomentFacts{}, bff.ErrCustomerNotFound
+	}
+	return f, nil
+}
+func (s stubQueue) InvestorProfile(_ context.Context, id string) (bff.InvestorProfile, error) {
+	p, ok := s.profiles[id]
+	if !ok {
+		return bff.InvestorProfile{}, bff.ErrCustomerNotFound
+	}
+	return p, nil
+}
 
 type stubCases struct {
 	bff.EmptyCases
-	items   []bff.Case
-	atRisk  []bff.ManagerAtRisk
-	backlog []bff.ManagerBacklog
+	items       []bff.Case
+	atRisk      []bff.ManagerAtRisk
+	backlog     []bff.ManagerBacklog
+	customerErr error
 }
 
 func (s stubCases) ListCases(context.Context) ([]bff.Case, []string, error) {
 	return s.items, bff.CaseStates, nil
+}
+
+// CustomerCases filters items by client, as the cases service filters by
+// customer_id.
+func (s stubCases) CustomerCases(_ context.Context, customerID string) ([]bff.Case, []string, error) {
+	if s.customerErr != nil {
+		return nil, nil, s.customerErr
+	}
+	var out []bff.Case
+	for _, c := range s.items {
+		if c.Client == customerID {
+			out = append(out, c)
+		}
+	}
+	return out, bff.CaseStates, nil
 }
 func (s stubCases) ListAtRisk(context.Context) ([]bff.ManagerAtRisk, error) { return s.atRisk, nil }
 func (s stubCases) Backlog(context.Context) ([]bff.ManagerBacklog, error)   { return s.backlog, nil }
