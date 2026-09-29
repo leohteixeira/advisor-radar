@@ -165,6 +165,23 @@ export function fernandaPhase2() {
   };
 }
 
+/** The phase-2 home JSON for Mariana (GET /v1/client-pov/customers/{id}), matching marianaCarteira. */
+export function marianaPhase2() {
+  return {
+    customer_id: SEED.mariana,
+    name: 'Mariana Costa',
+    segment: 'Singular',
+    advisor: 'Ana Paula Ribeiro',
+    sla: '1 h',
+    since: '2021',
+    assets: 24830000,
+    caixa: 6000000,
+    allocation: { acoes: 9090000, etfs: 6060000, renda_fixa: 3680000, caixa: 6000000 },
+    activity: [],
+    messages: [],
+  };
+}
+
 /** Thiago's home while his cash is idle: the moment points to Investir. */
 export function thiagoIdleCashHome(): Screen {
   const screen = thiagoHome();

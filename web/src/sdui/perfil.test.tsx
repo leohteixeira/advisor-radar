@@ -87,6 +87,14 @@ describe('ProfileScale', () => {
     expect(levels.map((item) => item.getAttribute('data-current'))).toEqual(['false', 'true', 'false']);
     expect(levels[2]).toHaveTextContent('Produtos até risco 5');
   });
+
+  it('lays the levels in one column on the phone and three on desktop', () => {
+    const c = profileScale('conservador', '12/03/2026');
+    const { rerenderWith } = renderSdui(<ProfileScale variant={c.variant} props={c.props} />);
+    expect(screen.getByRole('list')).toHaveAttribute('data-columns', '1');
+    rerenderWith(<ProfileScale variant={c.variant} props={c.props} />, { wide: true });
+    expect(screen.getByRole('list')).toHaveAttribute('data-columns', '3');
+  });
 });
 
 describe('ProfileFieldList', () => {

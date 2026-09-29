@@ -591,15 +591,73 @@ describe('purchase confirmation', () => {
     expect(gets.filter((url) => url.endsWith('/screens/home'))).toHaveLength(2);
   });
 
-  it('keeps the form in the screen area on desktop', async () => {
+  it('keeps the form and "Compra enviada" in the screen area on the phone, with no side panel', async () => {
+    stubBFF(fernanda);
+    const { user, form } = await openCobaltoForFernanda();
+    expect(document.querySelector('.pov-app')).toHaveAttribute('data-layout', 'phone');
+    expect(screen.queryByRole('complementary', { name: 'Ação' })).not.toBeInTheDocument();
+    expect(form.closest('.pov-app__main')).not.toBeNull();
+    expect(within(form).getByRole('button', { name: 'Voltar para Investir' })).toBeInTheDocument();
+
+    await user.click(confirmButton(100_000));
+    const sent = await screen.findByRole('region', { name: 'Compra enviada' });
+    expect(screen.queryByRole('complementary', { name: 'Ação' })).not.toBeInTheDocument();
+    expect(sent.closest('.pov-app__main')).not.toBeNull();
+  });
+
+  it('opens the form and its confirmation in the side panel on desktop, over an inert Investir screen', async () => {
+    useDesktop();
+    const { posts, gets } = stubBFF(fernanda);
+    const { user } = await openCobaltoForFernanda();
+    expect(document.querySelector('.pov-app')).toHaveAttribute('data-layout', 'desktop');
+    const panel = screen.getByRole('complementary', { name: 'Ação' });
+    const form = within(panel).getByRole('form', { name: 'Investir em Cobalto Semicondutores' });
+    expect(within(form).getByRole('heading', { level: 1, name: 'Investir em Cobalto Semicondutores' })).toHaveFocus();
+    expect(within(form).getByRole('button', { name: 'Fechar' })).toBeInTheDocument();
+    expect(within(form).queryByRole('button', { name: 'Voltar para Investir' })).not.toBeInTheDocument();
+    expect(form.closest('.pov-app__main')).toBeNull();
+    // The screen stays on view behind the panel, out of reach, as with the other coded panels.
+    const main = document.querySelector('.pov-app__main');
+    expect(main?.querySelector('.sdui-screen[data-slug="investir"]')).not.toBeNull();
+    expect(main).toHaveAttribute('inert');
+    expect(screen.queryByRole('button', { name: 'Raio-X SDUI' })).not.toBeInTheDocument();
+
+    await user.click(confirmButton(100_000));
+    const sent = await within(panel).findByRole('region', { name: 'Compra enviada' });
+    expect(within(sent).getByText('01A0E3B1-7C2D')).toBeInTheDocument();
+    expect(posts).toHaveLength(1);
+    expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(document.querySelector('.pov-app__main')).toHaveAttribute('inert');
+    expect(screen.queryByRole('button', { name: 'Raio-X SDUI' })).not.toBeInTheDocument();
+
+    await user.click(within(sent).getByRole('button', { name: 'Fechar' }));
+    expect(screen.queryByRole('complementary', { name: 'Ação' })).not.toBeInTheDocument();
+    expect(document.querySelector('.pov-app__main')).not.toHaveAttribute('inert');
+    expect(screen.getByRole('button', { name: 'Raio-X SDUI' })).toBeInTheDocument();
+    await vi.waitFor(() => expect(gets.filter((url) => url.endsWith('/screens/investir'))).toHaveLength(2));
+  });
+
+  it('closes the desktop form panel from its close control, the scrim, and on navigate', async () => {
     useDesktop();
     stubBFF(fernanda);
     const { user } = await openCobaltoForFernanda();
-    expect(document.querySelector('.pov-app')).toHaveAttribute('data-layout', 'desktop');
+    await user.click(within(screen.getByRole('complementary', { name: 'Ação' })).getByRole('button', { name: 'Fechar' }));
     expect(screen.queryByRole('complementary', { name: 'Ação' })).not.toBeInTheDocument();
-    expect(screen.getByRole('form', { name: 'Investir em Cobalto Semicondutores' }).closest('.pov-app__main')).not.toBeNull();
+    expect(document.querySelector('.pov-app__main')).not.toHaveAttribute('inert');
+
+    const reopen = async () => {
+      const stocks = await screen.findByRole('region', { name: 'Ações' });
+      await user.click(within(stocks).getByRole('button', { name: /Cobalto Semicondutores/ }));
+      expect(within(screen.getByRole('complementary', { name: 'Ação' })).getByRole('form')).toBeInTheDocument();
+    };
+    await reopen();
+    await user.click(screen.getByRole('button', { name: 'Fechar painel' }));
+    expect(screen.queryByRole('complementary', { name: 'Ação' })).not.toBeInTheDocument();
+
+    await reopen();
     await user.click(within(screen.getByRole('navigation', { name: 'Navegação principal' })).getByRole('button', { name: 'Início' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Thiago' })).toBeInTheDocument();
     expect(screen.queryByRole('form')).not.toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Ação' })).not.toBeInTheDocument();
   });
 });

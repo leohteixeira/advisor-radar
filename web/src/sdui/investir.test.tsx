@@ -111,6 +111,14 @@ describe('product_rail', () => {
     await user.click(within(screen.getByRole('article', { name: 'Maré Ações Globais ETF' })).getByRole('button', { name: 'Investir' }));
     expect(value.onPurchase).toHaveBeenCalledWith('acoesg');
   });
+
+  it('lays the cards in one column on the phone and two on desktop', () => {
+    const props = { title: 'T', subtitle: 'S', products: [product('cobalto', ARROJADO), product('acoesg', ARROJADO)] };
+    const { container, rerenderWith } = renderSdui(<ProductRail variant="profile_arrojado" props={props} />);
+    expect(container.querySelector('.sdui-rail__grid')).toHaveAttribute('data-columns', '1');
+    rerenderWith(<ProductRail variant="profile_arrojado" props={props} />, { wide: true });
+    expect(container.querySelector('.sdui-rail__grid')).toHaveAttribute('data-columns', '2');
+  });
 });
 
 describe('product_list', () => {
