@@ -266,7 +266,7 @@ func TestSnapshot_failed(t *testing.T) {
 func TestFetchSnapshot_AllSourcesAnswer(t *testing.T) {
 	t.Parallel()
 	f := thiagoFixture()
-	snap := fetchSnapshot(t.Context(), f.sources(), f.id, testNow, DefaultDeadline)
+	snap := fetchSnapshot(t.Context(), noopTracer, f.sources(), f.id, testNow, DefaultDeadline)
 	for _, src := range allSources {
 		if err := snap.failed(src); err != nil {
 			t.Fatalf("%s error = %v", src, err)
@@ -292,7 +292,7 @@ func TestFetchSnapshot_FailureDoesNotCancelOthers(t *testing.T) {
 			Profiles:  fakeProfiles{profile: f.profile, delay: 400 * time.Millisecond},
 			Cases:     fakeCases{err: errDown, delay: 50 * time.Millisecond},
 		}
-		snap := fetchSnapshot(t.Context(), src, f.id, testNow, DefaultDeadline)
+		snap := fetchSnapshot(t.Context(), noopTracer, src, f.id, testNow, DefaultDeadline)
 		if !errors.Is(snap.Account.Err, errDown) || !errors.Is(snap.Cases.Err, errDown) {
 			t.Errorf("account error = %v, cases error = %v, want %v", snap.Account.Err, snap.Cases.Err, errDown)
 		}
@@ -311,7 +311,7 @@ func TestFetchSnapshot_Deadline(t *testing.T) {
 		src.Activity = fakeActivity{rows: f.activity, delay: time.Hour}
 		src.Cases = fakeCases{delay: time.Hour}
 		start := time.Now()
-		snap := fetchSnapshot(t.Context(), src, f.id, testNow, DefaultDeadline)
+		snap := fetchSnapshot(t.Context(), noopTracer, src, f.id, testNow, DefaultDeadline)
 		if elapsed := time.Since(start); elapsed != DefaultDeadline {
 			t.Errorf("snapshot took %v, want the %v deadline", elapsed, DefaultDeadline)
 		}
@@ -335,7 +335,7 @@ func TestFetchSnapshot_ErrorNamesSource(t *testing.T) {
 		Profiles:  fakeProfiles{err: errDown},
 		Cases:     fakeCases{err: errDown},
 	}
-	snap := fetchSnapshot(t.Context(), src, "id", testNow, DefaultDeadline)
+	snap := fetchSnapshot(t.Context(), noopTracer, src, "id", testNow, DefaultDeadline)
 	for name, err := range map[Source]error{
 		SourceAccount:  snap.Account.Err,
 		SourceAdvisory: snap.Customer.Err,
@@ -363,7 +363,7 @@ func TestFetchSnapshot_SourcePanicIsThatSourceError(t *testing.T) {
 	f := thiagoFixture()
 	src := f.sources()
 	src.Customers = panicCustomers{}
-	snap := fetchSnapshot(t.Context(), src, f.id, testNow, DefaultDeadline)
+	snap := fetchSnapshot(t.Context(), noopTracer, src, f.id, testNow, DefaultDeadline)
 	if !errors.Is(snap.Customer.Err, ErrPanic) || !strings.Contains(snap.Customer.Err.Error(), "screen: advisory:") {
 		t.Errorf("customer error = %v, want an advisory panic", snap.Customer.Err)
 	}
