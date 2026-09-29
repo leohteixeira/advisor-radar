@@ -17,7 +17,6 @@ import (
 
 	timelinev1 "github.com/leohteixeira/advisor-radar/gen/timeline/v1"
 	"github.com/leohteixeira/advisor-radar/internal/envfile"
-	"github.com/leohteixeira/advisor-radar/internal/event"
 	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 	"github.com/leohteixeira/advisor-radar/internal/timeline"
 )
@@ -247,16 +246,7 @@ func runConsumer(ctx context.Context, idx *timeline.Index, elastic *timeline.Ela
 	if _, err := ch.QueueDeclare(queueName, true, false, false, false, nil); err != nil {
 		return fmt.Errorf("timeline-indexer: declare queue: %w", err)
 	}
-	keys := []string{
-		event.NameAccountEventRecorded,
-		event.NameMessageReceived,
-		event.NameMessageTriaged,
-		event.NameAlertRaised,
-		event.NameCaseOpened,
-		event.NameCaseStatusChanged,
-		"advisory.note.recorded",
-	}
-	for _, key := range keys {
+	for _, key := range timeline.RoutingKeys() {
 		if err := ch.QueueBind(queueName, key, exchange, false, nil); err != nil {
 			return fmt.Errorf("timeline-indexer: bind %s: %w", key, err)
 		}
