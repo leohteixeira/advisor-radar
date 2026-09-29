@@ -344,7 +344,9 @@ func Apply(ctx context.Context, store Store, cmd Command) (Result, error) {
 	}
 
 	var result Result
+	var committed outbox.Row // the event row of a new command, for metrics
 	err := store.WithTx(ctx, func(tx Tx) error {
+		committed = outbox.Row{}
 		existing, ok, err := tx.LookupKey(ctx, cmd.CustomerID, cmd.IdempotencyKey)
 		if err != nil {
 			return err
@@ -402,21 +404,26 @@ func Apply(ctx context.Context, store Store, cmd Command) (Result, error) {
 				return err
 			}
 		}
-		if err := tx.InsertOutbox(ctx, outbox.Row{
+		row := outbox.Row{
 			EventID:    eventID,
 			RoutingKey: plan.routing,
 			Payload:    raw,
-		}); err != nil {
+		}
+		if err := tx.InsertOutbox(ctx, row); err != nil {
 			return err
 		}
 		if err := tx.SaveKey(ctx, cmd.CustomerID, cmd.IdempotencyKey, eventID); err != nil {
 			return err
 		}
 		result = Result{EventID: eventID}
+		committed = row
 		return nil
 	})
 	if err != nil {
 		return Result{}, err
+	}
+	if !result.Replay {
+		countPurchase(ctx, committed.RoutingKey, committed.Payload)
 	}
 	return result, nil
 }

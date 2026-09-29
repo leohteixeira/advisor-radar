@@ -21,6 +21,7 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/bff"
 	"github.com/leohteixeira/advisor-radar/internal/envfile"
 	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 )
 
 const amqpDialTimeout = 10 * time.Second
@@ -37,8 +38,17 @@ func main() {
 
 	logger.Info("service started", "service", "bff")
 
-	if err := run(ctx, logger); err != nil {
+	shutdown, err := telemetry.Setup(ctx, "bff")
+	if err != nil {
 		logger.Error("service failed", "error", err.Error())
+		os.Exit(1)
+	}
+	runErr := run(ctx, logger)
+	if err := telemetry.Stop(shutdown); err != nil {
+		logger.Warn("telemetry shutdown failed", "service", "bff", "error", err.Error())
+	}
+	if runErr != nil {
+		logger.Error("service failed", "error", runErr.Error())
 		os.Exit(1)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	timelinev1 "github.com/leohteixeira/advisor-radar/gen/timeline/v1"
 	"github.com/leohteixeira/advisor-radar/internal/envfile"
 	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 	"github.com/leohteixeira/advisor-radar/internal/timeline"
 )
 
@@ -35,8 +36,17 @@ func main() {
 
 	logger.Info("service started", "service", "timeline-indexer")
 
-	if err := run(ctx, logger); err != nil {
+	shutdown, err := telemetry.Setup(ctx, "timeline-indexer")
+	if err != nil {
 		logger.Error("service failed", "error", err.Error())
+		os.Exit(1)
+	}
+	runErr := run(ctx, logger)
+	if err := telemetry.Stop(shutdown); err != nil {
+		logger.Warn("telemetry shutdown failed", "service", "timeline-indexer", "error", err.Error())
+	}
+	if runErr != nil {
+		logger.Error("service failed", "error", runErr.Error())
 		os.Exit(1)
 	}
 }
@@ -94,7 +104,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("timeline-indexer: listen: %w", err)
 		}
-		grpcSrv = grpc.NewServer()
+		grpcSrv = grpc.NewServer(telemetry.GRPCServerOption())
 		timelinev1.RegisterTimelineServiceServer(grpcSrv, timeline.NewGRPCServer(idx))
 		workers++
 		go func() {

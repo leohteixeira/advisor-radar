@@ -12,6 +12,7 @@ import (
 	advisoryv1 "github.com/leohteixeira/advisor-radar/gen/advisory/v1"
 	casesv1 "github.com/leohteixeira/advisor-radar/gen/cases/v1"
 	triagev1 "github.com/leohteixeira/advisor-radar/gen/triage/v1"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 )
 
 // QueueSource loads the demo/live queue from advisory.
@@ -380,7 +381,12 @@ func protoCase(it *casesv1.Case) Case {
 	}
 }
 
-// DialGRPC opens an insecure client connection.
+// DialGRPC opens an insecure client connection traced with the otelgrpc
+// stats handler, so each call is a client span that carries the trace
+// context to the server.
 func DialGRPC(target string) (*grpc.ClientConn, error) {
-	return grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	return grpc.NewClient(target,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		telemetry.GRPCClientOption(),
+	)
 }

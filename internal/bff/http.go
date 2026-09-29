@@ -16,6 +16,7 @@ import (
 
 	"github.com/leohteixeira/advisor-radar/internal/identity"
 	"github.com/leohteixeira/advisor-radar/internal/screen"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 )
 
 // Handler serves the queue, SSE stream, actions proxy, cases, timeline,
@@ -132,7 +133,8 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	mux.HandleFunc("GET /v1/client-pov/counters", h.povCounters)
 	mux.HandleFunc("GET /v1/client-pov/customers/{id}/stream", h.povStream)
 	mux.HandleFunc("GET /v1/client-pov/customers/{id}/screens/{slug}", h.getScreen)
-	return &Server{Handler: mux, bastidores: h.bastidores, h: h}
+	// One server span per request, named after the matched route pattern.
+	return &Server{Handler: telemetry.HTTPHandler(mux, "bff"), bastidores: h.bastidores, h: h}
 }
 
 func (h *Handler) getCustomer(w http.ResponseWriter, r *http.Request) {

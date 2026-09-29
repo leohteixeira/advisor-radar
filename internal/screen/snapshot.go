@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -211,11 +213,11 @@ func (s Snapshot) failed(src Source) error {
 	}
 }
 
-// fetchSnapshot calls every source in parallel under one deadline. The group
-// has no shared context, so one source failing never cancels the others; each
-// goroutine writes only its own field, and Wait orders those writes before
-// the return.
-func fetchSnapshot(ctx context.Context, src Sources, customerID string, now time.Time, deadline time.Duration) Snapshot {
+// fetchSnapshot calls every source in parallel under one deadline, each in
+// its own child span of ctx's span. The group has no shared context, so one
+// source failing never cancels the others; each goroutine writes only its own
+// field, and Wait orders those writes before the return.
+func fetchSnapshot(ctx context.Context, tracer trace.Tracer, src Sources, customerID string, now time.Time, deadline time.Duration) Snapshot {
 	ctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 
@@ -223,37 +225,37 @@ func fetchSnapshot(ctx context.Context, src Sources, customerID string, now time
 	var g errgroup.Group
 	g.SetLimit(len(allSources))
 	g.Go(func() error {
-		snap.Account = fetch(ctx, SourceAccount, func(ctx context.Context) (Account, error) {
+		snap.Account = fetch(ctx, tracer, SourceAccount, func(ctx context.Context) (Account, error) {
 			return src.Accounts.Account(ctx, customerID)
 		})
 		return nil
 	})
 	g.Go(func() error {
-		snap.Customer = fetch(ctx, SourceAdvisory, func(ctx context.Context) (Customer, error) {
+		snap.Customer = fetch(ctx, tracer, SourceAdvisory, func(ctx context.Context) (Customer, error) {
 			return src.Customers.Customer(ctx, customerID)
 		})
 		return nil
 	})
 	g.Go(func() error {
-		snap.Activity = fetch(ctx, SourceTimeline, func(ctx context.Context) ([]Activity, error) {
+		snap.Activity = fetch(ctx, tracer, SourceTimeline, func(ctx context.Context) ([]Activity, error) {
 			return src.Activity.Activity(ctx, customerID)
 		})
 		return nil
 	})
 	g.Go(func() error {
-		snap.Moments = fetch(ctx, SourceMoments, func(ctx context.Context) (MomentFacts, error) {
+		snap.Moments = fetch(ctx, tracer, SourceMoments, func(ctx context.Context) (MomentFacts, error) {
 			return src.Moments.Moments(ctx, customerID)
 		})
 		return nil
 	})
 	g.Go(func() error {
-		snap.Profile = fetch(ctx, SourceProfile, func(ctx context.Context) (InvestorProfile, error) {
+		snap.Profile = fetch(ctx, tracer, SourceProfile, func(ctx context.Context) (InvestorProfile, error) {
 			return src.Profiles.Profile(ctx, customerID)
 		})
 		return nil
 	})
 	g.Go(func() error {
-		snap.Cases = fetch(ctx, SourceCases, func(ctx context.Context) ([]OpenCase, error) {
+		snap.Cases = fetch(ctx, tracer, SourceCases, func(ctx context.Context) ([]OpenCase, error) {
 			return src.Cases.OpenCases(ctx, customerID)
 		})
 		return nil
@@ -262,13 +264,22 @@ func fetchSnapshot(ctx context.Context, src Sources, customerID string, now time
 	return snap
 }
 
-// fetch runs one source call. A panic in the adapter becomes that source's
-// error, wrapping ErrPanic, instead of killing the process.
-func fetch[T any](ctx context.Context, src Source, call func(context.Context) (T, error)) (out Fetched[T]) {
+// fetch runs one source call in a "sdui.snapshot.<source>" span, so the
+// adapter's own client spans nest under it. A panic in the adapter becomes
+// that source's error, wrapping ErrPanic, instead of killing the process. A
+// failure sets the span status to its failure class, never the error text,
+// except ErrUnknownCustomer, which is a 404 and leaves the status unset.
+func fetch[T any](ctx context.Context, tracer trace.Tracer, src Source, call func(context.Context) (T, error)) (out Fetched[T]) {
+	ctx, span := tracer.Start(ctx, snapshotSpanPrefix+string(src), trace.WithAttributes(attrSource.String(string(src))))
 	defer func() {
 		if r := recover(); r != nil {
 			out = Fetched[T]{Err: fmt.Errorf("screen: %s: %w: %v", src, ErrPanic, r)}
 		}
+		// An unknown customer is a 404, not a source fault.
+		if out.Err != nil && !errors.Is(out.Err, ErrUnknownCustomer) {
+			span.SetStatus(codes.Error, failureClass(out.Err))
+		}
+		span.End()
 	}()
 	v, err := call(ctx)
 	if err != nil {

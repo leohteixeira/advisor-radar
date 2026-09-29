@@ -5,6 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // DefaultDeadline bounds the Snapshot of one screen. A source still running
@@ -24,7 +29,9 @@ type Variant interface {
 
 // DropReporter learns about every section a response omits, with the
 // component type and the reason (a source name or ReasonBuildError). It must
-// be safe for concurrent use.
+// be safe for concurrent use. The engine always counts drops in
+// sdui_component_dropped_total; a DropReporter set with WithDropReporter is
+// told as well.
 type DropReporter interface {
 	ComponentDropped(ctx context.Context, slug, componentType, reason string)
 }
@@ -63,13 +70,22 @@ type registered struct {
 
 // Engine composes screens from the embedded catalog. It is immutable after
 // New and safe for concurrent use.
+//
+// Every Build is traced and measured: one sdui.screen span with a child span
+// per Snapshot source and per section, and the sdui_* metrics of
+// architecture.md. The providers default to the OpenTelemetry globals read at
+// New.
 type Engine struct {
-	sources  Sources
-	catalog  Catalog
-	plans    map[string]plan
-	deadline time.Duration
-	reporter DropReporter
-	now      func() time.Time
+	sources        Sources
+	catalog        Catalog
+	plans          map[string]plan
+	deadline       time.Duration
+	reporter       DropReporter
+	now            func() time.Time
+	tracerProvider trace.TracerProvider
+	meterProvider  metric.MeterProvider
+	tel            instruments
+	drops          dropCounter
 }
 
 // plan is the served revision of one screen with its variants resolved.
@@ -116,12 +132,33 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// WithDropReporter sets the reporter told about each omitted section. A nil
+// WithDropReporter sets a reporter told about each omitted section, next to
+// the sdui_component_dropped_total counter the engine always feeds. A nil
 // reporter is ignored.
 func WithDropReporter(r DropReporter) Option {
 	return func(e *Engine) {
 		if r != nil {
 			e.reporter = r
+		}
+	}
+}
+
+// WithTracerProvider replaces the global tracer provider as the source of
+// the engine's spans. A nil provider is ignored.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(e *Engine) {
+		if tp != nil {
+			e.tracerProvider = tp
+		}
+	}
+}
+
+// WithMeterProvider replaces the global meter provider as the source of the
+// engine's sdui_* metrics. A nil provider is ignored.
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(e *Engine) {
+		if mp != nil {
+			e.meterProvider = mp
 		}
 	}
 }
@@ -150,16 +187,24 @@ func newEngine(src Sources, cat Catalog, variants map[variantKey]registered, opt
 		return nil, errors.New("screen: every source is required")
 	}
 	e := &Engine{
-		sources:  src,
-		catalog:  cat,
-		plans:    make(map[string]plan, len(cat.screens)),
-		deadline: DefaultDeadline,
-		reporter: noopReporter{},
-		now:      time.Now,
+		sources:        src,
+		catalog:        cat,
+		plans:          make(map[string]plan, len(cat.screens)),
+		deadline:       DefaultDeadline,
+		reporter:       noopReporter{},
+		now:            time.Now,
+		tracerProvider: otel.GetTracerProvider(),
+		meterProvider:  otel.GetMeterProvider(),
 	}
 	for _, opt := range opts {
 		opt(e)
 	}
+	tel, err := newInstruments(e.tracerProvider, e.meterProvider)
+	if err != nil {
+		return nil, err
+	}
+	e.tel = tel
+	e.drops = dropCounter{counter: tel.dropped}
 	for slug, def := range cat.screens {
 		p, err := resolve(slug, def, variants)
 		if err != nil {
@@ -193,16 +238,31 @@ func resolve(slug string, def screenDef, variants map[variantKey]registered) (pl
 // (ErrUnknownCustomer), or with ctx.Err() when the request ended during the
 // fetch, in which case nothing is reported; every other failure omits
 // sections and is listed in Result.Failures.
+//
+// An unknown slug is neither traced nor measured, so a path value never
+// becomes a span or a label.
 func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, error) {
 	p, ok := e.plans[slug]
 	if !ok {
 		return Result{}, fmt.Errorf("%w: %q", ErrUnknownScreen, slug)
 	}
-	snap := fetchSnapshot(ctx, e.sources, customerID, e.now(), e.deadline)
+	start := time.Now()
+	ctx, span := e.tel.tracer.Start(ctx, spanScreen, trace.WithAttributes(
+		attrSlug.String(slug),
+		attrRevision.String(p.def.revision),
+	))
+	defer func() {
+		span.End()
+		e.tel.buildSeconds.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(labelSlug.String(slug)))
+	}()
+
+	snap := fetchSnapshot(ctx, e.tel.tracer, e.sources, customerID, e.now(), e.deadline)
 	if err := ctx.Err(); err != nil {
+		span.SetStatus(codes.Error, failureClass(err))
 		return Result{}, err
 	}
 	if errors.Is(snap.Account.Err, ErrUnknownCustomer) {
+		// A 404, not a server fault: the span stays unset.
 		return Result{}, snap.Account.Err
 	}
 
@@ -222,19 +282,23 @@ func (e *Engine) Build(ctx context.Context, slug, customerID string) (Result, er
 	title, subtitle, err := heading(p.def, snap)
 	if err != nil {
 		res.Failures = append(res.Failures, Failure{Section: "heading", Err: err})
+		// No section span covers the heading, so the screen span carries it.
+		span.SetStatus(codes.Error, failureClass(err))
 	}
 	page.Title, page.Subtitle = title, subtitle
 
 	for _, sec := range p.sections {
-		comp, reason, err := e.section(sec, snap)
+		comp, reason, err := e.tracedSection(ctx, sec, snap)
 		if err != nil {
 			res.Failures = append(res.Failures, Failure{Section: sec.id, Err: err})
 		}
 		if reason != "" {
 			page.Omitted = append(page.Omitted, Omitted{ID: sec.id, Type: sec.typ, Reason: reason})
+			e.drops.ComponentDropped(ctx, slug, sec.typ, reason)
 			e.reporter.ComponentDropped(ctx, slug, sec.typ, reason)
 			continue
 		}
+		e.tel.variantServed(ctx, slug, sec.id, comp.Variant)
 		page.Sections = append(page.Sections, Section{ID: sec.id, Components: []Component{comp}})
 	}
 	res.Page = page
@@ -259,12 +323,33 @@ func heading(def screenDef, snap Snapshot) (title, subtitle string, err error) {
 	return title, subtitle, nil
 }
 
-// section applies the failure policy to one section. A non-empty reason
-// means the section is omitted; err is set when a variant failed.
-func (e *Engine) section(sec plannedSection, snap Snapshot) (comp Component, reason string, err error) {
+// tracedSection runs section inside its sdui.section span. The span carries
+// the section id, the variant built or the one that failed to build, and the
+// omitted reason. Only a build failure marks it as an error; a failed source
+// already did so on its own Snapshot span.
+func (e *Engine) tracedSection(ctx context.Context, sec plannedSection, snap Snapshot) (comp Component, reason string, err error) {
+	_, span := e.tel.tracer.Start(ctx, spanSection, trace.WithAttributes(attrSection.String(sec.id)))
+	defer span.End()
+	comp, variant, reason, err := e.section(sec, snap)
+	if variant != "" {
+		span.SetAttributes(attrVariant.String(variant))
+	}
+	if reason != "" {
+		span.SetAttributes(attrOmittedReason.String(reason))
+	}
+	if err != nil {
+		span.SetStatus(codes.Error, failureClass(err))
+	}
+	return comp, reason, err
+}
+
+// section applies the failure policy to one section. variant names the
+// variant built, or the one whose evaluation failed. A non-empty reason means
+// the section is omitted; err is set when a variant failed.
+func (e *Engine) section(sec plannedSection, snap Snapshot) (comp Component, variant, reason string, err error) {
 	for _, src := range sec.needs {
 		if snap.failed(src) != nil {
-			return Component{}, string(src), nil
+			return Component{}, "", string(src), nil
 		}
 	}
 	// The default's needs answered, so the default is never skipped below.
@@ -274,17 +359,17 @@ func (e *Engine) section(sec plannedSection, snap Snapshot) (comp Component, rea
 		}
 		matched, comp, err := evaluate(v.variant, snap, e.catalog)
 		if err != nil {
-			return Component{}, ReasonBuildError, fmt.Errorf("screen: %s/%s: %w", sec.typ, v.name, err)
+			return Component{}, v.name, ReasonBuildError, fmt.Errorf("screen: %s/%s: %w", sec.typ, v.name, err)
 		}
 		if !matched {
 			continue
 		}
 		if comp.Type != sec.typ || comp.Variant != v.name {
-			return Component{}, ReasonBuildError, fmt.Errorf("screen: %s/%s built %s/%s", sec.typ, v.name, comp.Type, comp.Variant)
+			return Component{}, v.name, ReasonBuildError, fmt.Errorf("screen: %s/%s built %s/%s", sec.typ, v.name, comp.Type, comp.Variant)
 		}
-		return comp, "", nil
+		return comp, v.name, "", nil
 	}
-	return Component{}, ReasonBuildError, fmt.Errorf("screen: section %q: no variant matched", sec.id)
+	return Component{}, "", ReasonBuildError, fmt.Errorf("screen: section %q: no variant matched", sec.id)
 }
 
 // anyFailed reports whether one of sources failed in snap.

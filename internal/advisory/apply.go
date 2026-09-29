@@ -233,7 +233,11 @@ type raiseInput struct {
 // per decision, all in one transaction. A quiet fact still claims the inbox,
 // so it is not re-evaluated forever.
 func raise(ctx context.Context, store Store, in raiseInput) error {
+	// raised is set only when this transaction claimed the event, so a
+	// redelivery counts nothing.
+	var raised []Decision
 	err := store.WithTx(ctx, func(tx Tx) error {
+		raised = nil
 		claimed, err := tx.ClaimInbox(ctx, in.sourceEventID)
 		if err != nil {
 			return fmt.Errorf("advisory: claim inbox: %w", err)
@@ -318,11 +322,13 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 				return fmt.Errorf("advisory: insert outbox %s: %w", alertID, err)
 			}
 		}
+		raised = decisions
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("advisory: raise: %w", err)
 	}
+	countRaised(ctx, raised)
 	return nil
 }
 

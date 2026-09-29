@@ -24,6 +24,7 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/envfile"
 	"github.com/leohteixeira/advisor-radar/internal/event"
 	"github.com/leohteixeira/advisor-radar/internal/sim"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 )
 
 const amqpDialTimeout = 10 * time.Second
@@ -40,8 +41,17 @@ func main() {
 
 	logger.Info("service started", "service", "advisory")
 
-	if err := run(ctx, logger); err != nil {
+	shutdown, err := telemetry.Setup(ctx, "advisory")
+	if err != nil {
 		logger.Error("service failed", "error", err.Error())
+		os.Exit(1)
+	}
+	runErr := run(ctx, logger)
+	if err := telemetry.Stop(shutdown); err != nil {
+		logger.Warn("telemetry shutdown failed", "service", "advisory", "error", err.Error())
+	}
+	if runErr != nil {
+		logger.Error("service failed", "error", runErr.Error())
 		os.Exit(1)
 	}
 }
@@ -113,7 +123,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		}
 		var opts []advisory.ServerOption
 		if accountTarget != "" {
-			conn, err := grpc.NewClient(accountTarget, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			conn, err := grpc.NewClient(accountTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), telemetry.GRPCClientOption())
 			if err != nil {
 				_ = lis.Close()
 				cancel()
@@ -127,7 +137,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		} else {
 			logger.Warn("moment facts unavailable: ACCOUNT_SIM_GRPC_TARGET is not set", "service", "advisory")
 		}
-		grpcSrv = grpc.NewServer()
+		grpcSrv = grpc.NewServer(telemetry.GRPCServerOption())
 		advisoryv1.RegisterAdvisoryServiceServer(grpcSrv, advisory.NewGRPCServer(reader, opts...))
 		workers++
 		go func() {

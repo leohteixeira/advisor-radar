@@ -22,6 +22,7 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/cases"
 	"github.com/leohteixeira/advisor-radar/internal/envfile"
 	"github.com/leohteixeira/advisor-radar/internal/event"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 )
 
 const amqpDialTimeout = 10 * time.Second
@@ -44,8 +45,17 @@ func main() {
 
 	logger.Info("service started", "service", "cases")
 
-	if err := run(ctx, logger); err != nil {
+	shutdown, err := telemetry.Setup(ctx, "cases")
+	if err != nil {
 		logger.Error("service failed", "error", err.Error())
+		os.Exit(1)
+	}
+	runErr := run(ctx, logger)
+	if err := telemetry.Stop(shutdown); err != nil {
+		logger.Warn("telemetry shutdown failed", "service", "cases", "error", err.Error())
+	}
+	if runErr != nil {
+		logger.Error("service failed", "error", runErr.Error())
 		os.Exit(1)
 	}
 }
@@ -83,7 +93,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("cases: grpc listen: %w", err)
 		}
-		grpcSrv = grpc.NewServer()
+		grpcSrv = grpc.NewServer(telemetry.GRPCServerOption())
 		casesv1.RegisterCasesServiceServer(grpcSrv, cases.NewGRPCServer(reader, store))
 		workers++
 		go func() {
@@ -170,7 +180,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if advisoryTarget == "" {
 		logger.Warn("triaged intake disabled: ADVISORY_GRPC_TARGET is not set", "service", "cases")
 	} else {
-		advisoryConn, err := grpc.NewClient(advisoryTarget, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		advisoryConn, err := grpc.NewClient(advisoryTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), telemetry.GRPCClientOption())
 		if err != nil {
 			return abort(fmt.Errorf("cases: dial advisory: %w", err))
 		}

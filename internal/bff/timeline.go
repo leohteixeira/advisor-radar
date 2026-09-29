@@ -6,9 +6,6 @@ import (
 	"slices"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
 	timelinev1 "github.com/leohteixeira/advisor-radar/gen/timeline/v1"
 )
 
@@ -55,7 +52,7 @@ func NewTimelineClient(target string) (TimelineClient, func(), error) {
 	if target == "" {
 		return EmptyTimeline{}, func() {}, nil
 	}
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := DialGRPC(target)
 	if err != nil {
 		return nil, nil, fmt.Errorf("bff: dial timeline: %w", err)
 	}

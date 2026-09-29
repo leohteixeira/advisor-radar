@@ -13,6 +13,7 @@ import (
 
 	accountv1 "github.com/leohteixeira/advisor-radar/gen/account/v1"
 	"github.com/leohteixeira/advisor-radar/internal/sim"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 )
 
 // account-sim client policy (ADR 0008). Retrying a command is safe because
@@ -25,11 +26,13 @@ const (
 
 // DialAccountSim opens the account-sim connection. Every unary call gets the
 // caller's deadline, or accountSimTimeout when the caller has none, and is
-// retried on Unavailable with jittered exponential backoff. opts are appended
+// retried on Unavailable with jittered exponential backoff. The otelgrpc
+// stats handler traces each attempt as its own client span. opts are appended
 // to the defaults; tests use them to dial an in-memory listener.
 func DialAccountSim(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	all := append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		telemetry.GRPCClientOption(),
 		grpc.WithChainUnaryInterceptor(
 			defaultDeadline(accountSimTimeout),
 			retryUnavailable(accountSimAttempts, accountSimBackoff),

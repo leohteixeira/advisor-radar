@@ -19,6 +19,7 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/envfile"
 	"github.com/leohteixeira/advisor-radar/internal/outbox"
 	"github.com/leohteixeira/advisor-radar/internal/sim"
+	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 )
 
 // grpcStopTimeout bounds how long shutdown waits for in-flight RPCs.
@@ -36,8 +37,17 @@ func main() {
 
 	logger.Info("service started", "service", "account-sim")
 
-	if err := run(ctx, logger); err != nil {
+	shutdown, err := telemetry.Setup(ctx, "account-sim")
+	if err != nil {
 		logger.Error("service failed", "error", err.Error())
+		os.Exit(1)
+	}
+	runErr := run(ctx, logger)
+	if err := telemetry.Stop(shutdown); err != nil {
+		logger.Warn("telemetry shutdown failed", "service", "account-sim", "error", err.Error())
+	}
+	if runErr != nil {
+		logger.Error("service failed", "error", runErr.Error())
 		os.Exit(1)
 	}
 }
@@ -78,7 +88,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("account-sim: grpc listen: %w", err)
 		}
-		grpcSrv = grpc.NewServer()
+		grpcSrv = grpc.NewServer(telemetry.GRPCServerOption())
 		accountv1.RegisterAccountServiceServer(grpcSrv, sim.NewGRPCServer(sim.NewPGXStore(pool), logger))
 		workers++
 		go func() {
