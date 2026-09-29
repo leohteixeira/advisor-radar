@@ -31,6 +31,17 @@ func TestGRPC_SearchViaBufconn(t *testing.T) {
 	if _, _, err := idx.ApplyDelivery(context.Background(), "advisory.note.recorded", body); err != nil {
 		t.Fatal(err)
 	}
+	purchase, err := json.Marshal(map[string]any{
+		"event_id": identity.MustNewV7(), "occurred_at": occurred,
+		"customer_id": cust, "schema_version": 3,
+		"payload": map[string]any{"kind": "aplicacao", "amount": 25000, "product_id": "cobalto"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := idx.ApplyDelivery(context.Background(), event.NameAccountEventRecorded, purchase); err != nil {
+		t.Fatal(err)
+	}
 
 	lis := bufconn.Listen(1024 * 1024)
 	srv := grpc.NewServer()
@@ -62,5 +73,15 @@ func TestGRPC_SearchViaBufconn(t *testing.T) {
 	if got, err := time.Parse(time.RFC3339Nano, item.GetOccurredAt()); err != nil || !got.Equal(occurred) {
 		t.Errorf("occurred_at = %q (%v), want %v", item.GetOccurredAt(), err, occurred)
 	}
-	_ = event.NameAccountEventRecorded
+
+	res, err = client.Search(context.Background(), &timelinev1.SearchRequest{CustomerId: cust, Kind: timeline.KindConta})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.GetItems()) != 1 {
+		t.Fatalf("conta items = %+v", res.GetItems())
+	}
+	if got := res.GetItems()[0]; got.GetProductId() != "cobalto" || got.GetAmountCents() != 25000 {
+		t.Errorf("purchase product, cents = %q, %d, want cobalto, 25000", got.GetProductId(), got.GetAmountCents())
+	}
 }

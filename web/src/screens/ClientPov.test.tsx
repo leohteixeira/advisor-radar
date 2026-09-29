@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { ROUTER_BASENAME } from '../test/fixtures';
-import { fernandaHome, fernandaInvestir, fernandaPhase2, SEED } from '../test/sduiFixtures';
+import { fernandaCarteira, fernandaHome, fernandaInvestir, fernandaPhase2, SEED } from '../test/sduiFixtures';
 
 const FERNANDA = SEED.fernanda;
 const EVENT = '01a0e3a5-2f4c-7b1e-9d3a-6c0b8e41f27a';
@@ -20,6 +20,9 @@ function answerGet(url: string): Response {
   }
   if (url.endsWith('/screens/investir')) {
     return json(fernandaInvestir());
+  }
+  if (url.endsWith('/screens/carteira')) {
+    return json(fernandaCarteira());
   }
   return json(fernandaPhase2());
 }
@@ -162,8 +165,11 @@ describe('phone client pov', () => {
     );
     const view = renderAt(`/client-pov/${FERNANDA}`);
     expect(await screen.findByRole('button', { name: 'Tema claro' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Perfil' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Perfil não entra nesta simulação');
     await user.click(screen.getByRole('button', { name: 'Carteira' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Carteira não entra nesta simulação');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Carteira' })).toBeInTheDocument();
+    expect(screen.queryByText(/não entra nesta simulação/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Investir' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Investir' })).toBeInTheDocument();
     expect(screen.queryByText(/não entra nesta simulação/)).not.toBeInTheDocument();

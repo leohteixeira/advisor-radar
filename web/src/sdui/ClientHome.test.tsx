@@ -124,9 +124,9 @@ describe('client app home from the screen route', () => {
     stubBFF(() => new Response('bad gateway', { status: 502 }));
     renderAt(`/client-pov/${SEED.thiago}`);
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível montar sua tela.');
-    await user.click(screen.getByRole('button', { name: 'Carteira' }));
+    await user.click(screen.getByRole('button', { name: 'Perfil' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível montar sua tela.');
-    expect(screen.getByRole('status')).toHaveTextContent('Carteira não entra nesta simulação');
+    expect(screen.getByRole('status')).toHaveTextContent('Perfil não entra nesta simulação');
   });
 
   it('opens the coded deposit panel from a panel action', async () => {

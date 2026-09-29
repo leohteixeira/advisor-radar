@@ -62,8 +62,32 @@ func TestParseCatalog_Embedded(t *testing.T) {
 	}; !slices.Equal(types, want) {
 		t.Errorf("investir variants = %v, want %v", types, want)
 	}
-	if len(cat.screens) != 2 {
-		t.Errorf("catalog serves %d screens, want home and investir", len(cat.screens))
+	carteira, ok := cat.screens["carteira"]
+	if !ok {
+		t.Fatal("catalog has no carteira screen")
+	}
+	ids, types = nil, nil
+	for _, s := range carteira.sections {
+		ids = append(ids, s.id)
+		types = append(types, s.typ+"/"+strings.Join(s.variants, ","))
+	}
+	if want := []string{
+		"summary", "allocation", "positions_stocks", "positions_etf", "positions_fixed_income", "history",
+	}; carteira.revision != "v1" || !slices.Equal(ids, want) {
+		t.Errorf("carteira %s sections = %v, want v1 %v", carteira.revision, ids, want)
+	}
+	if want := []string{
+		"portfolio_summary/default",
+		"allocation_breakdown/default",
+		"position_list/stocks",
+		"position_list/etf",
+		"position_list/fixed_income",
+		"activity_list/history",
+	}; !slices.Equal(types, want) {
+		t.Errorf("carteira variants = %v, want %v", types, want)
+	}
+	if len(cat.screens) != 3 {
+		t.Errorf("catalog serves %d screens, want home, investir, and carteira", len(cat.screens))
 	}
 }
 
@@ -77,6 +101,7 @@ func TestCatalog_EveryTemplateExecutes(t *testing.T) {
 		FirstName: "Thiago", AdvisorName: "Ana Paula Ribeiro", Segment: "Advance", Since: "2024", SLA: "4 h",
 		Gap: "US$ 1.800,00", Threshold: "US$ 10.000,00", Cash: "US$ 60.520,00", CashShare: "89%", IdleDays: "4 dias", Profile: "arrojado",
 		Protocol: "01A0E3A5-2F4C", Age: "há 3 min", Risk: "5", MaxRisk: "2", Minimum: "US$ 10",
+		Day: "0", Product: "Maré Ações Globais ETF", Amount: "+US$ 19.400,00", Percent: "+11,5%",
 	}
 	for key, tmpl := range cat.copy {
 		for _, f := range []Fields{full, {}} {
@@ -117,16 +142,78 @@ func TestCatalog_Heading(t *testing.T) {
 	if got, err := execute(home.title, Fields{}); err != nil || got != "Olá" {
 		t.Errorf("fallback title = %q, %v; want %q", got, err, "Olá")
 	}
-	if home.staticSubtitle {
-		t.Error("home subtitle reads advisory fields but is marked static")
+	if !slices.Equal(home.subtitleNeeds, []Source{SourceAdvisory}) {
+		t.Errorf("home subtitle needs %v, want advisory", home.subtitleNeeds)
+	}
+	if !slices.Equal(home.titleNeeds, []Source{SourceAdvisory}) {
+		t.Errorf("home title needs %v, want advisory", home.titleNeeds)
 	}
 
 	investir := embedded(t).screens["investir"]
 	if got, err := execute(investir.title, Fields{}); err != nil || got != "Investir" {
 		t.Errorf("investir title = %q, %v; want Investir", got, err)
 	}
-	if got, err := execute(investir.subtitle, Fields{}); err != nil || got != "Produtos fictícios · preço fixo da simulação" || !investir.staticSubtitle {
-		t.Errorf("investir subtitle = %q, %v, static %t", got, err, investir.staticSubtitle)
+	if got, err := execute(investir.subtitle, Fields{}); err != nil || got != "Produtos fictícios · preço fixo da simulação" || len(investir.subtitleNeeds) != 0 {
+		t.Errorf("investir subtitle = %q, %v, needs %v", got, err, investir.subtitleNeeds)
+	}
+
+	carteira := embedded(t).screens["carteira"]
+	if got, err := execute(carteira.title, Fields{}); err != nil || got != "Carteira" {
+		t.Errorf("carteira title = %q, %v; want Carteira", got, err)
+	}
+	if got, err := execute(carteira.subtitle, Fields{Day: "0"}); err != nil || got != "Valores de mercado no dia simulado 0" {
+		t.Errorf("carteira subtitle = %q, %v", got, err)
+	}
+	if !slices.Equal(carteira.subtitleNeeds, []Source{SourceAccount}) {
+		t.Errorf("carteira subtitle needs %v, want account-sim", carteira.subtitleNeeds)
+	}
+	if len(investir.titleNeeds) != 0 || len(carteira.titleNeeds) != 0 {
+		t.Errorf("plain titles need %v and %v, want none", investir.titleNeeds, carteira.titleNeeds)
+	}
+}
+
+func TestTemplateSources(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		text     string
+		expected []Source
+		wantErr  bool
+	}{
+		{name: "plain text", text: "Investir", expected: nil},
+		{name: "advisory fields once", text: "Cliente {{.Segment}}{{if .Since}} desde {{.Since}}{{end}}", expected: []Source{SourceAdvisory}},
+		{name: "day", text: "Dia {{.Day}}", expected: []Source{SourceAccount}},
+		{name: "in order of first use", text: "{{.Day}} {{.FirstName}}", expected: []Source{SourceAccount, SourceAdvisory}},
+		{name: "else branch", text: "{{if .FirstName}}a{{else}}{{.Day}}{{end}}", expected: []Source{SourceAdvisory, SourceAccount}},
+		{name: "with and range", text: "{{with .Since}}{{.}}{{end}}{{range .Day}}{{end}}", expected: []Source{SourceAdvisory, SourceAccount}},
+		{name: "chained field", text: "{{(.Segment).Len}}", expected: []Source{SourceAdvisory}},
+		{name: "field no source fills", text: "{{.Cash}}", wantErr: true},
+		{name: "root variable field", text: "{{$.Day}}", expected: []Source{SourceAccount}},
+		{name: "root variable field no source fills", text: "{{$.Cash}}", wantErr: true},
+		{name: "root variable inside with body", text: "{{with .Since}}{{$.Cash}}{{end}}", wantErr: true},
+		{name: "template call", text: `{{define "x"}}{{.Cash}}{{end}}{{template "x" .}}`, wantErr: true},
+		{name: "block", text: `{{block "b" .}}{{.Day}}{{end}}`, wantErr: true},
+		{name: "with body reads the rebound dot", text: "{{with .Since}}{{.Cash}}{{end}}", expected: []Source{SourceAdvisory}},
+		{name: "range body reads the rebound dot", text: "{{range .Day}}{{if .Cash}}{{end}}{{end}}", expected: []Source{SourceAccount}},
+		{name: "with else reads the outer dot", text: "{{with .Since}}{{.}}{{else}}{{.Day}}{{end}}", expected: []Source{SourceAdvisory, SourceAccount}},
+		{name: "range else reads the outer dot", text: "{{range .Since}}{{else}}{{.Cash}}{{end}}", wantErr: true},
+		{name: "declared variable", text: "{{$d := .Day}}{{$d}}", expected: []Source{SourceAccount}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tmpl, err := parseTemplate(tt.name, tt.text)
+			if err != nil {
+				t.Fatalf("parseTemplate: %v", err)
+			}
+			got, err := templateSources(tmpl)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("templateSources error = %v, want error %t", err, tt.wantErr)
+			}
+			if !slices.Equal(got, tt.expected) {
+				t.Errorf("templateSources = %v, want %v", got, tt.expected)
+			}
+		})
 	}
 }
 
@@ -189,6 +276,8 @@ func TestParseCatalog_Invalid(t *testing.T) {
 		{name: "empty copy", raw: `{"version":1,"screens":` + screen(section) + `,"copy":{"moment_card":{"welcome":{"title":" "}}}}`},
 		{name: "trailing object", raw: `{"version":1,"screens":` + screen(section) + `} {}`},
 		{name: "trailing brace", raw: `{"version":1,"screens":` + screen(section) + `}}`},
+		{name: "title field without a source", raw: `{"version":1,"screens":{"home":{"revision":"v1","revisions":{"v1":{"title":"{{.Cash}}","subtitle":"s","sections":[` + section + `]}}}}}`},
+		{name: "subtitle field without a source", raw: `{"version":1,"screens":{"home":{"revision":"v1","revisions":{"v1":{"title":"t","subtitle":"{{.Profile}}","sections":[` + section + `]}}}}}`},
 		{name: "segment without sla", raw: `{"version":1,"screens":` + screen(section) + `,"segments":{"Advance":{"sla":""}}}`},
 	}
 	for _, tt := range tests {

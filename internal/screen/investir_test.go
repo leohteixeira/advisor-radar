@@ -494,8 +494,9 @@ func TestEngine_Build_FetchesOnlyThePlanSources(t *testing.T) {
 	if got, want := newTestEngine(t, thiagoFixture().sources()).plans["investir"].sources, []Source{SourceAccount, SourceProfile, SourceCatalog}; !slices.Equal(got, want) {
 		t.Errorf("investir sources = %v, want %v", got, want)
 	}
-	if got := newTestEngine(t, thiagoFixture().sources()).plans["home"].sources; slices.Contains(got, SourceCatalog) {
-		t.Errorf("home sources = %v, want no catalog", got)
+	home := newTestEngine(t, thiagoFixture().sources()).plans["home"]
+	if !slices.Contains(home.sources, SourceCatalog) || slices.Contains(home.required, SourceCatalog) {
+		t.Errorf("home sources = %v, required = %v, want the catalog fetched but not required", home.sources, home.required)
 	}
 }
 

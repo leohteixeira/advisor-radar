@@ -170,8 +170,16 @@ type fixture struct {
 // OrlaApp.dc.html clients(). Amounts are day-0 cents.
 func fernandaFixture() fixture {
 	return fixture{
-		id:       "01a0e3a4-9a44-757a-ac8f-dab7db5eb068",
-		account:  Account{Acoes: 164_000, ETFs: 369_000, RendaFixa: 172_200, Cash: 114_800, Patrimony: 820_000},
+		id: "01a0e3a4-9a44-757a-ac8f-dab7db5eb068",
+		account: Account{
+			Acoes: 164_000, ETFs: 369_000, RendaFixa: 172_200, Cash: 114_800, Patrimony: 820_000,
+			Positions: []Position{
+				{ProductID: "farol", AssetClass: "acoes", AppliedCents: 159_000, ValueCents: 164_000},
+				{ProductID: "renda", AssetClass: "etfs", AppliedCents: 166_000, ValueCents: 169_000},
+				{ProductID: "acoesg", AssetClass: "etfs", AppliedCents: 190_000, ValueCents: 200_000},
+				{ProductID: "tbill", AssetClass: "renda_fixa", AppliedCents: 169_000, ValueCents: 172_200},
+			},
+		},
 		customer: Customer{Name: "Fernanda Lima", Segment: "Essencial", Advisor: "Ana Paula Ribeiro", Since: "2024"},
 		activity: []Activity{},
 		moments: MomentFacts{
@@ -185,8 +193,14 @@ func fernandaFixture() fixture {
 
 func thiagoFixture() fixture {
 	return fixture{
-		id:       "01a0e3a4-9a44-75dd-b3a0-403a7a87836e",
-		account:  Account{Acoes: 204_000, ETFs: 544_000, RendaFixa: 0, Cash: 6_052_000, Patrimony: 6_800_000},
+		id: "01a0e3a4-9a44-75dd-b3a0-403a7a87836e",
+		account: Account{
+			Acoes: 204_000, ETFs: 544_000, RendaFixa: 0, Cash: 6_052_000, Patrimony: 6_800_000,
+			Positions: []Position{
+				{ProductID: "cobalto", AssetClass: "acoes", AppliedCents: 190_000, ValueCents: 204_000},
+				{ProductID: "acoesg", AssetClass: "etfs", AppliedCents: 520_000, ValueCents: 544_000},
+			},
+		},
 		customer: Customer{Name: "Thiago Azevedo", Segment: "Advance", Advisor: "Ana Paula Ribeiro", Since: "2024"},
 		activity: []Activity{
 			{Kind: "segmento", Title: "Segmento", Source: "alert.raised", Age: 4 * 24 * time.Hour},
@@ -200,8 +214,17 @@ func thiagoFixture() fixture {
 
 func marianaFixture() fixture {
 	return fixture{
-		id:       "01a0e3a4-9a44-7566-b5de-eb2e365799f8",
-		account:  Account{Acoes: 9_090_000, ETFs: 6_060_000, RendaFixa: 3_680_000, Cash: 6_000_000, Patrimony: 24_830_000},
+		id: "01a0e3a4-9a44-7566-b5de-eb2e365799f8",
+		account: Account{
+			Acoes: 9_090_000, ETFs: 6_060_000, RendaFixa: 3_680_000, Cash: 6_000_000, Patrimony: 24_830_000,
+			Positions: []Position{
+				{ProductID: "cobalto", AssetClass: "acoes", AppliedCents: 6_000_000, ValueCents: 7_200_000},
+				{ProductID: "farol", AssetClass: "acoes", AppliedCents: 1_750_000, ValueCents: 1_890_000},
+				{ProductID: "acoesg", AssetClass: "etfs", AppliedCents: 3_600_000, ValueCents: 4_060_000},
+				{ProductID: "renda", AssetClass: "etfs", AppliedCents: 1_940_000, ValueCents: 2_000_000},
+				{ProductID: "corp", AssetClass: "renda_fixa", AppliedCents: 3_600_000, ValueCents: 3_680_000},
+			},
+		},
 		customer: Customer{Name: "Mariana Costa", Segment: "Singular", Advisor: "Ana Paula Ribeiro", Since: "2021"},
 		activity: []Activity{
 			{Kind: "mensagem", Title: "Mensagem · chat", Source: "message.triaged", Age: 12 * time.Minute},

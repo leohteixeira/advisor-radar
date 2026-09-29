@@ -179,12 +179,10 @@ func TestEngine_Build_TracesTheHome(t *testing.T) {
 		sources = append(sources, src)
 	}
 	slices.Sort(sources)
-	// home reads every source but the catalog.
+	// home reads every source; activity uses the catalog for product names.
 	want := make([]string, 0, len(allSources))
 	for _, src := range allSources {
-		if src != SourceCatalog {
-			want = append(want, string(src))
-		}
+		want = append(want, string(src))
 	}
 	slices.Sort(want)
 	if !slices.Equal(sources, want) {
@@ -225,6 +223,40 @@ func TestEngine_Build_TracesAnOmittedSection(t *testing.T) {
 	dropped := counter(t, obs.collect(t), metricComponentDropped)
 	if want := map[string]int64{"reason=timeline,slug=home,type=activity_list": 1}; !maps.Equal(dropped, want) {
 		t.Errorf("%s = %v, want %v", metricComponentDropped, dropped, want)
+	}
+}
+
+// A position class without a position is absent, not omitted: its section
+// span carries the variant but no omitted reason and no error, and nothing is
+// counted as dropped or served.
+func TestEngine_Build_TracesAnAbsentSection(t *testing.T) {
+	t.Parallel()
+	obs := newObserved()
+	f := thiagoFixture()
+	if _, err := newTestEngine(t, f.sources(), obs.options()...).Build(t.Context(), "carteira", f.id); err != nil {
+		t.Fatalf("Build error = %v", err)
+	}
+	var absent sdktrace.ReadOnlySpan
+	for _, s := range obs.named(spanSection) {
+		if id, _ := stringAttr(s, attrSection); id == "positions_fixed_income" {
+			absent = s
+		}
+	}
+	if absent == nil {
+		t.Fatal("no sdui.section span for positions_fixed_income")
+	}
+	if reason, ok := stringAttr(absent, attrOmittedReason); ok {
+		t.Errorf("absent section has sdui.omitted_reason %q", reason)
+	}
+	if absent.Status().Code == codes.Error {
+		t.Errorf("absent section span status = %+v, want no error", absent.Status())
+	}
+	rm := obs.collect(t)
+	if dropped := counter(t, rm, metricComponentDropped); len(dropped) != 0 {
+		t.Errorf("%s = %v, want none", metricComponentDropped, dropped)
+	}
+	if served := counter(t, rm, metricVariantServed); served["section=positions_fixed_income,slug=carteira,variant=fixed_income"] != 0 {
+		t.Errorf("%s counted the absent section: %v", metricVariantServed, served)
 	}
 }
 

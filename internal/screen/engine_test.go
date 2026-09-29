@@ -374,7 +374,7 @@ func TestEngine_Build_UnknownCustomer(t *testing.T) {
 func TestEngine_Build_UnknownScreen(t *testing.T) {
 	t.Parallel()
 	e := newTestEngine(t, thiagoFixture().sources())
-	for _, slug := range []string{"carteira", "perfil", "x", ""} {
+	for _, slug := range []string{"perfil", "x", ""} {
 		t.Run("slug "+strconv.Quote(slug), func(t *testing.T) {
 			t.Parallel()
 			if _, err := e.Build(t.Context(), slug, "id"); !errors.Is(err, ErrUnknownScreen) {

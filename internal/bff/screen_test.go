@@ -101,9 +101,16 @@ func (b *syncBuffer) String() string {
 // the day-0 positions, and returns the BFF wired to it the production way.
 func startScreens(t *testing.T, queue bff.QueueSource, tl bff.TimelineClient) *bff.Server {
 	t.Helper()
+	return startScreensOn(t, sim.NewMemory(), queue, tl)
+}
+
+// startScreensOn is startScreens over a given account-sim store, so a test
+// can read the outbox rows its commands wrote.
+func startScreensOn(t *testing.T, mem *sim.Memory, queue bff.QueueSource, tl bff.TimelineClient) *bff.Server {
+	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	gs := grpc.NewServer()
-	accountv1.RegisterAccountServiceServer(gs, sim.NewGRPCServer(sim.NewMemory(), nil))
+	accountv1.RegisterAccountServiceServer(gs, sim.NewGRPCServer(mem, nil))
 	go func() { _ = gs.Serve(lis) }()
 	t.Cleanup(gs.Stop)
 
@@ -241,6 +248,8 @@ type activityProps struct {
 		Icon  string `json:"icon"`
 		Title string `json:"title"`
 		Meta  string `json:"meta"`
+		Value string `json:"value"`
+		Tone  string `json:"tone"`
 	} `json:"items"`
 	EmptyText string `json:"empty_text"`
 }
@@ -413,7 +422,7 @@ func TestGetScreen_Status(t *testing.T) {
 	}{
 		{name: "non-v7 id", id: "not-a-uuid", slug: "home", expected: http.StatusBadRequest},
 		{name: "investir", id: sim.CustomerThiago, slug: "investir", expected: http.StatusOK},
-		{name: "carteira not served yet", id: sim.CustomerThiago, slug: "carteira", expected: http.StatusNotFound},
+		{name: "carteira", id: sim.CustomerThiago, slug: "carteira", expected: http.StatusOK},
 		{name: "perfil not served yet", id: sim.CustomerThiago, slug: "perfil", expected: http.StatusNotFound},
 		{name: "unknown slug", id: sim.CustomerThiago, slug: "x", expected: http.StatusNotFound},
 		{name: "unknown customer", id: "01a0e3a4-9a44-7000-8000-000000000001", slug: "home", expected: http.StatusNotFound},
@@ -630,9 +639,9 @@ func TestGetScreen_ActivityFromIndexer(t *testing.T) {
 	decodeProps(t, raw, &activity)
 	got := make([]string, 0, len(activity.Items))
 	for _, it := range activity.Items {
-		got = append(got, it.Icon+" "+it.Title+" "+it.Meta)
+		got = append(got, strings.TrimSpace(it.Icon+" "+it.Title+" "+it.Meta+" "+it.Value+" "+it.Tone))
 	}
-	want := []string{"msg Mensagem · chat há 10 min", "in Aporte há 2 h"}
+	want := []string{"msg Mensagem · chat há 10 min", "in Aporte há 2 h +US$ 10.000,00 pos"}
 	if kind != "activity_list/recent" || !slices.Equal(got, want) {
 		t.Errorf("activity = %s %v, want %v", kind, got, want)
 	}

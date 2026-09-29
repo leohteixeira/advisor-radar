@@ -254,21 +254,27 @@ func TestIndex_ApplyDeliverySchemaVersions(t *testing.T) {
 		wantErr   bool
 		wantKind  string
 		wantTitle string
+		// wantProduct and wantCents are the product and the amount in cents
+		// the row carries.
+		wantProduct string
+		wantCents   int64
 	}{
-		{name: "v1 saque", version: 1, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "saque", "amount": 100}, wantKind: "saque", wantTitle: "Saque"},
-		{name: "v2 aporte", version: 2, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte", "amount": 10000}, wantKind: "aporte", wantTitle: "Aporte"},
+		{name: "v1 saque", version: 1, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "saque", "amount": 100}, wantKind: "saque", wantTitle: "Saque", wantCents: 10000},
+		{name: "v2 aporte", version: 2, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte", "amount": 10000}, wantKind: "aporte", wantTitle: "Aporte", wantCents: 10000},
+		{name: "v2 amount that is not a number", version: 2, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte", "amount": "10"}, wantKind: "aporte", wantTitle: "Aporte"},
+		{name: "v2 amount past the exact range", version: 2, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte", "amount": 1e17}, wantKind: "aporte", wantTitle: "Aporte"},
 		{
 			name: "v3 aplicacao", version: 3, routing: event.NameAccountEventRecorded,
 			payload: map[string]any{
 				"kind": "aplicacao", "amount": 3000000, "before": 6800000, "after": 6800000,
 				"product_id": "acoesg", "asset_class": "etfs", "risk": 3,
 			},
-			wantKind: "aplicacao", wantTitle: "Aplicação",
+			wantKind: "aplicacao", wantTitle: "Aplicação", wantProduct: "acoesg", wantCents: 3000000,
 		},
 		{
 			name: "v3 reavaliacao", version: 3, routing: event.NameAccountEventRecorded,
 			payload:  map[string]any{"kind": "reavaliacao", "amount": -100, "before": 1000, "after": 900, "sim_day": 3},
-			wantKind: "reavaliacao", wantTitle: "Reavaliação",
+			wantKind: "reavaliacao", wantTitle: "Reavaliação", wantCents: -100,
 		},
 		{
 			name: "perfil alert", version: 1, routing: event.NameAlertRaised,
@@ -302,6 +308,9 @@ func TestIndex_ApplyDeliverySchemaVersions(t *testing.T) {
 			}
 			if entry.Kind != tt.wantKind || entry.Title != tt.wantTitle {
 				t.Fatalf("entry = %+v, want kind %s title %s", entry, tt.wantKind, tt.wantTitle)
+			}
+			if entry.ProductID != tt.wantProduct || entry.AmountCents != tt.wantCents {
+				t.Errorf("entry product, cents = %q, %d, want %q, %d", entry.ProductID, entry.AmountCents, tt.wantProduct, tt.wantCents)
 			}
 			conta, err := idx.Search(context.Background(), cust, "", timeline.KindConta)
 			if err != nil || len(conta) != 1 {

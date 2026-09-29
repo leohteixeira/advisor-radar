@@ -58,10 +58,72 @@ func TestCompactMoney(t *testing.T) {
 	}
 }
 
+func TestSignedMoney(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		cents    int64
+		expected string
+	}{
+		{name: "gain", cents: 1_940_000, expected: "+US$ 19.400,00"},
+		{name: "loss uses u+2212 and no space", cents: -25_000, expected: "−US$ 250,00"},
+		{name: "zero has no sign", cents: 0, expected: "US$ 0,00"},
+		{name: "one cent", cents: 1, expected: "+US$ 0,01"},
+		{name: "min int64", cents: math.MinInt64, expected: "−US$ 92.233.720.368.547.758,08"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := SignedMoney(tt.cents); got != tt.expected {
+				t.Errorf("SignedMoney(%d) = %q, want %q", tt.cents, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestPercent(t *testing.T) {
 	t.Parallel()
 	if got := Percent(62); got != "62%" {
 		t.Errorf("Percent(62) = %q, want %q", got, "62%")
+	}
+}
+
+func TestChangePercent(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		delta    int64
+		base     int64
+		expected string
+	}{
+		{name: "mariana return", delta: 1_940_000, base: 16_890_000, expected: "+11,5%"},
+		{name: "position return", delta: 1_200_000, base: 6_000_000, expected: "+20,0%"},
+		{name: "loss", delta: -535, base: 1_000, expected: "−53,5%"},
+		{name: "half rounds away from zero", delta: 1, base: 2_000, expected: "+0,1%"},
+		{name: "negative half rounds away from zero", delta: -1, base: 2_000, expected: "−0,1%"},
+		{name: "below half rounds down", delta: 1, base: 2_001, expected: "+0,0%"},
+		{name: "grouped thousands", delta: 1_234_500, base: 100, expected: "+1.234.500,0%"},
+		{name: "zero delta", delta: 0, base: 1_000, expected: "0,0%"},
+		{name: "no base", delta: 500, base: 0, expected: "0,0%"},
+		{name: "negative base", delta: 500, base: -10, expected: "0,0%"},
+		{name: "extreme values stay exact", delta: math.MinInt64, base: 1, expected: "−922.337.203.685.477.580.800,0%"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ChangePercent(tt.delta, tt.base); got != tt.expected {
+				t.Errorf("ChangePercent(%d, %d) = %q, want %q", tt.delta, tt.base, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSignTone(t *testing.T) {
+	t.Parallel()
+	for n, expected := range map[int64]string{1: TonePos, -1: ToneNeg, 0: ToneNeutral} {
+		if got := SignTone(n); got != expected {
+			t.Errorf("SignTone(%d) = %q, want %q", n, got, expected)
+		}
 	}
 }
 

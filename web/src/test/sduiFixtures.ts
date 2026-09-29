@@ -288,3 +288,222 @@ export function thiagoInvestir(): Screen {
 export function fernandaInvestir(): Screen {
   return investir('US$ 1.148,00', 114800, { name: 'conservador', max: 2 });
 }
+
+/** One position row: product, applied, value, and the signed return with its tone. */
+type Holding = [ProductID, string, string, string, 'pos' | 'neg' | 'neutral'];
+
+interface Wallet {
+  total: string;
+  applied: string;
+  gain: string;
+  cash: string;
+  /** Ações, ETFs, Renda fixa, and Caixa: value, share, and bar width. */
+  allocation: [string, string, number][];
+  stocks: [string, Holding[]] | null;
+  etf: [string, Holding[]] | null;
+  fixedIncome: [string, Holding[]] | null;
+  history: { icon?: string; title: string; meta: string; value?: string }[];
+}
+
+function positionList(variant: 'stocks' | 'etf' | 'fixed_income', title: string, [subtotal, rows]: [string, Holding[]]): Component {
+  return {
+    type: 'position_list',
+    variant,
+    props: {
+      title,
+      subtotal,
+      applied_label: 'Aplicado',
+      items: rows.map(([id, applied, value, ret, tone]) => ({
+        product_id: id,
+        name: CATALOG.find((item) => item.id === id)?.name,
+        applied,
+        value,
+        return: ret,
+        return_tone: tone,
+      })),
+    },
+  };
+}
+
+/** A Carteira envelope as internal/screen/carteira.go builds it on day 0. */
+function carteira(w: Wallet): Screen {
+  const classes = [
+    ['stocks', 'Ações'],
+    ['etfs', 'ETFs'],
+    ['fixed_income', 'Renda fixa'],
+    ['cash', 'Caixa'],
+  ] as const;
+  const sections: Screen['sections'] = [
+    {
+      id: 'summary',
+      components: [
+        {
+          type: 'portfolio_summary',
+          variant: 'default',
+          props: {
+            total_label: 'Patrimônio total',
+            total: w.total,
+            stats: [
+              { label: 'Valor aplicado', value: w.applied, money: true },
+              { label: 'Rentabilidade', value: w.gain, tone: 'pos', money: true },
+              { label: 'Caixa', value: w.cash, money: true },
+              { label: 'Dia simulado', value: '0' },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      id: 'allocation',
+      components: [
+        {
+          type: 'allocation_breakdown',
+          variant: 'default',
+          props: {
+            title: 'Alocação',
+            rows: classes.map(([cls, label], index) => {
+              const [value, share, width] = w.allocation[index] ?? ['US$ 0,00', '0%', 0];
+              return { class: cls, label, value, share, bar_width: width };
+            }),
+          },
+        },
+      ],
+    },
+  ];
+  if (w.stocks) {
+    sections.push({ id: 'positions_stocks', components: [positionList('stocks', 'Ações', w.stocks)] });
+  }
+  if (w.etf) {
+    sections.push({ id: 'positions_etf', components: [positionList('etf', 'ETFs', w.etf)] });
+  }
+  if (w.fixedIncome) {
+    sections.push({ id: 'positions_fixed_income', components: [positionList('fixed_income', 'Renda fixa', w.fixedIncome)] });
+  }
+  sections.push({
+    id: 'history',
+    components: [
+      {
+        type: 'activity_list',
+        variant: 'history',
+        props: {
+          title: 'Movimentações',
+          items: w.history,
+          ...(w.history.length === 0 ? { empty_text: 'Nenhuma movimentação ainda.' } : {}),
+        },
+      },
+    ],
+  });
+  return {
+    schema_version: 1,
+    slug: 'carteira',
+    revision: 'v1',
+    title: 'Carteira',
+    subtitle: 'Valores de mercado no dia simulado 0',
+    sections,
+    omitted: [],
+  };
+}
+
+/** Mariana's Carteira: five positions in three classes (Carteira-Mariana). */
+export function marianaCarteira(): Screen {
+  return carteira({
+    total: 'US$ 248.300,00',
+    applied: 'US$ 168.900,00',
+    gain: '+US$ 19.400,00 (+11,5%)',
+    cash: 'US$ 60.000,00',
+    allocation: [
+      ['US$ 90.900,00', '37%', 37],
+      ['US$ 60.600,00', '24%', 24],
+      ['US$ 36.800,00', '15%', 15],
+      ['US$ 60.000,00', '24%', 24],
+    ],
+    stocks: [
+      'US$ 90.900,00',
+      [
+        ['cobalto', 'US$ 60.000,00', 'US$ 72.000,00', '+20,0%', 'pos'],
+        ['farol', 'US$ 17.500,00', 'US$ 18.900,00', '+8,0%', 'pos'],
+      ],
+    ],
+    etf: [
+      'US$ 60.600,00',
+      [
+        ['acoesg', 'US$ 36.000,00', 'US$ 40.600,00', '+12,8%', 'pos'],
+        ['renda', 'US$ 19.400,00', 'US$ 20.000,00', '+3,1%', 'pos'],
+      ],
+    ],
+    fixedIncome: ['US$ 36.800,00', [['corp', 'US$ 36.000,00', 'US$ 36.800,00', '+2,2%', 'pos']]],
+    history: [
+      { icon: 'msg', title: 'Mensagem · e-mail', meta: 'ontem' },
+      { icon: 'out', title: 'Saque', meta: 'há 3 dias' },
+    ],
+  });
+}
+
+/** Thiago's Carteira: stocks and ETFs only, so no fixed income section. */
+export function thiagoCarteira(): Screen {
+  return carteira({
+    total: 'US$ 68.000,00',
+    applied: 'US$ 7.100,00',
+    gain: '+US$ 380,00 (+5,4%)',
+    cash: 'US$ 60.520,00',
+    allocation: [
+      ['US$ 2.040,00', '3%', 3],
+      ['US$ 5.440,00', '8%', 8],
+      ['US$ 0,00', '0%', 0],
+      ['US$ 60.520,00', '89%', 89],
+    ],
+    stocks: ['US$ 2.040,00', [['cobalto', 'US$ 1.900,00', 'US$ 2.040,00', '+7,4%', 'pos']]],
+    etf: ['US$ 5.440,00', [['acoesg', 'US$ 5.200,00', 'US$ 5.440,00', '+4,6%', 'pos']]],
+    fixedIncome: null,
+    history: [{ icon: 'in', title: 'Aporte', meta: 'há 4 dias' }],
+  });
+}
+
+/** Thiago after buying all his cash in acoesg ("Tudo"): the history row carries the purchase amount. */
+export function thiagoCarteiraAfterTudo(): Screen {
+  return carteira({
+    total: 'US$ 68.000,00',
+    applied: 'US$ 67.620,00',
+    gain: '+US$ 380,00 (+0,6%)',
+    cash: 'US$ 0,00',
+    allocation: [
+      ['US$ 2.040,00', '3%', 3],
+      ['US$ 65.960,00', '97%', 97],
+      ['US$ 0,00', '0%', 0],
+      ['US$ 0,00', '0%', 0],
+    ],
+    stocks: ['US$ 2.040,00', [['cobalto', 'US$ 1.900,00', 'US$ 2.040,00', '+7,4%', 'pos']]],
+    etf: ['US$ 65.960,00', [['acoesg', 'US$ 65.720,00', 'US$ 65.960,00', '+0,4%', 'pos']]],
+    fixedIncome: null,
+    history: [
+      { icon: 'out', title: 'Compra · Maré Ações Globais ETF', meta: 'há 2 min', value: '−US$ 60.520,00' },
+      { icon: 'in', title: 'Aporte', meta: 'há 4 dias' },
+    ],
+  });
+}
+
+/** Fernanda's Carteira: all three classes and no movement yet. */
+export function fernandaCarteira(): Screen {
+  return carteira({
+    total: 'US$ 8.200,00',
+    applied: 'US$ 6.840,00',
+    gain: '+US$ 212,00 (+3,1%)',
+    cash: 'US$ 1.148,00',
+    allocation: [
+      ['US$ 1.640,00', '20%', 20],
+      ['US$ 3.690,00', '45%', 45],
+      ['US$ 1.722,00', '21%', 21],
+      ['US$ 1.148,00', '14%', 14],
+    ],
+    stocks: ['US$ 1.640,00', [['farol', 'US$ 1.590,00', 'US$ 1.640,00', '+3,1%', 'pos']]],
+    etf: [
+      'US$ 3.690,00',
+      [
+        ['acoesg', 'US$ 1.900,00', 'US$ 2.000,00', '+5,3%', 'pos'],
+        ['renda', 'US$ 1.660,00', 'US$ 1.690,00', '+1,8%', 'pos'],
+      ],
+    ],
+    fixedIncome: ['US$ 1.722,00', [['tbill', 'US$ 1.690,00', 'US$ 1.722,00', '+1,9%', 'pos']]],
+    history: [],
+  });
+}

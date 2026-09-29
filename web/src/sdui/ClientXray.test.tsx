@@ -165,7 +165,7 @@ describe('Raio-X SDUI toggle in the simulation strip', () => {
     const user = userEvent.setup();
     localStorage.setItem(XRAY_KEY, 'on');
     stubBFF(thiagoHome);
-    renderAt(`/client-pov/${SEED.thiago}/carteira`);
+    renderAt(`/client-pov/${SEED.thiago}/perfil`);
     expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Thiago' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Raio-X/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Raio-X SDUI' })).not.toBeInTheDocument();
