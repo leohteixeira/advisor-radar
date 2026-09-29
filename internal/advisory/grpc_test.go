@@ -139,6 +139,12 @@ func startAdvisory(t *testing.T, opts ...advisory.ServerOption) advisoryv1.Advis
 
 func TestGRPCServer_GetInvestorProfile(t *testing.T) {
 	t.Parallel()
+	// The whole table rides on every answer, in level order.
+	maxRiskTable := []*advisoryv1.ProfileMaxRisk{
+		{Profile: "conservador", MaxRisk: 2},
+		{Profile: "moderado", MaxRisk: 3},
+		{Profile: "arrojado", MaxRisk: 5},
+	}
 	broken := seedBook()
 	broken.profiles[thiagoID] = advisory.InvestorProfile{Profile: "agressivo", AssessedOn: day("2026-08-04")}
 	tests := []struct {
@@ -150,15 +156,15 @@ func TestGRPCServer_GetInvestorProfile(t *testing.T) {
 	}{
 		{
 			name: "fernanda", book: seedBook(), id: fernandaID,
-			expected: &advisoryv1.InvestorProfile{Profile: "conservador", MaxRisk: 2, AssessedOn: "2026-03-12"},
+			expected: &advisoryv1.InvestorProfile{Profile: "conservador", MaxRisk: 2, AssessedOn: "2026-03-12", MaxRiskTable: maxRiskTable},
 		},
 		{
 			name: "mariana", book: seedBook(), id: marianaID,
-			expected: &advisoryv1.InvestorProfile{Profile: "moderado", MaxRisk: 3, AssessedOn: "2026-01-20"},
+			expected: &advisoryv1.InvestorProfile{Profile: "moderado", MaxRisk: 3, AssessedOn: "2026-01-20", MaxRiskTable: maxRiskTable},
 		},
 		{
 			name: "thiago", book: seedBook(), id: thiagoID,
-			expected: &advisoryv1.InvestorProfile{Profile: "arrojado", MaxRisk: 5, AssessedOn: "2026-08-04"},
+			expected: &advisoryv1.InvestorProfile{Profile: "arrojado", MaxRisk: 5, AssessedOn: "2026-08-04", MaxRiskTable: maxRiskTable},
 		},
 		{name: "unknown customer", book: seedBook(), id: identity.MustNewV7(), code: codes.NotFound},
 		{name: "invalid id", book: seedBook(), id: "x", code: codes.InvalidArgument},

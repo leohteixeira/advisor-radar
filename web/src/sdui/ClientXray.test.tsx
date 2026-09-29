@@ -161,12 +161,20 @@ describe('Raio-X SDUI toggle in the simulation strip', () => {
     expect(screen.getByRole('region', { name: 'Raio-X SDUI' })).toHaveTextContent(`customers/${SEED.thiago}/screens/investir`);
   });
 
-  it('hides the toggle and the X-ray on a tab with no SDUI screen', async () => {
+  it('hides the toggle and the X-ray while no SDUI screen is on view', async () => {
     const user = userEvent.setup();
     localStorage.setItem(XRAY_KEY, 'on');
-    stubBFF(thiagoHome);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/screens/perfil')) {
+          return new Response('bad gateway', { status: 502 });
+        }
+        return url.includes('/screens/') ? json(thiagoHome()) : json(thiagoPhase2());
+      }),
+    );
     renderAt(`/client-pov/${SEED.thiago}/perfil`);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Thiago' })).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível montar sua tela.');
     expect(screen.queryByRole('button', { name: /Raio-X/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Raio-X SDUI' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Início' }));

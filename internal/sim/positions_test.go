@@ -66,7 +66,8 @@ var wantCatalog = []sim.Product{
 }
 
 // assertSeedState checks the matrix rows "Seed aggregates", "Positions",
-// "Catalog", and "Registration" against any seeded store.
+// "Catalog", and "Registration", and the seeded preferences, against any
+// seeded store.
 func assertSeedState(t *testing.T, client accountv1.AccountServiceClient) {
 	t.Helper()
 	ctx := t.Context()
@@ -138,6 +139,7 @@ func assertSeedState(t *testing.T, client accountv1.AccountServiceClient) {
 	wantCode(t, err, codes.NotFound)
 	_, err = client.GetRegistration(ctx, &accountv1.GetRegistrationRequest{CustomerId: "not-a-uuid"})
 	wantCode(t, err, codes.InvalidArgument)
+	assertSeedPreferences(t, client)
 }
 
 // assertCashOnlyCommands checks "Deposit after migration" and "Withdrawal":

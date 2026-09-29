@@ -129,7 +129,9 @@ func TestEngine_EverySectionEndsInDefault(t *testing.T) {
 	}
 	for slug, p := range e.plans {
 		for _, sec := range p.sections {
-			if slug == "investir" && sec.id == "highlights" {
+			// A section whose variant is the investor profile has no
+			// catch-all default: an unknown profile is a build error.
+			if (slug == "investir" && sec.id == "highlights") || (slug == "perfil" && sec.id == "suitability") {
 				continue
 			}
 			last := sec.variants[len(sec.variants)-1]
@@ -374,7 +376,7 @@ func TestEngine_Build_UnknownCustomer(t *testing.T) {
 func TestEngine_Build_UnknownScreen(t *testing.T) {
 	t.Parallel()
 	e := newTestEngine(t, thiagoFixture().sources())
-	for _, slug := range []string{"perfil", "x", ""} {
+	for _, slug := range []string{"x", "", "Perfil"} {
 		t.Run("slug "+strconv.Quote(slug), func(t *testing.T) {
 			t.Parallel()
 			if _, err := e.Build(t.Context(), slug, "id"); !errors.Is(err, ErrUnknownScreen) {

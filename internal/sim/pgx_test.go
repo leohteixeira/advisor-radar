@@ -511,3 +511,115 @@ func TestPGXStore_ConcurrentPurchases(t *testing.T) {
 		t.Fatalf("outbox rows = %d, want 1", got)
 	}
 }
+
+// TestPGXStore_Preferences runs the preferences matrix over PostgreSQL loaded
+// from the SQL seed, as `cmd/db seed` does, reseeding with the SQL seed and
+// then with the Go Reseed.
+func TestPGXStore_Preferences(t *testing.T) {
+	t.Parallel()
+	pool := newMigratedPool(t)
+	seeds := filepath.Join("..", "..", "seeds", "account_sim")
+	applySQLDir(t, pool, seeds)
+	store := sim.NewPGXStore(pool)
+	client := startAccountServer(t, store)
+	events := func() int { return countRows(t, pool, "outbox") }
+
+	assertPreferences(t, client, events, func() { applySQLDir(t, pool, seeds) })
+	assertPreferences(t, client, events, func() {
+		if err := sim.Reseed(t.Context(), store); err != nil {
+			t.Fatalf("Reseed: %v", err)
+		}
+	})
+	if got := countRows(t, pool, "pov_preferences"); got != len(povCustomers) {
+		t.Fatalf("preference rows = %d, want %d", got, len(povCustomers))
+	}
+}
+
+// TestPGXStore_PreferencesDefaultWithoutRow reads a known customer whose
+// preferences row is missing, as after the migration and before the seed,
+// and checks the channel constraint.
+func TestPGXStore_PreferencesDefaultWithoutRow(t *testing.T) {
+	t.Parallel()
+	pool := newTestPool(t)
+	if _, err := pool.Exec(t.Context(), `DELETE FROM pov_preferences WHERE customer_id = $1`, sim.CustomerMariana); err != nil {
+		t.Fatalf("delete preferences: %v", err)
+	}
+	store := sim.NewPGXStore(pool)
+	got, err := sim.GetPreferences(t.Context(), store, sim.CustomerMariana)
+	if err != nil || got != sim.DefaultPreferences() {
+		t.Fatalf("GetPreferences = %+v, %v; want the default", got, err)
+	}
+	outbox := countRows(t, pool, "outbox")
+	want := sim.Preferences{Channel: sim.ChannelEmail, Beta: true}
+	if _, err := sim.UpdatePreferences(t.Context(), store, sim.CustomerMariana, want); err != nil {
+		t.Fatalf("UpdatePreferences: %v", err)
+	}
+	if got, err := sim.GetPreferences(t.Context(), store, sim.CustomerMariana); err != nil || got != want {
+		t.Fatalf("GetPreferences after insert = %+v, %v", got, err)
+	}
+	if got := countRows(t, pool, "outbox"); got != outbox {
+		t.Fatalf("outbox rows = %d, want %d: preferences write no outbox row", got, outbox)
+	}
+	// A seed that leaves Preferences at the zero value resets to the default
+	// instead of failing the channel check.
+	if err := store.WithTx(t.Context(), func(tx sim.Tx) error {
+		return tx.ResetPOV(t.Context(), zeroPreferencesSeed())
+	}); err != nil {
+		t.Fatalf("ResetPOV with zero preferences: %v", err)
+	}
+	if got, err := sim.GetPreferences(t.Context(), store, sim.CustomerMariana); err != nil || got != sim.DefaultPreferences() {
+		t.Fatalf("GetPreferences after a zero-preferences reset = %+v, %v", got, err)
+	}
+	if _, err := pool.Exec(t.Context(),
+		`UPDATE pov_preferences SET channel = 'sms' WHERE customer_id = $1`, sim.CustomerThiago,
+	); err == nil {
+		t.Fatal("the channel check accepted sms")
+	}
+}
+
+// TestPGXStore_PreferencesWaitForTheCustomerLock holds Fernanda's customer
+// lock in another transaction, as a running command does, and proves an
+// update waits for it and then commits.
+func TestPGXStore_PreferencesWaitForTheCustomerLock(t *testing.T) {
+	t.Parallel()
+	pool := newTestPool(t)
+	store := sim.NewPGXStore(pool)
+
+	holder, err := pool.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin holder: %v", err)
+	}
+	defer func() { _ = holder.Rollback(context.WithoutCancel(t.Context())) }()
+	if _, err := holder.Exec(t.Context(),
+		`SELECT pg_advisory_xact_lock($1::int4, hashtext($2))`, int32(0x504F5641), sim.CustomerFernanda,
+	); err != nil {
+		t.Fatalf("take customer lock: %v", err)
+	}
+
+	want := sim.Preferences{Channel: sim.ChannelEmail}
+	short, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	if _, err := sim.UpdatePreferences(short, store, sim.CustomerFernanda, want); err == nil {
+		t.Fatal("UpdatePreferences committed while a command held the customer lock")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := sim.UpdatePreferences(t.Context(), store, sim.CustomerFernanda, want)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("UpdatePreferences returned %v before the lock was released", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := holder.Rollback(t.Context()); err != nil {
+		t.Fatalf("release lock: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("UpdatePreferences after release: %v", err)
+	}
+	if got, err := sim.GetPreferences(t.Context(), store, sim.CustomerFernanda); err != nil || got != want {
+		t.Fatalf("preferences = %+v, %v; want %+v", got, err, want)
+	}
+}

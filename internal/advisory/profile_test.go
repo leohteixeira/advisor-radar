@@ -1,6 +1,9 @@
 package advisory
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestMaxRisk(t *testing.T) {
 	t.Parallel()
@@ -23,5 +26,22 @@ func TestMaxRisk(t *testing.T) {
 				t.Errorf("MaxRisk(%q) = %d, %v; want %d, error %t", tt.profile, got, err, tt.expected, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestMaxRiskTable(t *testing.T) {
+	t.Parallel()
+	want := []ProfileMaxRisk{
+		{Profile: ProfileConservador, MaxRisk: 2},
+		{Profile: ProfileModerado, MaxRisk: 3},
+		{Profile: ProfileArrojado, MaxRisk: 5},
+	}
+	if got := MaxRiskTable(); !slices.Equal(got, want) {
+		t.Errorf("MaxRiskTable() = %+v, want %+v", got, want)
+	}
+	for _, row := range MaxRiskTable() {
+		if risk, err := MaxRisk(row.Profile); err != nil || risk != row.MaxRisk {
+			t.Errorf("row %+v disagrees with MaxRisk: %d, %v", row, risk, err)
+		}
 	}
 }

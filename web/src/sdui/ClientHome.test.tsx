@@ -126,7 +126,7 @@ describe('client app home from the screen route', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível montar sua tela.');
     await user.click(screen.getByRole('button', { name: 'Perfil' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível montar sua tela.');
-    expect(screen.getByRole('status')).toHaveTextContent('Perfil não entra nesta simulação');
+    expect(screen.queryByText(/não entra nesta simulação/)).not.toBeInTheDocument();
   });
 
   it('opens the coded deposit panel from a panel action', async () => {

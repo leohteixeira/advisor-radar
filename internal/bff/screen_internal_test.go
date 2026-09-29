@@ -114,6 +114,62 @@ func TestScreenProducts_Products(t *testing.T) {
 	}
 }
 
+// perfilPOV answers the Perfil reads with fixed values or err.
+type perfilPOV struct {
+	emptyPOV
+	registration POVRegistration
+	preferences  POVPreferences
+	err          error
+}
+
+func (p perfilPOV) Registration(context.Context, string) (POVRegistration, error) {
+	return p.registration, p.err
+}
+
+func (p perfilPOV) Preferences(context.Context, string) (POVPreferences, error) {
+	return p.preferences, p.err
+}
+
+func TestScreenRegistrations_Registration(t *testing.T) {
+	t.Parallel()
+	pov := perfilPOV{registration: POVRegistration{
+		Email: "fernanda.lima@example.com", Phone: "+55 (19) •••••-4471", City: "Campinas, SP · Brasil", AccountNumber: "Conta 3301-7 · Orla Invest",
+	}}
+	got, err := screenRegistrations{pov: pov}.Registration(t.Context(), "c")
+	want := screen.Registration{
+		Email: "fernanda.lima@example.com", Phone: "+55 (19) •••••-4471", City: "Campinas, SP · Brasil", AccountNumber: "Conta 3301-7 · Orla Invest",
+	}
+	if err != nil || got != want {
+		t.Errorf("Registration = %+v, %v; want %+v", got, err, want)
+	}
+	// NotFound is a failed source here, never an unknown screen customer.
+	notFound := fmt.Errorf("bff: account-sim get registration: %w", sim.ErrUnknownCustomer)
+	if _, err := (screenRegistrations{pov: perfilPOV{err: notFound}}).Registration(t.Context(), "c"); !errors.Is(err, sim.ErrUnknownCustomer) || errors.Is(err, screen.ErrUnknownCustomer) {
+		t.Errorf("not found error = %v", err)
+	}
+	if _, err := (screenRegistrations{pov: emptyPOV{}}).Registration(t.Context(), "c"); !errors.Is(err, errPOVDisabled) {
+		t.Errorf("disabled registration error = %v, want %v", err, errPOVDisabled)
+	}
+}
+
+func TestScreenPreferences_Preferences(t *testing.T) {
+	t.Parallel()
+	got, err := screenPreferences{pov: perfilPOV{preferences: POVPreferences{Channel: "email", Beta: true}}}.Preferences(t.Context(), "c")
+	if err != nil || got != (screen.Preferences{Channel: "email", Beta: true}) {
+		t.Errorf("Preferences = %+v, %v", got, err)
+	}
+	down := errors.New("unavailable")
+	if _, err := (screenPreferences{pov: perfilPOV{err: down}}).Preferences(t.Context(), "c"); !errors.Is(err, down) {
+		t.Errorf("failed preferences error = %v, want it to wrap %v", err, down)
+	}
+	if _, err := (screenPreferences{pov: emptyPOV{}}).Preferences(t.Context(), "c"); !errors.Is(err, errPOVDisabled) {
+		t.Errorf("disabled preferences error = %v, want %v", err, errPOVDisabled)
+	}
+	if _, err := (emptyPOV{}).UpdatePreferences(t.Context(), "c", POVPreferences{Channel: "chat"}); !errors.Is(err, errPOVDisabled) {
+		t.Errorf("disabled update error = %v, want %v", err, errPOVDisabled)
+	}
+}
+
 func TestFailureClass(t *testing.T) {
 	t.Parallel()
 	if got := failureClass(errors.New("screen: no sla for segment \"X\"")); got != "build_error" {
@@ -163,12 +219,18 @@ func TestScreenMoments_Moments(t *testing.T) {
 func TestScreenProfiles_Profile(t *testing.T) {
 	t.Parallel()
 	on := time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)
-	got, err := screenProfiles{queue: momentQueue{profile: InvestorProfile{Profile: "arrojado", MaxRisk: 5, AssessedOn: on}}}.Profile(t.Context(), "c")
+	table := []ProfileMaxRisk{{Profile: "conservador", MaxRisk: 2}, {Profile: "moderado", MaxRisk: 3}, {Profile: "arrojado", MaxRisk: 5}}
+	got, err := screenProfiles{queue: momentQueue{profile: InvestorProfile{Profile: "arrojado", MaxRisk: 5, AssessedOn: on, MaxRiskTable: table}}}.Profile(t.Context(), "c")
 	if err != nil {
 		t.Fatalf("Profile error = %v", err)
 	}
-	if got != (screen.InvestorProfile{Profile: "arrojado", MaxRisk: 5, AssessedOn: on}) {
-		t.Errorf("profile = %+v", got)
+	want := screen.InvestorProfile{
+		Profile: "arrojado", MaxRisk: 5, AssessedOn: on,
+		MaxRiskTable: []screen.ProfileMaxRisk{{Profile: "conservador", MaxRisk: 2}, {Profile: "moderado", MaxRisk: 3}, {Profile: "arrojado", MaxRisk: 5}},
+	}
+	if got.Profile != want.Profile || got.MaxRisk != want.MaxRisk || !got.AssessedOn.Equal(want.AssessedOn) ||
+		!slices.Equal(got.MaxRiskTable, want.MaxRiskTable) {
+		t.Errorf("profile = %+v, want %+v", got, want)
 	}
 	down := errors.New("down")
 	if _, err := (screenProfiles{queue: momentQueue{err: down}}).Profile(t.Context(), "c"); !errors.Is(err, down) {

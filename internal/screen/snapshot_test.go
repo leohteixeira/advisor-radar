@@ -186,7 +186,7 @@ func fernandaFixture() fixture {
 			SegmentUpgradeNear: true, UpgradeGapCents: 180_000,
 			CashCents: 114_800, PatrimonyCents: 820_000,
 		},
-		profile: InvestorProfile{Profile: "conservador", MaxRisk: 2, AssessedOn: time.Date(2026, 3, 12, 0, 0, 0, 0, time.UTC)},
+		profile: InvestorProfile{Profile: "conservador", MaxRisk: 2, AssessedOn: time.Date(2026, 3, 12, 0, 0, 0, 0, time.UTC), MaxRiskTable: testMaxRiskTable()},
 		cases:   []OpenCase{},
 	}
 }
@@ -207,7 +207,7 @@ func thiagoFixture() fixture {
 			{Kind: "aporte", Title: "Aporte", Source: "account.event.recorded", OccurredAt: testNow.Add(-4*24*time.Hour - time.Minute), Age: time.Minute},
 		},
 		moments: MomentFacts{IdleCash: true, CashCents: 6_052_000, PatrimonyCents: 6_800_000},
-		profile: InvestorProfile{Profile: "arrojado", MaxRisk: 5, AssessedOn: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)},
+		profile: InvestorProfile{Profile: "arrojado", MaxRisk: 5, AssessedOn: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC), MaxRiskTable: testMaxRiskTable()},
 		cases:   []OpenCase{},
 	}
 }
@@ -236,7 +236,7 @@ func marianaFixture() fixture {
 			{Kind: "telefone", Title: "Ligação", Source: "advisory.note.recorded", Age: 43000 * time.Minute},
 		},
 		moments: MomentFacts{PortfolioReview: true, CashCents: 6_000_000, PatrimonyCents: 24_830_000},
-		profile: InvestorProfile{Profile: "moderado", MaxRisk: 3, AssessedOn: time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC)},
+		profile: InvestorProfile{Profile: "moderado", MaxRisk: 3, AssessedOn: time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC), MaxRiskTable: testMaxRiskTable()},
 		cases:   []OpenCase{},
 	}
 }
@@ -250,6 +250,9 @@ func (f fixture) sources() Sources {
 		Profiles:  fakeProfiles{profile: f.profile},
 		Cases:     fakeCases{cases: f.cases},
 		Products:  fakeProducts{products: testCatalog()},
+		// Perfil reads.
+		Registrations: fakeRegistrations{registration: seedRegistration(f.id)},
+		Preferences:   fakePreferences{preferences: Preferences{Channel: "chat"}},
 	}
 }
 
@@ -264,6 +267,9 @@ func (f fixture) snapshot() Snapshot {
 		Profile:    Fetched[InvestorProfile]{Value: f.profile},
 		Cases:      Fetched[[]OpenCase]{Value: f.cases},
 		Products:   Fetched[[]Product]{Value: testCatalog()},
+		// Perfil reads.
+		Registration: Fetched[Registration]{Value: seedRegistration(f.id)},
+		Preferences:  Fetched[Preferences]{Value: Preferences{Channel: "chat"}},
 	}
 }
 
@@ -303,6 +309,10 @@ func TestSnapshot_failed(t *testing.T) {
 			snap.Cases.Err = errDown
 		case SourceCatalog:
 			snap.Products.Err = errDown
+		case SourceRegistration:
+			snap.Registration.Err = errDown
+		case SourcePreferences:
+			snap.Preferences.Err = errDown
 		}
 		for _, src := range allSources {
 			err := snap.failed(src)
@@ -392,16 +402,21 @@ func TestFetchSnapshot_ErrorNamesSource(t *testing.T) {
 		Profiles:  fakeProfiles{err: errDown},
 		Cases:     fakeCases{err: errDown},
 		Products:  fakeProducts{err: errDown},
+		// Perfil reads.
+		Registrations: fakeRegistrations{err: errDown},
+		Preferences:   fakePreferences{err: errDown},
 	}
 	snap := fetchSnapshot(t.Context(), noopTracer, src, allSources, "id", testNow, DefaultDeadline)
 	for name, err := range map[Source]error{
-		SourceAccount:  snap.Account.Err,
-		SourceAdvisory: snap.Customer.Err,
-		SourceTimeline: snap.Activity.Err,
-		SourceMoments:  snap.Moments.Err,
-		SourceProfile:  snap.Profile.Err,
-		SourceCases:    snap.Cases.Err,
-		SourceCatalog:  snap.Products.Err,
+		SourceAccount:      snap.Account.Err,
+		SourceAdvisory:     snap.Customer.Err,
+		SourceTimeline:     snap.Activity.Err,
+		SourceMoments:      snap.Moments.Err,
+		SourceProfile:      snap.Profile.Err,
+		SourceCases:        snap.Cases.Err,
+		SourceCatalog:      snap.Products.Err,
+		SourceRegistration: snap.Registration.Err,
+		SourcePreferences:  snap.Preferences.Err,
 	} {
 		if !errors.Is(err, errDown) {
 			t.Errorf("%s error = %v, want it to wrap %v", name, err, errDown)

@@ -86,8 +86,29 @@ func TestParseCatalog_Embedded(t *testing.T) {
 	}; !slices.Equal(types, want) {
 		t.Errorf("carteira variants = %v, want %v", types, want)
 	}
-	if len(cat.screens) != 3 {
-		t.Errorf("catalog serves %d screens, want home, investir, and carteira", len(cat.screens))
+	perfil, ok := cat.screens["perfil"]
+	if !ok {
+		t.Fatal("catalog has no perfil screen")
+	}
+	ids, types = nil, nil
+	for _, s := range perfil.sections {
+		ids = append(ids, s.id)
+		types = append(types, s.typ+"/"+strings.Join(s.variants, ","))
+	}
+	if want := []string{"header", "suitability", "registration", "preferences", "advisor"}; perfil.revision != "v1" || !slices.Equal(ids, want) {
+		t.Errorf("perfil %s sections = %v, want v1 %v", perfil.revision, ids, want)
+	}
+	if want := []string{
+		"profile_header/default",
+		"profile_scale/conservador,moderado,arrojado",
+		"profile_field_list/default",
+		"preference_list/default",
+		"advisor_card/dedicated,default",
+	}; !slices.Equal(types, want) {
+		t.Errorf("perfil variants = %v, want %v", types, want)
+	}
+	if len(cat.screens) != 4 {
+		t.Errorf("catalog serves %d screens, want home, investir, carteira, and perfil", len(cat.screens))
 	}
 }
 
@@ -102,6 +123,7 @@ func TestCatalog_EveryTemplateExecutes(t *testing.T) {
 		Gap: "US$ 1.800,00", Threshold: "US$ 10.000,00", Cash: "US$ 60.520,00", CashShare: "89%", IdleDays: "4 dias", Profile: "arrojado",
 		Protocol: "01A0E3A5-2F4C", Age: "há 3 min", Risk: "5", MaxRisk: "2", Minimum: "US$ 10",
 		Day: "0", Product: "Maré Ações Globais ETF", Amount: "+US$ 19.400,00", Percent: "+11,5%",
+		AssessedOn: "12/03/2026",
 	}
 	for key, tmpl := range cat.copy {
 		for _, f := range []Fields{full, {}} {

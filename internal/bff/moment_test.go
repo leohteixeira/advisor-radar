@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -135,6 +136,30 @@ func TestGetScreen_MomentsFromAdvisory(t *testing.T) {
 	}
 	if profile.Profile != "arrojado" || profile.MaxRisk != 5 || !profile.AssessedOn.Equal(time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("profile = %+v", profile)
+	}
+	if !slices.Equal(profile.MaxRiskTable, maxRiskTable()) {
+		t.Errorf("max risk table = %+v, want %+v", profile.MaxRiskTable, maxRiskTable())
+	}
+
+	// Perfil reads every level's max_risk from the same advisory gRPC chain.
+	rr, body := getScreen(t, h, sim.CustomerFernanda, "perfil")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("perfil status = %d %s", rr.Code, rr.Body.String())
+	}
+	for _, o := range body.Omitted {
+		if o.ID == "suitability" {
+			t.Errorf("suitability omitted, reason %q", o.Reason)
+		}
+	}
+	_, raw := body.component(t, "suitability")
+	var scale scaleProps
+	decodeProps(t, raw, &scale)
+	var risks []int
+	for _, level := range scale.Levels {
+		risks = append(risks, level.MaxRisk)
+	}
+	if !slices.Equal(risks, []int{2, 3, 5}) {
+		t.Errorf("perfil level max_risk = %v, want [2 3 5]", risks)
 	}
 	if _, err := queue.MomentFacts(t.Context(), "01a0e3a4-9a44-7000-8000-000000000001"); status.Code(err) != codes.NotFound {
 		t.Errorf("MomentFacts(unknown) = %v, want NotFound", err)

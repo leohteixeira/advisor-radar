@@ -43,9 +43,9 @@ func screenBook() stubQueue {
 			sim.CustomerMariana:  {PortfolioReview: true, CashCents: 6_000_000, PatrimonyCents: 24_830_000},
 		},
 		profiles: map[string]bff.InvestorProfile{
-			sim.CustomerFernanda: {Profile: "conservador", MaxRisk: 2, AssessedOn: time.Date(2026, 3, 12, 0, 0, 0, 0, time.UTC)},
-			sim.CustomerThiago:   {Profile: "arrojado", MaxRisk: 5, AssessedOn: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)},
-			sim.CustomerMariana:  {Profile: "moderado", MaxRisk: 3, AssessedOn: time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC)},
+			sim.CustomerFernanda: {Profile: "conservador", MaxRisk: 2, AssessedOn: time.Date(2026, 3, 12, 0, 0, 0, 0, time.UTC), MaxRiskTable: maxRiskTable()},
+			sim.CustomerThiago:   {Profile: "arrojado", MaxRisk: 5, AssessedOn: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC), MaxRiskTable: maxRiskTable()},
+			sim.CustomerMariana:  {Profile: "moderado", MaxRisk: 3, AssessedOn: time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC), MaxRiskTable: maxRiskTable()},
 		},
 	}
 }
@@ -77,6 +77,15 @@ func (failingPOV) Apply(context.Context, bff.POVCommand) (bff.POVResult, error) 
 }
 func (failingPOV) Products(context.Context) ([]bff.POVProduct, error) {
 	return nil, errAccountSimDown
+}
+func (failingPOV) Registration(context.Context, string) (bff.POVRegistration, error) {
+	return bff.POVRegistration{}, errAccountSimDown
+}
+func (failingPOV) Preferences(context.Context, string) (bff.POVPreferences, error) {
+	return bff.POVPreferences{}, errAccountSimDown
+}
+func (failingPOV) UpdatePreferences(context.Context, string, bff.POVPreferences) (bff.POVPreferences, error) {
+	return bff.POVPreferences{}, errAccountSimDown
 }
 
 // syncBuffer is a bytes.Buffer safe for the concurrent writes of a logger.
@@ -423,7 +432,7 @@ func TestGetScreen_Status(t *testing.T) {
 		{name: "non-v7 id", id: "not-a-uuid", slug: "home", expected: http.StatusBadRequest},
 		{name: "investir", id: sim.CustomerThiago, slug: "investir", expected: http.StatusOK},
 		{name: "carteira", id: sim.CustomerThiago, slug: "carteira", expected: http.StatusOK},
-		{name: "perfil not served yet", id: sim.CustomerThiago, slug: "perfil", expected: http.StatusNotFound},
+		{name: "perfil", id: sim.CustomerThiago, slug: "perfil", expected: http.StatusOK},
 		{name: "unknown slug", id: sim.CustomerThiago, slug: "x", expected: http.StatusNotFound},
 		{name: "unknown customer", id: "01a0e3a4-9a44-7000-8000-000000000001", slug: "home", expected: http.StatusNotFound},
 	}

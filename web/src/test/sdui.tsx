@@ -11,6 +11,9 @@ export function renderSdui(ui: ReactNode, overrides: Partial<SduiContextValue> =
     onToggleMask: vi.fn(),
     onPanel: vi.fn(),
     onPurchase: vi.fn(),
+    light: false,
+    onToggleTheme: vi.fn(),
+    onPreferences: vi.fn(async () => undefined),
     ...overrides,
   };
   const tree = (node: ReactNode, ctx: SduiContextValue) => <SduiContext value={ctx}>{node}</SduiContext>;

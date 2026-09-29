@@ -3,6 +3,7 @@ package bff_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,10 @@ type fakePOV struct {
 	err         error
 	products    []bff.POVProduct
 	productsErr error
+	prefs       map[string]bff.POVPreferences
+	prefsErr    error
+	updateErr   error
+	updates     int
 }
 
 func (f *fakePOV) Products(context.Context) ([]bff.POVProduct, error) {
@@ -31,6 +36,51 @@ func (f *fakePOV) Products(context.Context) ([]bff.POVProduct, error) {
 		return nil, f.productsErr
 	}
 	return f.products, nil
+}
+
+func (f *fakePOV) Registration(context.Context, string) (bff.POVRegistration, error) {
+	return bff.POVRegistration{}, errors.New("fakePOV: no registration")
+}
+
+// Preferences answers the stored preferences of a known account, chat and
+// beta off until UpdatePreferences changes them.
+func (f *fakePOV) Preferences(_ context.Context, id string) (bff.POVPreferences, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.prefsErr != nil {
+		return bff.POVPreferences{}, f.prefsErr
+	}
+	if !f.known(id) {
+		return bff.POVPreferences{}, sim.ErrUnknownCustomer
+	}
+	if prefs, ok := f.prefs[id]; ok {
+		return prefs, nil
+	}
+	return bff.POVPreferences{Channel: sim.ChannelChat}, nil
+}
+
+func (f *fakePOV) UpdatePreferences(_ context.Context, id string, prefs bff.POVPreferences) (bff.POVPreferences, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.updates++
+	if f.updateErr != nil {
+		return bff.POVPreferences{}, f.updateErr
+	}
+	if f.prefs == nil {
+		f.prefs = map[string]bff.POVPreferences{}
+	}
+	f.prefs[id] = prefs
+	return prefs, nil
+}
+
+// known reports whether id is one of the fake's accounts. f.mu is held.
+func (f *fakePOV) known(id string) bool {
+	for _, account := range f.accounts {
+		if account.CustomerID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakePOV) List(context.Context) ([]bff.POVAccount, error) {

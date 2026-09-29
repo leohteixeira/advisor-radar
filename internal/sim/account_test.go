@@ -137,6 +137,16 @@ func (t *memTx) GetRegistration(ctx context.Context, _ string) (sim.Registration
 	return sim.Registration{}, false, ctx.Err()
 }
 
+// GetPreferences and PutPreferences are unused by Apply; this fake stores
+// nothing.
+func (t *memTx) GetPreferences(ctx context.Context, _ string) (sim.Preferences, bool, error) {
+	return sim.Preferences{}, false, ctx.Err()
+}
+
+func (t *memTx) PutPreferences(ctx context.Context, _ string, _ sim.Preferences) error {
+	return ctx.Err()
+}
+
 // ResetPOV keeps only the class aggregates of the seed: this fake models the
 // account as four balances.
 func (t *memTx) ResetPOV(ctx context.Context, seed sim.Seed) error {

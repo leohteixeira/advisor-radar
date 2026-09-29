@@ -179,10 +179,13 @@ func TestEngine_Build_TracesTheHome(t *testing.T) {
 		sources = append(sources, src)
 	}
 	slices.Sort(sources)
-	// home reads every source; activity uses the catalog for product names.
+	// home reads every source but the Perfil reads; activity uses the
+	// catalog for product names.
 	want := make([]string, 0, len(allSources))
 	for _, src := range allSources {
-		want = append(want, string(src))
+		if src != SourceRegistration && src != SourcePreferences {
+			want = append(want, string(src))
+		}
 	}
 	slices.Sort(want)
 	if !slices.Equal(sources, want) {

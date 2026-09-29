@@ -174,8 +174,23 @@ func TestSeedSQL_MatchesGoSeed(t *testing.T) {
 		}
 	}
 
+	preferences := map[string]sim.Preferences{}
+	for _, row := range seedRows(t, sql, "pov_preferences") {
+		if len(row) != 3 {
+			t.Fatalf("pov_preferences row %v has %d fields", row, len(row))
+		}
+		beta, err := strconv.ParseBool(row[2])
+		if err != nil {
+			t.Fatalf("pov_preferences beta %q: %v", row[2], err)
+		}
+		preferences[row[0]] = sim.Preferences{Channel: row[1], Beta: beta}
+	}
+
 	var goPositions []position
 	for _, account := range seed.Accounts {
+		if got, ok := preferences[account.CustomerID]; !ok || got != account.Preferences {
+			t.Fatalf("%s SQL preferences = %+v (present %t), Go = %+v", account.CustomerID, got, ok, account.Preferences)
+		}
 		got, ok := cash[account.CustomerID]
 		if !ok || got != account.CashCents {
 			t.Fatalf("%s SQL cash = %d (present %t), Go = %d", account.CustomerID, got, ok, account.CashCents)
@@ -188,8 +203,9 @@ func TestSeedSQL_MatchesGoSeed(t *testing.T) {
 			goPositions = append(goPositions, position{account.CustomerID, p.ProductID, p.UnitsCents, p.AppliedCents})
 		}
 	}
-	if len(cash) != len(seed.Accounts) || len(registrations) != len(seed.Accounts) {
-		t.Fatalf("SQL has %d accounts and %d registrations, Go has %d", len(cash), len(registrations), len(seed.Accounts))
+	if len(cash) != len(seed.Accounts) || len(registrations) != len(seed.Accounts) || len(preferences) != len(seed.Accounts) {
+		t.Fatalf("SQL has %d accounts, %d registrations, and %d preferences, Go has %d",
+			len(cash), len(registrations), len(preferences), len(seed.Accounts))
 	}
 	if !slices.Equal(sqlPositions, goPositions) {
 		t.Fatalf("SQL positions = %+v, Go = %+v", sqlPositions, goPositions)
