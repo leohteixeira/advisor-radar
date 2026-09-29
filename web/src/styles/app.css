@@ -2690,7 +2690,11 @@ a.detail__360 {
   --p-acc-text: #f2b544;
   --p-acc-soft: rgb(242 181 68 / 14%);
   --p-pos: #57d3a2;
+  --p-pos-soft: rgb(87 211 162 / 14%);
   --p-neg: #ff8f85;
+  --p-neg-soft: rgb(255 143 133 / 10%);
+  --p-info: #8ab4ff;
+  --p-info-soft: rgb(138 180 255 / 10%);
   --p-dash: #3a4a6d;
   --p-nav: #0e1627;
   --p-scrim: rgb(5 9 18 / 55%);
@@ -2721,7 +2725,11 @@ a.detail__360 {
   --p-acc-text: #7f5600;
   --p-acc-soft: rgb(242 181 68 / 22%);
   --p-pos: #1b7f56;
+  --p-pos-soft: rgb(27 127 86 / 12%);
   --p-neg: #b8352a;
+  --p-neg-soft: rgb(184 53 42 / 9%);
+  --p-info: #2f5fb8;
+  --p-info-soft: rgb(77 127 219 / 10%);
   --p-dash: #aeb8ca;
   --p-nav: #fff;
   --p-scrim: rgb(14 22 38 / 32%);
@@ -3288,11 +3296,11 @@ a.detail__360 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   padding: 6px 8px 10px;
   background: var(--p-nav);
-  border-top: 1px solid var(--p-s2);
+  border-top: 1px solid var(--p-line);
 }
 
 .pov-app__tabs button {
-  min-height: 52px;
+  min-height: 56px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3301,12 +3309,600 @@ a.detail__360 {
   border: none;
   background: none;
   color: var(--p-ink3);
-  font: 600 11px/1 Manrope, sans-serif;
+  font: 600 11.5px/1 Manrope, sans-serif;
 }
 
 .pov-app__tabs button[aria-current='page'] {
   color: var(--p-acc-text);
   font-weight: 700;
+}
+
+/* Server-driven home (ADR 0009). Ported from docs/design/sdui-full-pov/project/OrlaApp.dc.html. */
+.pov-app__phone-bar--sdui {
+  min-height: 60px;
+  box-sizing: border-box;
+  gap: 8px;
+  padding: 0 12px 0 16px;
+}
+
+.pov-app .pov-app__phone-bar--sdui > button {
+  background: none;
+  color: var(--p-ink2);
+}
+
+.pov-app__phone-bar--sdui > span {
+  width: 36px;
+  height: 36px;
+  font-size: 12.5px;
+}
+
+.sdui-main {
+  box-sizing: border-box;
+  padding: 4px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pov-app[data-layout='desktop'] .sdui-main {
+  padding: 32px 40px 40px;
+}
+
+.sdui-main .pov-app__nav-note {
+  margin: 0;
+}
+
+.sdui-main + .pov-app__fine {
+  padding: 0 16px 24px;
+}
+
+.pov-app[data-layout='desktop'] .sdui-main + .pov-app__fine {
+  padding: 0 40px 40px;
+}
+
+.sdui-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sdui-screen__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sdui-screen__head h1 {
+  margin: 0;
+  font: 800 24px/1.15 Manrope, sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.pov-app[data-layout='desktop'] .sdui-screen__head h1 {
+  font-size: 30px;
+}
+
+.sdui-screen__head span {
+  font-size: 13.5px;
+  color: var(--p-ink3);
+}
+
+.sdui-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.pov-app[data-layout='desktop'] .sdui-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.pov-app[data-layout='desktop'] .sdui-section[data-span='2'] {
+  grid-column: span 2;
+}
+
+.sdui-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sdui-section:empty {
+  display: none;
+}
+
+/* A section whose components all rendered nothing inside (hidden actions). */
+.sdui-section:not(:has(> :not(:empty))) {
+  display: none;
+}
+
+.sdui-kicker {
+  font: 700 11px/1.2 'Albert Sans', system-ui, sans-serif;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--p-ink3);
+}
+
+.sdui-card {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 16px;
+  background: var(--p-s1);
+  border: 1px solid var(--p-line);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pov-app .sdui-btn {
+  min-height: 44px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+}
+
+.pov-app .sdui-btn--primary {
+  align-self: flex-start;
+  padding: 0 18px;
+  border: none;
+  border-radius: 12px;
+  background: var(--p-acc);
+  color: var(--p-acc-ink);
+  font: 800 14px/1 Manrope, sans-serif;
+}
+
+.pov-app .sdui-btn--secondary {
+  flex: none;
+  padding: 0 16px;
+  border: 1px solid var(--p-line);
+  border-radius: 12px;
+  background: none;
+  color: var(--p-ink);
+  font: 700 13.5px/1 Manrope, sans-serif;
+}
+
+.sdui-note {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--p-dash);
+  border-radius: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--p-ink2);
+}
+
+.sdui-moment {
+  --tone: var(--p-pos);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 18px 16px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--p-s1);
+  border: 1px solid var(--p-line);
+}
+
+.sdui-moment.sdui-tone--gold {
+  --tone: var(--p-acc-text);
+  background: var(--p-acc-soft);
+  border-color: var(--p-acc);
+}
+
+.sdui-moment.sdui-tone--info {
+  --tone: var(--p-info);
+  background: var(--p-info-soft);
+  border-color: var(--p-info);
+}
+
+.sdui-moment.sdui-tone--neg {
+  --tone: var(--p-neg);
+  background: var(--p-neg-soft);
+  border-color: var(--p-neg);
+}
+
+.sdui-moment__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sdui-moment__icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--p-s2);
+  color: var(--tone);
+}
+
+.sdui-moment .sdui-kicker {
+  color: var(--tone);
+}
+
+.sdui-moment h2 {
+  margin: 0;
+  font: 800 20px/1.25 Manrope, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.sdui-moment p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--p-ink2);
+}
+
+.sdui-moment .sdui-moment__meta {
+  font: 500 12px/1.4 'JetBrains Mono', ui-monospace, monospace;
+  color: var(--p-ink3);
+}
+
+.sdui-wealth__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sdui-wealth__head span {
+  font-size: 13px;
+  color: var(--p-ink3);
+}
+
+.pov-app .sdui-wealth__head button {
+  width: 44px;
+  height: 44px;
+  margin: -10px -10px -10px 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--p-ink3);
+}
+
+.sdui-wealth__total {
+  font: 800 32px/1 Manrope, sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.sdui-pill {
+  align-self: flex-start;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--p-s2);
+  color: var(--p-ink2);
+}
+
+.sdui-pill.sdui-tone--pos {
+  background: var(--p-pos-soft);
+  color: var(--p-pos);
+}
+
+.sdui-pill.sdui-tone--neg {
+  background: var(--p-neg-soft);
+  color: var(--p-neg);
+}
+
+.sdui-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sdui-bar span {
+  display: block;
+  flex: none;
+  height: 8px;
+  box-sizing: border-box;
+}
+
+.sdui-bar span + span {
+  border-left: 2px solid var(--p-s1);
+}
+
+.sdui-alloc--stocks {
+  background: var(--alloc-0);
+}
+
+.sdui-alloc--etfs {
+  background: var(--alloc-1);
+}
+
+.sdui-alloc--fixed_income {
+  background: var(--alloc-2);
+}
+
+.sdui-alloc--cash {
+  background: var(--alloc-3);
+}
+
+.sdui-alloc--other {
+  background: var(--p-ink3);
+}
+
+.sdui-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.sdui-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.sdui-legend i {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.sdui-legend span {
+  flex-grow: 1;
+  color: var(--p-ink2);
+}
+
+.sdui-legend b {
+  font-weight: 700;
+}
+
+.sdui-wealth__cash {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--p-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sdui-wealth__cash span {
+  font-size: 13px;
+  color: var(--p-ink3);
+}
+
+.sdui-wealth__cash b {
+  font-size: 14.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sdui-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pov-app .sdui-actions__item {
+  min-height: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--p-ink);
+  font: 600 12.5px/1.2 Manrope, sans-serif;
+  text-decoration: none;
+}
+
+.sdui-actions__circle {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--p-s2);
+  color: var(--p-acc-text);
+}
+
+.sdui-actions .sdui-note {
+  grid-column: 1 / -1;
+}
+
+.sdui-advisor {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+
+.sdui-advisor__avatar {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--p-acc-soft);
+  color: var(--p-acc-text);
+  font: 800 14px/1 Manrope, sans-serif;
+}
+
+.sdui-advisor__body {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sdui-advisor__body strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sdui-advisor__body span:last-child {
+  font-size: 12.5px;
+  color: var(--p-ink3);
+}
+
+.sdui-advisor .sdui-note {
+  flex-basis: 100%;
+}
+
+.sdui-activity h2 {
+  margin: 0;
+  font: 700 15px/1.3 Manrope, sans-serif;
+}
+
+.sdui-activity__empty {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--p-ink3);
+}
+
+.sdui-activity ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sdui-activity li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sdui-activity__icon {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--p-s2);
+  color: var(--p-ink2);
+}
+
+.sdui-activity li > div {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sdui-activity li strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sdui-activity li > div span {
+  font-size: 12px;
+  color: var(--p-ink3);
+}
+
+.sdui-activity li > b {
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sdui-activity .sdui-tone--pos {
+  color: var(--p-pos);
+}
+
+.sdui-activity .sdui-tone--neg {
+  color: var(--p-neg);
+}
+
+.sdui-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sdui-loading > [role='status'] {
+  font: 500 12px/1.4 'JetBrains Mono', ui-monospace, monospace;
+  color: var(--p-ink3);
+}
+
+.sdui-skel {
+  display: block;
+  border-radius: 16px;
+  background: var(--p-s2);
+  animation: sdui-pulse 1.4s ease-in-out infinite;
+}
+
+.sdui-skel--title {
+  height: 26px;
+  width: 55%;
+  border-radius: 8px;
+}
+
+.sdui-skel--moment {
+  height: 176px;
+}
+
+.sdui-skel--wealth {
+  height: 250px;
+}
+
+.sdui-skel__actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  padding: 0 12px;
+}
+
+.sdui-skel__actions .sdui-skel {
+  height: 52px;
+  border-radius: 50%;
+}
+
+.sdui-skel--advisor {
+  height: 80px;
+}
+
+.sdui-loading__note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--p-ink3);
+}
+
+@keyframes sdui-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sdui-skel {
+    animation: none;
+  }
 }
 
 .pov-app__scrim {

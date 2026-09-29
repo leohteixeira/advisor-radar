@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { apiPath } from '../api/base';
 import { ApiError } from '../api/bff';
 import { fetchPOVHome, formatCents, postPOV, protocolOf, type POVHome } from '../api/pov';
+import { fetchScreen } from '../sdui/api';
+import { SduiContext, type SduiContextValue } from '../sdui/context';
+import { SduiLoading, SduiScreen } from '../sdui/SduiScreen';
+import type { Screen } from '../sdui/types';
 
 interface LiveStep {
   id: string;
@@ -33,6 +37,22 @@ interface ChatRow {
 }
 
 type Panel = 'home' | 'deposit' | 'withdraw' | 'complaint' | 'message' | 'done';
+
+/**
+ * The SDUI home, or the phase-2 home when the screen request fails or answers
+ * something that is not an envelope. The fallback is removed in story 10.
+ */
+type HomeScreen = { status: 'loading' } | { status: 'ready'; screen: Screen } | { status: 'fallback' };
+
+/** Client app tabs. Only Início has a screen yet; the others show a note. */
+const TABS = [
+  { slug: 'home', label: 'Início', icon: 'home' },
+  { slug: 'investir', label: 'Investir', icon: 'invest' },
+  { slug: 'carteira', label: 'Carteira', icon: 'wallet' },
+  { slug: 'perfil', label: 'Perfil', icon: 'user' },
+] as const;
+
+type TabSlug = (typeof TABS)[number]['slug'];
 
 const PRESETS = [
   {
@@ -147,8 +167,23 @@ function storeLightTheme(light: boolean) {
   }
 }
 
+/** The canonical client app route of one tab; home has no tab segment. */
+function clientPath(id: string, slug: TabSlug): string {
+  const base = `/client-pov/${encodeURIComponent(id)}`;
+  return slug === 'home' ? base : `${base}/${slug}`;
+}
+
 export function ClientAppScreen() {
-  const { id = '' } = useParams();
+  const { id = '', tab } = useParams();
+  const current = TABS.find((item) => item.slug === (tab ?? 'home'));
+  if (!current || tab === 'home') {
+    return <Navigate to={clientPath(id, 'home')} replace />;
+  }
+  return <ClientApp key={id} id={id} tab={current.slug} />;
+}
+
+function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
+  const navigate = useNavigate();
   const wide = useWide();
   const [light, setLight] = useState(readLightTheme);
   const [hide, setHide] = useState(false);
@@ -165,7 +200,8 @@ export function ClientAppScreen() {
   const [sent, setSent] = useState<Sent | null>(null);
   const [steps, setSteps] = useState<LiveStep[]>([]);
   const [extraChat, setExtraChat] = useState<ChatRow[]>([]);
-  const [navNote, setNavNote] = useState<string | null>(null);
+  const [homeScreen, setHomeScreen] = useState<HomeScreen>({ status: 'loading' });
+  const navNote = tab === 'home' ? null : (TABS.find((item) => item.slug === tab)?.label ?? null);
 
   useEffect(() => {
     if (panel !== 'done' || !sent) {
@@ -190,6 +226,21 @@ export function ClientAppScreen() {
       return;
     }
     let gone = false;
+    const abort = new AbortController();
+    // A timeout (SCREEN_TIMEOUT_MS) rejects like any other failure: fallback.
+    fetchScreen(id, 'home', abort.signal)
+      .then((screen) => {
+        if (!gone) {
+          setHomeScreen({ status: 'ready', screen });
+        }
+      })
+      .catch(() => {
+        // Phase-2 fallback, removed in story 10: a failed or non-envelope
+        // screen response renders the home from GET /customers/{id}.
+        if (!gone) {
+          setHomeScreen({ status: 'fallback' });
+        }
+      });
     fetchPOVHome(id)
       .then((row) => {
         if (!gone) {
@@ -203,6 +254,7 @@ export function ClientAppScreen() {
       });
     return () => {
       gone = true;
+      abort.abort();
     };
   }, [id, panel]);
 
@@ -225,14 +277,9 @@ export function ClientAppScreen() {
     });
   }
 
-  function pickNav(name: string) {
-    if (name === 'Início') {
-      setNavNote(null);
-      open('home');
-      return;
-    }
+  function pickNav(slug: TabSlug) {
     open('home');
-    setNavNote(name);
+    navigate(clientPath(id, slug));
   }
 
   async function send(
@@ -277,10 +324,35 @@ export function ClientAppScreen() {
       </main>
     );
   }
-  if (!home) {
+  const themeLabel = light ? 'Tema escuro' : 'Tema claro';
+  if (!home || homeScreen.status === 'loading') {
+    // One skeleton until both the first screen request and the phase-2 shell
+    // data settle, so the first paint is already SDUI or the fallback. Each
+    // re-fetch on returning to Início keeps the current home until it settles,
+    // then shows the new screen, or switches to the fallback if it failed.
     return (
-      <main className="pov-app">
-        <p>Carregando cliente…</p>
+      <main className={light ? 'pov-app pov-app--light' : 'pov-app'} data-layout={wide ? 'desktop' : 'phone'}>
+        <div className="pov-app__strip">
+          <span className="pov-app__mark" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span>
+            <strong>Simulação</strong>
+            {home ? ` · vendo como ${home.name}` : null}
+          </span>
+          <Link to="/client-pov">Trocar cliente</Link>
+        </div>
+        <div className="pov-app__body">
+          <div className="pov-app__main">
+            {wide ? null : <PhoneBar light={light} themeLabel={themeLabel} onTheme={toggleTheme} initials={home ? initials(home.name) : ''} />}
+            <div className="sdui-main">
+              <SduiLoading />
+            </div>
+          </div>
+        </div>
+        {wide ? null : <TabBar tab={tab} onPick={pickNav} />}
       </main>
     );
   }
@@ -288,7 +360,6 @@ export function ClientAppScreen() {
   const activity = home.activity;
   const chat = home.messages.concat(extraChat);
   const first = home.name.split(' ')[0] ?? home.name;
-  const themeLabel = light ? 'Tema escuro' : 'Tema claro';
   const showHome = wide || panel === 'home';
   const closeLabel = wide ? 'Fechar' : 'Voltar';
   const total = home.assets || 1;
@@ -306,6 +377,12 @@ export function ClientAppScreen() {
     .filter((row) => row.pct > 0);
   const complaintText = preset >= 0 ? PRESETS[preset]?.text ?? '' : text.trim();
   const aumText = hide ? 'US$ ••••••' : formatCents(home.assets);
+  const sdui: SduiContextValue = {
+    onNavigate: pickNav,
+    masked: hide,
+    onToggleMask: () => setHide((value) => !value),
+    onPanel: open,
+  };
 
   return (
     <main className={light ? 'pov-app pov-app--light' : 'pov-app'} data-layout={wide ? 'desktop' : 'phone'}>
@@ -328,18 +405,17 @@ export function ClientAppScreen() {
               <em>invest</em>
             </p>
             <nav aria-label="Navegação principal">
-              <button type="button" className="pov-app__nav-btn pov-app__nav-btn--on" aria-current="page" onClick={() => pickNav('Início')}>
-                <Icon name="home" /> Início
-              </button>
-              <button type="button" className="pov-app__nav-btn" onClick={() => pickNav('Investir')}>
-                <Icon name="invest" /> Investir
-              </button>
-              <button type="button" className="pov-app__nav-btn" onClick={() => pickNav('Carteira')}>
-                <Icon name="wallet" /> Carteira
-              </button>
-              <button type="button" className="pov-app__nav-btn" onClick={() => pickNav('Perfil')}>
-                <Icon name="user" /> Perfil
-              </button>
+              {TABS.map((item) => (
+                <button
+                  key={item.slug}
+                  type="button"
+                  className={item.slug === tab ? 'pov-app__nav-btn pov-app__nav-btn--on' : 'pov-app__nav-btn'}
+                  aria-current={item.slug === tab ? 'page' : undefined}
+                  onClick={() => pickNav(item.slug)}
+                >
+                  <Icon name={item.icon} /> {item.label}
+                </button>
+              ))}
             </nav>
             <span className="pov-app__grow" />
             <button type="button" className="pov-app__theme" aria-label={themeLabel} onClick={toggleTheme}>
@@ -355,7 +431,19 @@ export function ClientAppScreen() {
             </div>
           </aside>
         ) : null}
-        {showHome ? (
+        {showHome && homeScreen.status === 'ready' ? (
+          <div className="pov-app__main">
+            {wide ? null : <PhoneBar light={light} themeLabel={themeLabel} onTheme={toggleTheme} initials={initials(home.name)} />}
+            <div className="sdui-main">
+              <NavNote name={navNote} />
+              <SduiContext value={sdui}>
+                <SduiScreen screen={homeScreen.screen} />
+              </SduiContext>
+            </div>
+            <p className="pov-app__fine">Orla Invest é uma corretora fictícia criada para a demo do Advisor Radar.</p>
+          </div>
+        ) : null}
+        {showHome && homeScreen.status === 'fallback' ? (
           <div className="pov-app__main">
             {wide ? (
               <HomeDesktop
@@ -625,23 +713,34 @@ export function ClientAppScreen() {
           </aside>
         ) : null}
       </div>
-      {!wide && panel === 'home' ? (
-        <nav className="pov-app__tabs" aria-label="Navegação principal">
-          <button type="button" aria-current="page" onClick={() => pickNav('Início')}>
-            <Icon name="home" size={22} /> Início
-          </button>
-          <button type="button" onClick={() => pickNav('Investir')}>
-            <Icon name="invest" size={22} /> Investir
-          </button>
-          <button type="button" onClick={() => pickNav('Carteira')}>
-            <Icon name="wallet" size={22} /> Carteira
-          </button>
-          <button type="button" onClick={() => pickNav('Perfil')}>
-            <Icon name="user" size={22} /> Perfil
-          </button>
-        </nav>
-      ) : null}
+      {!wide && panel === 'home' ? <TabBar tab={tab} onPick={pickNav} /> : null}
     </main>
+  );
+}
+
+function TabBar({ tab, onPick }: { tab: TabSlug; onPick: (slug: TabSlug) => void }) {
+  return (
+    <nav className="pov-app__tabs" aria-label="Navegação principal">
+      {TABS.map((item) => (
+        <button key={item.slug} type="button" aria-current={item.slug === tab ? 'page' : undefined} onClick={() => onPick(item.slug)}>
+          <Icon name={item.icon} size={22} /> {item.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function PhoneBar({ light, themeLabel, onTheme, initials: mark }: { light: boolean; themeLabel: string; onTheme: () => void; initials: string }) {
+  return (
+    <div className="pov-app__phone-bar pov-app__phone-bar--sdui">
+      <p className="pov-app__logo">
+        orla<span>.</span>
+      </p>
+      <button type="button" aria-label={themeLabel} onClick={onTheme}>
+        <Icon name={light ? 'moon' : 'sun'} size={20} />
+      </button>
+      <span aria-hidden="true">{mark}</span>
+    </div>
   );
 }
 

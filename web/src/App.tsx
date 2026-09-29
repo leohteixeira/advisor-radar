@@ -13,7 +13,7 @@ export function App() {
     <Routes>
       <Route index element={<SelectionScreen />} />
       <Route path="client-pov" element={<ClientListScreen />} />
-      <Route path="client-pov/:id" element={<ClientAppScreen />} />
+      <Route path="client-pov/:id/:tab?" element={<ClientAppScreen />} />
       <Route element={<AppShell />}>
         <Route path="fila" element={<QueueScreen />} />
         <Route path="revisao" element={<ReviewScreen />} />

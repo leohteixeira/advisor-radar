@@ -1,0 +1,129 @@
+/**
+ * Screen envelope and component props of the SDUI contract in
+ * specs/http/bff.md ("Screens (phase 3)"). Every visible value is a display
+ * string the BFF already formatted; web renders it as is.
+ */
+
+/** Screen slugs the BFF may serve and a navigate action may target. */
+export const SLUGS = ['home', 'investir', 'carteira', 'perfil'] as const;
+export type Slug = (typeof SLUGS)[number];
+
+export type Tone = 'pos' | 'neg' | 'info' | 'gold' | 'neutral';
+
+/** Panels a panel action may open. */
+export type PanelTarget = 'deposit' | 'withdraw' | 'message' | 'complaint' | 'purchase';
+
+export interface NavigateAction {
+  type: 'navigate';
+  label: string;
+  target: Slug;
+}
+
+export interface PanelAction {
+  type: 'panel';
+  label: string;
+  target: PanelTarget;
+  product_id?: string;
+}
+
+export interface NoteAction {
+  type: 'note';
+  label: string;
+  text: string;
+}
+
+export interface LinkAction {
+  type: 'link';
+  label: string;
+  href: string;
+}
+
+export type Action = NavigateAction | PanelAction | NoteAction | LinkAction;
+
+export interface Component {
+  type: string;
+  variant: string;
+  props: Record<string, unknown>;
+}
+
+export interface Section {
+  id: string;
+  components: Component[];
+}
+
+export interface Omitted {
+  id: string;
+  type: string;
+  reason: string;
+}
+
+export interface Screen {
+  schema_version: number;
+  slug: Slug;
+  revision: string;
+  title: string;
+  subtitle?: string;
+  sections: Section[];
+  omitted: Omitted[];
+}
+
+/** Allocation row: `class` picks the color, `bar_width` (0–100) the width. */
+export interface AllocationRow {
+  class: 'stocks' | 'etfs' | 'fixed_income' | 'cash';
+  label: string;
+  share: string;
+  bar_width: number;
+}
+
+export interface ActivityItem {
+  icon?: string;
+  title: string;
+  meta: string;
+  value?: string;
+  tone?: 'pos' | 'neg' | 'neutral';
+}
+
+export interface MomentCardProps {
+  kicker: string;
+  title: string;
+  body: string;
+  meta?: string;
+  tone: 'neg' | 'info' | 'gold' | 'neutral';
+  icon?: string;
+  action?: Action;
+}
+
+export interface WealthSummaryProps {
+  total_label: string;
+  total: string;
+  cash_label: string;
+  cash: string;
+  cash_cents: number;
+  allocation: AllocationRow[];
+  day_change?: string;
+  day_change_tone?: 'pos' | 'neg' | 'neutral';
+}
+
+export interface GridItem {
+  label: string;
+  icon?: string;
+  action: Action;
+}
+
+export interface ActionGridProps {
+  items: GridItem[];
+}
+
+export interface AdvisorCardProps {
+  kicker: string;
+  name: string;
+  initials: string;
+  meta: string;
+  action?: Action;
+}
+
+export interface ActivityListProps {
+  title: string;
+  items: ActivityItem[];
+  empty_text?: string;
+}
