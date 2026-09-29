@@ -168,3 +168,39 @@ export async function putPreferences(id: string, prefs: POVPreferences): Promise
   });
   return read<POVPreferences>(res);
 }
+
+export interface POVAdvanced {
+  sim_day: number;
+  event_id: string;
+}
+
+/** Whether value is a simulated day: a non-negative whole number. */
+function isSimDay(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+/** The global simulated day the simulation strip shows; a body without a whole day rejects. */
+export async function fetchSimulation(signal?: AbortSignal): Promise<number> {
+  const res = await fetch(apiPath('v1/client-pov/simulation'), { signal });
+  const body = await read<{ sim_day?: unknown }>(res);
+  if (!isSimDay(body.sim_day)) {
+    throw new ApiError(res.status, 'sim_day');
+  }
+  return body.sim_day;
+}
+
+/**
+ * Advances the global market day by one; the same `key` replays instead of
+ * advancing twice. A 202 without a whole `sim_day` rejects with ApiError.
+ */
+export async function postAdvanceDay(key: string): Promise<POVAdvanced> {
+  const res = await fetch(apiPath('v1/client-pov/simulation/advance-day'), {
+    method: 'POST',
+    headers: { 'Idempotency-Key': key },
+  });
+  const body = await read<{ sim_day?: unknown; event_id?: unknown }>(res);
+  if (!isSimDay(body.sim_day)) {
+    throw new ApiError(res.status, 'sim_day');
+  }
+  return { sim_day: body.sim_day, event_id: typeof body.event_id === 'string' ? body.event_id : '' };
+}

@@ -5279,6 +5279,95 @@ a.detail__360 {
   outline-offset: 2px;
 }
 
+/* Market day control of the simulation strip (story 13). */
+.pov-app__day {
+  flex: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pov-app .pov-app__advance {
+  min-height: 44px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.pov-app__advance > span {
+  min-height: 34px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid #1d4d3a;
+  border-radius: 6px;
+  background: #1d4d3a;
+  color: #f5f3ec;
+  font: 600 12px/1 'Albert Sans', system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.pov-app .pov-app__advance:disabled {
+  cursor: progress;
+}
+
+.pov-app__advance:disabled > span {
+  opacity: 0.55;
+}
+
+.pov-app__advance:focus-visible {
+  outline: none;
+}
+
+.pov-app__advance:focus-visible > span {
+  outline: 3px solid #6fbf8a;
+  outline-offset: 2px;
+}
+
+/* Phone: the day, "+1 dia", and Raio-X take a second row under the title. */
+.pov-app[data-layout='phone'] .pov-app__strip--sim {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+
+.pov-app[data-layout='phone'] .pov-app__strip--sim::after {
+  content: '';
+  order: 3;
+  flex-basis: 100%;
+}
+
+.pov-app[data-layout='phone'] .pov-app__strip--sim > a {
+  order: 2;
+}
+
+.pov-app[data-layout='phone'] .pov-app__strip--sim .pov-app__day {
+  order: 4;
+  flex: 1;
+}
+
+.pov-app[data-layout='phone'] .pov-app__strip--sim .pov-app__advance {
+  order: 5;
+}
+
+.pov-app[data-layout='phone'] .pov-app__strip--sim .pov-app__xray {
+  order: 6;
+}
+
+.pov-app__strip-alert {
+  flex: none;
+  margin: 0;
+  padding: 8px 12px;
+  background: #fbe9e6;
+  color: #8a261d;
+  border-bottom: 1px solid #e7c2bc;
+  font: 500 12.5px/1.4 'Albert Sans', system-ui, sans-serif;
+}
+
 .sdui-xray-banner {
   display: flex;
   flex-direction: column;

@@ -177,6 +177,9 @@ export interface Stat {
 export interface PortfolioSummaryProps {
   total_label: string;
   total: string;
+  /** `with_day_change`: the signed change of the simulated day, as on the home wealth. */
+  day_change?: string;
+  day_change_tone?: 'pos' | 'neg' | 'neutral';
   stats: Stat[];
 }
 

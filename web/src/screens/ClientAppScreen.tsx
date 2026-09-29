@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { apiPath } from '../api/base';
 import { ApiError } from '../api/bff';
-import { dollars, fetchPOVHome, formatCents, postPOV, protocolOf, putPreferences, type POVHome } from '../api/pov';
+import { dollars, fetchPOVHome, fetchSimulation, formatCents, postAdvanceDay, postPOV, protocolOf, putPreferences, type POVHome } from '../api/pov';
 import { fetchScreen } from '../sdui/api';
 import { SduiContext, type SduiContextValue } from '../sdui/context';
 import { findPurchase, type PurchaseTarget } from '../sdui/purchase';
@@ -96,6 +96,11 @@ const MESSAGE_STEPS = [
 
 const TOO_MANY = 'Muitas ações em pouco tempo. Espere um minuto e tente de novo.';
 const NOT_RECORDED = 'Não foi possível registrar a ação.';
+// The advance-day budget is global: 20 days per 10 minutes for everyone.
+const TOO_MANY_DAYS = 'Muitos dias avançados em pouco tempo. Espere até 10 minutos e tente de novo.';
+// advisory consumes the reavaliacao events after the 202, so the screen is
+// read once more this long after an advance to show the drop moment and row.
+const ADVANCE_REFETCH_MS = 1500;
 
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
   return (
@@ -140,8 +145,9 @@ function accepted(labels: string[]): LiveStep[] {
 }
 
 /**
- * Whether a purchase refusal is final for its Idempotency-Key: any 4xx but a
- * 429 means that request will never be accepted, so a retry is a new one.
+ * Whether a purchase or advance refusal is final for its Idempotency-Key: any
+ * 4xx but a 429 means that request will never be accepted, so a retry is a
+ * new one.
  */
 function definiteRefusal(err: unknown): boolean {
   return err instanceof ApiError && err.status >= 400 && err.status < 500 && err.status !== 429;
@@ -235,6 +241,15 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const [purchase, setPurchase] = useState<PurchaseTarget | null>(null);
   const [bought, setBought] = useState<Bought | null>(null);
   const [buying, setBuying] = useState(false);
+  // The global simulated day; null until GET …/simulation answers (a failed
+  // read hides the day and keeps the button).
+  const [simDay, setSimDay] = useState<number | null>(null);
+  const [advancing, setAdvancing] = useState(false);
+  const [simNotice, setSimNotice] = useState('');
+  // Bumped after a failed advance so the strip re-reads the day.
+  const [simReads, setSimReads] = useState(0);
+  // The screen an advance asked to read again after ADVANCE_REFETCH_MS.
+  const [followUp, setFollowUp] = useState<{ id: string; slug: Slug } | null>(null);
   // A tab change, including browser back and forward, closes any panel.
   const [panelTab, setPanelTab] = useState(tab);
   if (panelTab !== tab) {
@@ -247,11 +262,48 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const buyKey = useRef<{ cents: number; key: string } | null>(null);
   const form = useRef(0);
   const inFlight = useRef(false);
+  // One Idempotency-Key per advance until a definite answer (202, or a 4xx
+  // other than 429), so a retry after an uncertain failure cannot advance twice.
+  const advanceKey = useRef<string | null>(null);
   const liveEvent = panel === 'done' ? sent?.event_id : panel === 'bought' ? bought?.event_id : undefined;
 
   useEffect(() => {
     form.current += 1;
   }, [panel, tab]);
+
+  // The day is global: it is re-read with every screen read, so an advance by
+  // another viewer shows, and after a failed advance.
+  useEffect(() => {
+    if (panel !== 'home') {
+      return;
+    }
+    let gone = false;
+    const abort = new AbortController();
+    fetchSimulation(abort.signal)
+      .then((day) => {
+        if (!gone) {
+          setSimDay(day);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+      abort.abort();
+    };
+  }, [id, panel, slug, reload, simReads]);
+
+  // The second read of the screen after an advance; leaving the screen or the
+  // app cancels it.
+  useEffect(() => {
+    if (!followUp || followUp.id !== id || followUp.slug !== slug) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setFollowUp(null);
+      setReload((value) => value + 1);
+    }, ADVANCE_REFETCH_MS);
+    return () => window.clearTimeout(timer);
+  }, [followUp, id, slug]);
 
   useEffect(() => {
     if (!liveEvent) {
@@ -363,6 +415,30 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   function retry() {
     setView({ slug, status: 'loading' });
     setReload((value) => value + 1);
+  }
+
+  // A press keeps its key until a definite answer. The screen on view is
+  // re-fetched in place at once and again after ADVANCE_REFETCH_MS, when
+  // advisory has applied the revaluation.
+  async function advanceDay() {
+    setAdvancing(true);
+    setSimNotice('');
+    advanceKey.current ??= crypto.randomUUID();
+    try {
+      const done = await postAdvanceDay(advanceKey.current);
+      advanceKey.current = null;
+      setSimDay(done.sim_day);
+      setReload((value) => value + 1);
+      setFollowUp({ id, slug });
+    } catch (err) {
+      if (definiteRefusal(err)) {
+        advanceKey.current = null;
+      }
+      setSimNotice(err instanceof ApiError && err.status === 429 ? TOO_MANY_DAYS : NOT_RECORDED);
+      setSimReads((value) => value + 1);
+    } finally {
+      setAdvancing(false);
+    }
   }
 
   function openPurchase(productID: string) {
@@ -524,7 +600,13 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
 
   return (
     <main className={light ? 'pov-app pov-app--light' : 'pov-app'} data-layout={wide ? 'desktop' : 'phone'}>
-      <Strip name={home.name} wide={wide} xray={xray} onXray={sduiOnView && !buyingOnView ? toggleXray : undefined} />
+      <Strip
+        name={home.name}
+        wide={wide}
+        xray={xray}
+        onXray={sduiOnView && !buyingOnView ? toggleXray : undefined}
+        sim={{ day: simDay, busy: advancing, notice: simNotice, onAdvance: () => void advanceDay() }}
+      />
       <div className="pov-app__body">
         {wide ? (
           <aside className="pov-app__side">
@@ -808,27 +890,69 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
  * The simulation strip. "Raio-X SDUI" ("Raio-X" on the phone) toggles the
  * demo X-ray of the SDUI screen; without `onXray` (loading, the error state,
  * the purchase form, a tab with no SDUI screen) the toggle is not shown.
+ * With `sim` it also shows the global simulated day and "Avançar um dia"
+ * ("+1 dia" on the phone), with the error of the last advance under it.
  */
-function Strip({ name, wide, xray, onXray }: { name?: string; wide: boolean; xray: boolean; onXray?: () => void }) {
+function Strip({
+  name,
+  wide,
+  xray,
+  onXray,
+  sim,
+}: {
+  name?: string;
+  wide: boolean;
+  xray: boolean;
+  onXray?: () => void;
+  sim?: StripSimulation;
+}) {
   return (
-    <div className="pov-app__strip">
-      <span className="pov-app__mark" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-      </span>
-      <span>
-        <strong>Simulação</strong>
-        {name ? ` · vendo como ${name}` : null}
-      </span>
-      {onXray ? (
-        <button type="button" className="pov-app__xray" aria-pressed={xray} onClick={onXray}>
-          <span>{wide ? 'Raio-X SDUI' : 'Raio-X'}</span>
-        </button>
+    <>
+      <div className={sim ? 'pov-app__strip pov-app__strip--sim' : 'pov-app__strip'}>
+        <span className="pov-app__mark" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span>
+          <strong>Simulação</strong>
+          {name ? ` · vendo como ${name}` : null}
+        </span>
+        {sim && sim.day !== null ? <span className="pov-app__day">Dia simulado {sim.day}</span> : null}
+        {sim ? (
+          <button
+            type="button"
+            className="pov-app__advance"
+            title={wide ? undefined : 'Avançar um dia'}
+            disabled={sim.busy}
+            aria-busy={sim.busy}
+            onClick={sim.onAdvance}
+          >
+            <span>{wide ? 'Avançar um dia' : '+1 dia'}</span>
+          </button>
+        ) : null}
+        {onXray ? (
+          <button type="button" className="pov-app__xray" aria-pressed={xray} onClick={onXray}>
+            <span>{wide ? 'Raio-X SDUI' : 'Raio-X'}</span>
+          </button>
+        ) : null}
+        <Link to="/client-pov">Trocar cliente</Link>
+      </div>
+      {sim?.notice ? (
+        <p className="pov-app__strip-alert" role="alert">
+          {sim.notice}
+        </p>
       ) : null}
-      <Link to="/client-pov">Trocar cliente</Link>
-    </div>
+    </>
   );
+}
+
+interface StripSimulation {
+  /** The global simulated day, or null while unknown. */
+  day: number | null;
+  busy: boolean;
+  notice: string;
+  onAdvance: () => void;
 }
 
 function TabBar({ tab, onPick }: { tab: TabSlug; onPick: (slug: TabSlug) => void }) {
