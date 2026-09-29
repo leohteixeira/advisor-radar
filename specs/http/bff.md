@@ -56,14 +56,15 @@ The client app gets each screen from the BFF as a page of sections and component
 
 | Method | Path | Result |
 |---|---|---|
-| GET | `/v1/client-pov/customers/{id}/screens/{slug}` | `200` screen envelope. `slug` is `home`, `investir`, `carteira`, or `perfil` |
+| GET | `/v1/client-pov/customers/{id}/screens/{slug}` | `200` screen envelope. `slug` is `home`, `investir`, `carteira`, or `perfil`. `400` or `406` from `X-SDUI-Schema` (below) |
 
 - The BFF serves all four screens: `home`, `investir`, `carteira`, and `perfil`.
 - The web home, Investir, Carteira, and Perfil render from this screen route. The phase-2 home route `GET /v1/client-pov/customers/{id}` stays: web still reads the shell (name, segment) and the coded panels (cash, messages) from it. There is no fallback screen: when the screen request fails, times out, or answers something that is not an envelope, the screen area shows an error state with a retry, and the shell, tabs, and panels stay.
 - Opening a screen is one HTTP request. There is no pagination and no single-section reload.
 - A slug outside the four is `404`. An unknown customer is `404` only when account-sim answers `NotFound` for that customer. Any other source failure never changes the status.
 - Screen responses carry `Cache-Control: no-store`.
-- `X-SDUI-Schema` is not implemented yet: the BFF ignores the header until story 16 adds it. When it lands, it behaves as follows. `X-SDUI-Schema` is an optional request header with the range of `schema_version` values the client renders: one integer (`1`) or an inclusive range (`1-2`). A range needs `1 ≤ min ≤ max`. The BFF serves only its current `schema_version`, never a lower one. Without the header, it serves that version. When the range excludes it, the answer is `406 Not Acceptable` with the supported range in the body, `{"supported":{"min":1,"max":1}}`. A malformed header or an invalid range is `400`. On `406`, web shows "Atualize o app para ver esta tela." with a reload button; the simulation strip and the tabs stay.
+- `X-SDUI-Schema` is an optional request header with the range of `schema_version` values the client renders: one integer (`1`) or an inclusive range (`1-2`), digits only, with the whitespace around the value trimmed. A range needs `1 ≤ min ≤ max`. The BFF serves only its current `schema_version`, which is `1`, never a lower one. Without the header, it serves that version. When the range excludes it, the answer is `406 Not Acceptable` with the supported range in the body, `{"supported":{"min":1,"max":1}}`. A malformed header, a repeated header, or an invalid range (`2-1`, `abc`, `0`) is `400` `{"error":"invalid_schema_range"}`. The checks run in a fixed order: a bad customer id is `400`, then the header (`400` or `406`), then the slug (`404`), so an unknown slug with `X-SDUI-Schema: 2` is `406`. No source is read before the header passes; both header answers carry `Cache-Control: no-store`.
+- Web sends `X-SDUI-Schema: 1` on every screen request. On `406`, and on a `200` whose `schema_version` is outside the range it renders, web shows "Atualize o app para ver esta tela." with a button that reloads the page; the simulation strip and the tabs stay.
 
 ### Envelope
 
@@ -96,7 +97,7 @@ Thiago's home with the timeline down. Only the `moment` section is shown; `wealt
 - A section object has `id` and `components`, an array of `{type, variant, props}`.
 - `omitted` is always present: one `{id, type, reason}` per catalog section this response left out because a source failed or a build broke, in catalog order, so Raio-X can draw a placeholder. `reason` is the failed source (`account-sim`, `catalog`, `registration`, `preferences`, `advisory`, `timeline`, `moments`, `profile`, or `cases`) or `build_error`. `account-sim` is the account read, `catalog` the account-sim product catalog (`ListProducts`), and `registration` and `preferences` the account-sim `GetRegistration` and `GetPreferences` reads; `advisory` is the customer read; `moments` and `profile` are the advisory moment facts and investor profile. Web renders nothing for an omitted section outside Raio-X. A section that is absent by design, such as a Carteira class with no position, is neither in `sections` nor in `omitted`.
 - `title` and `subtitle?` are the screen heading, filled from the catalog: home "Olá, {{first}}" / "Cliente {{segment}} desde {{since}}", investir "Investir" / "Produtos fictícios · preço fixo da simulação", carteira "Carteira" / "Valores de mercado no dia simulado {{day}}", perfil "Perfil" / "Seus dados, seu perfil de investidor e suas preferências".
-- `revision` names the catalog revision of the screen. The beta revision is served from story 16: from then on, a client outside the beta gets `v1` and a beta client gets home `v2`, which inserts the `highlights` section right after `moment`. Until story 16 every client gets `v1`, whatever its stored beta flag. Investir, Carteira, and Perfil stay at `v1`.
+- `revision` names the catalog revision of the screen. It is chosen per request from the customer's stored beta flag (the account-sim preferences, read in the same Snapshot): a beta client gets home `v2`, which inserts the `highlights` section right after `moment`, and every other client gets `v1`. Investir, Carteira, and Perfil have only `v1`. Web never chooses the revision; it renders what arrives.
 - Section order in the array is the render order. Web owns style, the breakpoint grid, and the span of each section.
 - `variant` is informational for web: it drives Raio-X and telemetry, never rendering logic. A new variant of an existing type needs no web change. A new `type` needs web code and a row in the table below.
 - An unknown `type` renders nothing and is reported: web logs it with `console.error`. A component that throws is caught by its own boundary. The rest of the screen stays.
@@ -138,7 +139,7 @@ The `deposit`, `withdraw`, `message`, and `complaint` panels submit through the 
 - When cases fails, `case_open` does not match and moment evaluation continues down the priority list.
 - When the advisory customer read fails, the moments whose copy names the advisor (`case_open` and `portfolio_review`) do not match and evaluation continues.
 - When the moment facts fail, only `case_open` and `welcome` can match.
-- When the beta flag is unavailable, the BFF serves revision `v1`.
+- When the beta flag is unavailable (the preferences read failed), the home is revision `v1`. The preferences read is fetched but never required, so the fallback is silent in the response: no section is omitted, the screen does not fail, and no failed part is logged. It is visible only as an error on the `sdui.snapshot.preferences` source span.
 - When the investor profile fact fails, `idle_cash` does not match, and the sections whose variant depends on it (`highlights` and `suitability`) are omitted. On Investir, `cash` then has no `profile_chip` and every product carries `above_profile: false` with no `badge` or `warning`.
 - When the catalog fails, the Investir `highlights`, `fixed_income`, `etfs`, and `stocks` sections are omitted with reason `catalog`.
 - `title` and `subtitle` fall back to "Olá" and no subtitle when their source fails. The subtitle's source is the one its fields read: advisory for the home fields, account-sim for the Carteira `{{day}}`. A subtitle whose source failed is left out and the title stays; a heading with no field (Investir) keeps its title and subtitle.
@@ -168,14 +169,14 @@ Moment tones: `portfolio_drop` is `neg`; `case_open` and `idle_cash` are `info`;
 
 The catalog's starting order. The server may change it without a web change.
 
-- **home:** `moment`, `wealth`, `actions`, `advisor`, `activity`. Revision `v2` adds `highlights` after `moment`.
+- **home:** `moment`, `wealth`, `actions`, `advisor`, `activity`. Revision `v2` (beta) is `moment`, `highlights`, `wealth`, `actions`, `advisor`, `activity`.
 - **investir:** `cash`, `highlights`, `fixed_income`, `etfs`, `stocks`.
 - **carteira:** `summary`, `allocation`, `positions_stocks`, `positions_etf`, `positions_fixed_income`, `history`. A class with no position has no section.
 - **perfil:** `header`, `suitability`, `registration`, `preferences`, `advisor`.
 
 ### Home `v1` served now
 
-The BFF serves home `v1` with every moment variant of the priority list and the `with_day_change` wealth. Revision `v2` comes later. The screen deadline is 800 ms.
+The BFF serves home `v1` with every moment variant of the priority list and the `with_day_change` wealth. Beta clients get home `v2`, below. The screen deadline is 800 ms.
 
 | Section | Type | Variants in evaluation order | Source | When the source fails |
 |---|---|---|---|---|
@@ -198,6 +199,18 @@ The BFF serves home `v1` with every moment variant of the priority list and the 
 - `actions`: Depositar (`deposit` icon), Sacar (`withdraw`), Mensagem (`msg`), and Reclamar (`alert`), each a `panel` action.
 - `advisor`: `name` is the advisory book advisor, `initials` its first two name initials, `meta` "Resposta em até {{sla}} · cliente {{segment}}" with the catalog SLA per segment (Essencial 24 h, Advance 4 h, Singular 1 h), and action "Conversar" → `panel` `message`. An unknown segment is a `build_error`.
 - `activity`: title "Atividade recente". `recent` holds the five most recent client-facing timeline rows as `{icon, title, meta, value?, tone?}`. A row is client-facing when its timeline `source` is `account.event.recorded` or `message.received`; rows from `alert.raised`, `message.triaged`, `case.*`, advisor notes, and calls never reach the client, and neither does a row without `source`. `meta` is the relative time from the row's `occurred_at` to the request time, or from the indexed `ago` when `occurred_at` is absent. Icons are `aporte` `in`, `saque` and `aplicacao` `out`, and `mensagem` `msg`; any other kind has no icon. Every row except `aplicacao` and `reavaliacao` keeps its indexed title. With `amount_cents`, an `aporte` carries `value` signed positive ("+US$ 60.000,00") with `tone` `pos`, and a `saque` carries it signed negative ("−US$ 20.000,00") with `tone` `neg`. An `aplicacao` reads "Compra · {{product}}" with the catalog product name ("Compra" when the catalog failed or does not name the product; never the id) and carries `value`, the purchase amount signed negative ("−US$ 250,00"), when the row has `amount_cents`. A `reavaliacao` reads "Reavaliação diária" with `meta` "dia simulado {{day}} · {{product}} {{pct}}" (for example "dia simulado 3 · Cobalto Semicondutores −53,5%"; "dia simulado {{day}}" when the product has no catalog name), `value` the signed patrimony change ("−US$ 38.520,00"), `tone` `neg` or `pos`, and `icon` `drop` for a loss. A `reavaliacao` that changed nothing is not shown and does not take a place in the limit. With no client-facing row, `empty` carries `items: []` and the empty text.
+
+### Home `v2` (beta) served now
+
+A client whose stored beta flag is on gets home `v2`: the `v1` sections, variants, and heading, with the `highlights` section inserted right after `moment`.
+
+| Section | Type | Variants | Source | When the source fails |
+|---|---|---|---|---|
+| `highlights` | `product_rail` | `profile_conservador`, `profile_moderado`, `profile_arrojado` | catalog, profile | omitted, reason `catalog` or `profile`; an unknown profile matches no variant and is `build_error` |
+
+- `highlights` is the Investir `highlights` component, built by the same variant with the same props and copy: "Para o seu perfil {{profile}}", "Escolhidos pelo backend a partir do seu perfil de investidor.", and the fixed pick per profile.
+- Every other section behaves as in `v1`.
+- On day 0 of the seed, with beta on, Fernanda's rail is `profile_conservador` (`tbill`, `corp`), Thiago's `profile_arrojado` (`cobalto`, `acoesg`), and Mariana's `profile_moderado` (`acoesg`, `corp`).
 
 ### Investir `v1` served now
 
@@ -252,7 +265,7 @@ The BFF serves perfil `v1` under the same screen deadline. The heading is "Perfi
 - `header`: `initials` and `name` from the advisory customer, `subtitle` "Cliente {{segment}} desde {{since}}" ("Cliente {{segment}}" without a since), and `account` the registration `account_number` ("Conta 3301-7 · Orla Invest"), left out when the registration read fails.
 - `suitability`: `title` "Seu perfil de investidor", `subtitle` "Define os destaques de Investir e quando uma compra recebe aviso.", `current_label` "Seu perfil", and `levels` conservador, moderado, and arrojado with the `ux.md` descriptions, `limit` "Produtos até risco {{max_risk}}", and `current` true for the client's level. The client's `max_risk` is the investor profile's; the other levels read the `max_risk_table` that advisory `GetInvestorProfile` returns, so the BFF and web hold no table. A level missing from the table, or a `max_risk` outside 1–5, is a `build_error`. `footer` is "Última avaliação em {{dd/mm/yyyy}}. Para refazer o questionário, fale com a sua assessora." The section needs the advisory customer too: with advisory down it is omitted with the header and advisor.
 - `registration`: `title` "Dados cadastrais", `fields` Nome (advisory), E-mail, Telefone (already masked), Cidade (registration), Segmento, and Cliente desde (advisory), and `footnote` "Dados fictícios. Alterar cadastro fica fora da simulação." Nome, Segmento, and Cliente desde come from advisory, so with advisory down the section is omitted rather than trimmed to a list without a name.
-- `preferences`: `title` "Preferências"; `theme` `{label "Tema", hint "Fica salvo só neste navegador"}`, which web applies locally and never sends; `channel` `{label "Canal preferido", hint "Por onde a assessoria fala com você", value, options [{chat, "Chat"}, {email, "E-mail"}]}` with the stored channel; `beta` `{label "Programa beta", hint, enabled}` with hint "Veja antes as novas versões das telas." when off and "Ligado. Você recebe a revision v2 do início antes dos outros clientes." when on. Storing beta changes no revision yet: until story 16 serves the beta revision, every client still gets home `v1`.
+- `preferences`: `title` "Preferências"; `theme` `{label "Tema", hint "Fica salvo só neste navegador"}`, which web applies locally and never sends; `channel` `{label "Canal preferido", hint "Por onde a assessoria fala com você", value, options [{chat, "Chat"}, {email, "E-mail"}]}` with the stored channel; `beta` `{label "Programa beta", hint, enabled}` with hint "Veja antes as novas versões das telas." when off and "Ligado. Você recebe a revision v2 do início antes dos outros clientes." when on. Beta on serves home `v2` from the next home request; beta off serves `v1` again.
 - `advisor`: the home `advisor_card` variants and props.
 - On day 0 of the seed, Fernanda is conservador (assessed 12/03/2026), Thiago arrojado (04/08/2026), and Mariana moderado (20/01/2026); all three have `chat` with beta off.
 
