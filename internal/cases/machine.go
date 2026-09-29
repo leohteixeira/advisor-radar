@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/leohteixeira/advisor-radar/internal/event"
 )
 
@@ -74,7 +76,7 @@ type OpenInput struct {
 	OccurredAt time.Time
 }
 
-// Tx is the write side of one Open / Advance / HandleBreach transaction.
+// Tx is the write side of one Open / Advance / HandleBreach / Intake transaction.
 type Tx interface {
 	InsertCase(ctx context.Context, row CaseRow) error
 	UpdateCase(ctx context.Context, row CaseRow) error
@@ -82,6 +84,11 @@ type Tx interface {
 	InsertOutbox(ctx context.Context, row OutboxRow) error
 	ArmDelay(ctx context.Context, caseID string, ttlMs int) error
 	ClaimInbox(ctx context.Context, eventID string) (bool, error)
+	// LockCustomer serializes writers for one customer until the transaction ends.
+	LockCustomer(ctx context.Context, customerID string) error
+	// OpenCaseFor returns the customer's case that is not Resolvido, if any.
+	OpenCaseFor(ctx context.Context, customerID string) (CaseRow, bool, error)
+	InsertHistory(ctx context.Context, row HistoryRow) error
 }
 
 // Store persists cases, inbox, outbox, and delay arms. Declared here for the machine.
@@ -109,6 +116,20 @@ func Open(ctx context.Context, store Store, in OpenInput) error {
 	if store == nil {
 		return fmt.Errorf("cases: store is required")
 	}
+	if err := in.validate(); err != nil {
+		return err
+	}
+	err := store.WithTx(ctx, func(tx Tx) error {
+		_, err := openInTx(ctx, tx, in)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("cases: open: %w", err)
+	}
+	return nil
+}
+
+func (in OpenInput) validate() error {
 	if in.ID == "" {
 		return fmt.Errorf("cases: case id is required")
 	}
@@ -117,6 +138,15 @@ func Open(ctx context.Context, store Store, in OpenInput) error {
 	}
 	if in.AdvisorID == "" {
 		return fmt.Errorf("cases: advisor id is required")
+	}
+	return nil
+}
+
+// openInTx inserts a case in Aberto, its case.opened outbox row, and one SLA
+// delay arm inside tx. It returns the inserted row.
+func openInTx(ctx context.Context, tx Tx, in OpenInput) (CaseRow, error) {
+	if err := in.validate(); err != nil {
+		return CaseRow{}, err
 	}
 	occurredAt := in.OccurredAt
 	if occurredAt.IsZero() {
@@ -135,31 +165,26 @@ func Open(ctx context.Context, store Store, in OpenInput) error {
 		Escalated:       false,
 		OpenedAt:        occurredAt,
 	}
-	body, err := marshalCaseEvent(event.NameCaseOpened, openedEventID(in.ID), in.CustomerID, occurredAt, row)
+	eventID := openedEventID(in.ID)
+	body, err := marshalCaseEvent(event.NameCaseOpened, eventID, in.CustomerID, occurredAt, row)
 	if err != nil {
-		return fmt.Errorf("cases: open %s: %w", in.ID, err)
+		return CaseRow{}, fmt.Errorf("cases: open %s: %w", in.ID, err)
 	}
 
-	err = store.WithTx(ctx, func(tx Tx) error {
-		if err := tx.InsertCase(ctx, row); err != nil {
-			return fmt.Errorf("cases: insert case %s: %w", in.ID, err)
-		}
-		if err := tx.InsertOutbox(ctx, OutboxRow{
-			EventID:    openedEventID(in.ID),
-			RoutingKey: event.NameCaseOpened,
-			Payload:    body,
-		}); err != nil {
-			return fmt.Errorf("cases: insert outbox %s: %w", in.ID, err)
-		}
-		if err := tx.ArmDelay(ctx, in.ID, args.TTLMs); err != nil {
-			return fmt.Errorf("cases: arm delay %s: %w", in.ID, err)
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("cases: open: %w", err)
+	if err := tx.InsertCase(ctx, row); err != nil {
+		return CaseRow{}, fmt.Errorf("cases: insert case %s: %w", in.ID, err)
 	}
-	return nil
+	if err := tx.InsertOutbox(ctx, OutboxRow{
+		EventID:    eventID,
+		RoutingKey: event.NameCaseOpened,
+		Payload:    body,
+	}); err != nil {
+		return CaseRow{}, fmt.Errorf("cases: insert outbox %s: %w", in.ID, err)
+	}
+	if err := tx.ArmDelay(ctx, in.ID, args.TTLMs); err != nil {
+		return CaseRow{}, fmt.Errorf("cases: arm delay %s: %w", in.ID, err)
+	}
+	return row, nil
 }
 
 // Advance moves a case one forward step to the given state.
@@ -425,11 +450,22 @@ func nextState(current string) (string, bool) {
 	return "", false
 }
 
-func openedEventID(caseID string) string { return "opened-" + caseID }
-func statusEventID(caseID, state string) string {
-	return "status-" + caseID + "-" + state
+// eventNamespace is the fixed namespace of the name-based (SHA-1) event ids.
+// outbox.event_id and inbox.event_id are UUID columns, and a deterministic id
+// keeps a repeated open, advance, or breach from writing a second row.
+var eventNamespace = uuid.MustParse("f48bc4d1-2008-460c-9167-37a9cb1d6f08")
+
+func openedEventID(caseID string) string {
+	return uuid.NewSHA1(eventNamespace, []byte("opened:"+caseID)).String()
 }
-func breachEventID(caseID string) string { return "breach-" + caseID }
+
+func statusEventID(caseID, state string) string {
+	return uuid.NewSHA1(eventNamespace, []byte("status:"+caseID+":"+state)).String()
+}
+
+func breachEventID(caseID string) string {
+	return uuid.NewSHA1(eventNamespace, []byte("breach:"+caseID)).String()
+}
 
 func marshalCaseEvent(
 	name, eventID, customerID string,

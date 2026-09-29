@@ -24,6 +24,8 @@ type pgxTx struct {
 	tx pgx.Tx
 }
 
+var _ Tx = (*pgxTx)(nil)
+
 // WithTx runs fn inside a database transaction.
 func (s *PGXStore) WithTx(ctx context.Context, fn func(Tx) error) error {
 	tx, err := s.pool.Begin(ctx)
@@ -90,6 +92,85 @@ ON CONFLICT (event_id) DO NOTHING`
 		return false, fmt.Errorf("cases pgx: claim inbox: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// customerLockSpace is the first key of the two-key advisory lock, so the
+// per-customer case locks cannot collide with single-key locks or other spaces.
+const customerLockSpace int32 = 0x43415345 // "CASE"
+
+// LockCustomer takes a transaction-scoped advisory lock for one customer.
+func (t *pgxTx) LockCustomer(ctx context.Context, customerID string) error {
+	if _, err := t.tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock($1::int4, hashtext($2))`, customerLockSpace, customerID,
+	); err != nil {
+		return fmt.Errorf("cases pgx: lock customer: %w", err)
+	}
+	return nil
+}
+
+// OpenCaseFor returns the customer's case that is not Resolvido, if any. It
+// locks the row, so a concurrent Advance to Resolvido waits for this
+// transaction and a message cannot join a case resolved under it.
+func (t *pgxTx) OpenCaseFor(ctx context.Context, customerID string) (CaseRow, bool, error) {
+	return openCaseFor(ctx, t.tx, customerID, true)
+}
+
+// OpenCaseFor reads the customer's case that is not Resolvido, if any,
+// outside any transaction.
+func (s *PGXStore) OpenCaseFor(ctx context.Context, customerID string) (CaseRow, bool, error) {
+	return openCaseFor(ctx, s.pool, customerID, false)
+}
+
+// InboxSeen reports whether eventID is already claimed.
+func (s *PGXStore) InboxSeen(ctx context.Context, eventID string) (bool, error) {
+	var seen bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM inbox WHERE event_id = $1)`, eventID).Scan(&seen)
+	if err != nil {
+		return false, fmt.Errorf("cases pgx: inbox seen: %w", err)
+	}
+	return seen, nil
+}
+
+func openCaseFor(ctx context.Context, q rowQuerier, customerID string, forUpdate bool) (CaseRow, bool, error) {
+	query := `
+SELECT id, customer_id, COALESCE(signal_id::text, ''), advisor_id, state, sla_total_minutes, escalated, opened_at
+FROM cases
+WHERE customer_id = $1 AND state <> $2
+ORDER BY opened_at DESC
+LIMIT 1`
+	if forUpdate {
+		query += `
+FOR UPDATE`
+	}
+	var row CaseRow
+	err := q.QueryRow(ctx, query, customerID, StateResolvido).Scan(
+		&row.ID,
+		&row.CustomerID,
+		&row.SignalID,
+		&row.AdvisorID,
+		&row.State,
+		&row.SLATotalMinutes,
+		&row.Escalated,
+		&row.OpenedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return CaseRow{}, false, nil
+		}
+		return CaseRow{}, false, fmt.Errorf("cases pgx: open case for customer: %w", err)
+	}
+	return row, true, nil
+}
+
+// InsertHistory stages one case_history row.
+func (t *pgxTx) InsertHistory(ctx context.Context, row HistoryRow) error {
+	const q = `
+INSERT INTO case_history (id, case_id, kind, text, occurred_at)
+VALUES ($1, $2, $3, $4, $5)`
+	if _, err := t.tx.Exec(ctx, q, row.ID, row.CaseID, row.Kind, row.Text, row.OccurredAt); err != nil {
+		return fmt.Errorf("cases pgx: insert history: %w", err)
+	}
+	return nil
 }
 
 // InsertCase stages one case row. Conflicts on id are ignored.
