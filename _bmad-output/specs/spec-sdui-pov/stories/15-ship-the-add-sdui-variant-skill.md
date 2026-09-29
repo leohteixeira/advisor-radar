@@ -162,8 +162,11 @@ It names the real files, helpers and tests as they are after stories 5–13 and 
 - `README.md` — one sentence linking the skill from the "Contract" paragraph.
 
 **Review:** 23 findings (the Verification Gap layer found none).
-- **Patched:** 18 entries, one medium and the rest low. The medium was the throwaway stack inheriting `.env` broker URLs and HTTP address, reported by two layers.
-- **Rejected:** 5 — the curl-evidence row (the evidence is recorded here), two Intent Alignment readings disproved, the `pov_account` class columns (dropped in migration 004), and nothing else.
+- **Patched:** 19 rows in 15 entries (four Edge Case Hunter rows share a root cause with Blind Hunter rows), one medium and the rest low. The medium was the throwaway stack inheriting `.env` broker URLs and HTTP address, reported by both layers.
+- **Rejected:** 4 rows:
+  - the curl-evidence row, because the evidence is recorded here;
+  - two Intent Alignment readings, disproved;
+  - the `pov_account` class columns, which migration 004 dropped.
 - **Deferred:** 0.
 
 **Followup review recommended:** no. One medium entry and no high were patched.
