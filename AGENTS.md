@@ -1,6 +1,6 @@
 # Advisor Radar — agent instructions
 
-Repository-specific extension. Read `/workspace/CLAUDE.md` first; what is written here prevails
+Repository-specific extension. Read `/workspace/AGENTS.md` first; what is written here prevails
 only inside `repos/advisor-radar`.
 
 The product brief is at `/workspace/docs/advisor_radar_brief.md`. This is a technical demo with
