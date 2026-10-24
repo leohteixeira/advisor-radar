@@ -4,14 +4,23 @@ Fictional advisory desk. A visitor can open the team queue or enter Orla Invest 
 
 The public app is rooted at `/advisor-radar`.
 
-## Selection
+## Portfolio presentation
 
-`/advisor-radar` is the selection screen. It does not redirect to the queue.
+The public roots `/advisor-radar` and `/advisor-radar/` redirect (308 at the shared ingress) to
+`https://leohteixeira.com/pt/projects/advisor-radar`. The SPA root provides the same destination
+as a client-side fallback and preserves fragments such as `#arquitetura` and `#sdui`.
+The bilingual, server-rendered product explanation and eight-step architecture walkthrough now
+belong to the independent Next portfolio repository.
 
-- **Visão do time** opens `/advisor-radar/fila`. Review, the manager panel, and the customer 360 stay at `/advisor-radar/revisao`, `/advisor-radar/painel`, and `/advisor-radar/clientes/{id}`.
-- **Visão do cliente** opens `/advisor-radar/client-pov`.
+Operational routes remain here: `/advisor-radar/fila`, `/advisor-radar/revisao`,
+`/advisor-radar/painel`, `/advisor-radar/clientes/{id}` and `/advisor-radar/client-pov`.
+The portfolio links directly to the queue and client picker to avoid redirect loops.
 
-The screen states three pillars (proactive alerts, message triage, cases with SLA) and plays an eight-step complaint walkthrough. The walkthrough pauses and stays still when `prefers-reduced-motion` is set.
+`/advisor-radar/embed/sdui` hosts the original live SDUI showcase: client selection, JSON disclosure,
+component rules, phone scrolling, loading, failures and retry. The phone preview stays read-only.
+The same-origin parent receives a height message from ResizeObserver; this route has no viewport
+minimum height. Keep this route working before deploying the central presentation or Caddy redirects.
+The parent’s server-rendered explanation stays readable when the BFF or JavaScript is unavailable.
 
 ## Client point of view
 
@@ -33,7 +42,7 @@ Names, balances, and Orla Invest are fictional. No message is sent to a real per
 
 ## Demo script
 
-1. Open `/advisor-radar` and walk the eight steps in about 30 seconds.
+1. Open the portfolio presentation and walk the eight complaint steps.
 2. Enter as Mariana Costa and send "Estou pensando em sair".
 3. Show Bastidores moving through the outbox, RabbitMQ, and triage.
 4. Open `/advisor-radar/fila`. The churn alert is at the top of the queue with the Singular SLA.
