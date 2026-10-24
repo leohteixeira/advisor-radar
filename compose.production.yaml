@@ -1,0 +1,182 @@
+name: advisor-radar-prod
+x-runtime: &runtime
+    restart: unless-stopped
+    labels:
+      portfolio.production: "true"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: portfolio.production,com.docker.compose.project,com.docker.compose.service
+    mem_limit: 128m
+    stop_grace_period: 20s
+x-telemetry: &telemetry
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://portfolio-collector:4318
+  OTEL_RESOURCE_ATTRIBUTES: service.namespace=advisor-radar,deployment.environment.name=production
+  GOMEMLIMIT: 96MiB
+  GOMAXPROCS: "2"
+x-databases: &databases
+  ACCOUNT_SIM_DATABASE_URL: ${ACCOUNT_SIM_DATABASE_URL:?Set ACCOUNT_SIM_DATABASE_URL}
+  ADVISORY_DATABASE_URL: ${ADVISORY_DATABASE_URL:?Set ADVISORY_DATABASE_URL}
+  TRIAGE_DATABASE_URL: ${TRIAGE_DATABASE_URL:?Set TRIAGE_DATABASE_URL}
+  CASES_DATABASE_URL: ${CASES_DATABASE_URL:?Set CASES_DATABASE_URL}
+services:
+  account-sim:
+    <<: *runtime
+    image: portfolio/advisor-radar:${IMAGE_TAG:?Set IMAGE_TAG}
+    command: [/app/bin/account-sim]
+    environment:
+      <<: *telemetry
+      ACCOUNT_SIM_GRPC_ADDR: 0.0.0.0:8460
+      ACCOUNT_SIM_DATABASE_URL: "${ACCOUNT_SIM_DATABASE_URL:?Set ACCOUNT_SIM_DATABASE_URL}"
+      ACCOUNT_SIM_BROKER_URL: "${BROKER_URL:?Set BROKER_URL}"
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "8460"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 20s
+    networks: [default, data, telemetry]
+  advisory:
+    <<: *runtime
+    image: portfolio/advisor-radar:${IMAGE_TAG:?Set IMAGE_TAG}
+    command: [/app/bin/advisory]
+    environment:
+      <<: *telemetry
+      ADVISORY_GRPC_ADDR: 0.0.0.0:8461
+      ADVISORY_DATABASE_URL: "${ADVISORY_DATABASE_URL:?Set ADVISORY_DATABASE_URL}"
+      ADVISORY_BROKER_URL: "${BROKER_URL:?Set BROKER_URL}"
+      ADVISORY_HTTP_ADDR: "0.0.0.0:8451"
+      ACCOUNT_SIM_GRPC_TARGET: "account-sim:8460"
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "8461"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 20s
+    networks: [default, data, telemetry]
+    depends_on:
+      account-sim:
+        condition: service_healthy
+  cases:
+    <<: *runtime
+    image: portfolio/advisor-radar:${IMAGE_TAG:?Set IMAGE_TAG}
+    command: [/app/bin/cases]
+    environment:
+      <<: *telemetry
+      CASES_GRPC_ADDR: 0.0.0.0:8463
+      CASES_DATABASE_URL: "${CASES_DATABASE_URL:?Set CASES_DATABASE_URL}"
+      CASES_BROKER_URL: "${BROKER_URL:?Set BROKER_URL}"
+      ADVISORY_GRPC_TARGET: "advisory:8461"
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "8463"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 20s
+    networks: [default, data, telemetry]
+    depends_on:
+      advisory:
+        condition: service_healthy
+  triage:
+    <<: *runtime
+    image: portfolio/advisor-radar:${IMAGE_TAG:?Set IMAGE_TAG}
+    command: [/app/bin/triage]
+    environment:
+      <<: *telemetry
+      TRIAGE_GRPC_ADDR: 0.0.0.0:8462
+      TRIAGE_DATABASE_URL: "${TRIAGE_DATABASE_URL:?Set TRIAGE_DATABASE_URL}"
+      TRIAGE_BROKER_URL: "${BROKER_URL:?Set BROKER_URL}"
+      AI_GATEWAY_API_KEY: "${AI_GATEWAY_API_KEY:-}"
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "8462"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 20s
+    networks: [default, data, telemetry]
+  timeline-indexer:
+    <<: *runtime
+    image: portfolio/advisor-radar:${IMAGE_TAG:?Set IMAGE_TAG}
+    command: [/app/bin/timeline-indexer]
+    environment:
+      <<: *telemetry
+      TIMELINE_GRPC_ADDR: 0.0.0.0:8464
+      ACCOUNT_SIM_DATABASE_URL: "${ACCOUNT_SIM_DATABASE_URL:?Set ACCOUNT_SIM_DATABASE_URL}"
+      ADVISORY_DATABASE_URL: "${ADVISORY_DATABASE_URL:?Set ADVISORY_DATABASE_URL}"
+      CASES_DATABASE_URL: "${CASES_DATABASE_URL:?Set CASES_DATABASE_URL}"
+      TIMELINE_BROKER_URL: "${BROKER_URL:?Set BROKER_URL}"
+      ELASTICSEARCH_URL: "${ELASTICSEARCH_URL:?Set ELASTICSEARCH_URL}"
+    healthcheck:
+      test: [CMD, nc, -z, 127.0.0.1, "8464"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 20s
+    networks: [default, data, telemetry]
+  bff:
+    <<: *runtime
+    image: portfolio/advisor-radar:${IMAGE_TAG:?Set IMAGE_TAG}
+    build:
+      context: .
+      target: backend
+    environment:
+      <<: *telemetry
+      BFF_HTTP_ADDR: 0.0.0.0:8400
+      BFF_BROKER_URL: ${BROKER_URL:?Set BROKER_URL}
+      ACCOUNT_SIM_GRPC_TARGET: account-sim:8460
+      ADVISORY_GRPC_TARGET: advisory:8461
+      ADVISORY_HTTP_URL: http://advisory:8451
+      TRIAGE_GRPC_TARGET: triage:8462
+      CASES_GRPC_TARGET: cases:8463
+      TIMELINE_GRPC_TARGET: timeline-indexer:8464
+    depends_on:
+      account-sim:
+        condition: service_healthy
+      advisory:
+        condition: service_healthy
+      cases:
+        condition: service_healthy
+      triage:
+        condition: service_healthy
+      timeline-indexer:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:8400/v1/client-pov/customers]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+    networks:
+      default: {}
+      data: {}
+      telemetry: {}
+      edge:
+        aliases: [advisor-bff]
+  web:
+    <<: *runtime
+    image: portfolio/advisor-radar-web:${IMAGE_TAG:?Set IMAGE_TAG}
+    build:
+      context: .
+      target: web
+    mem_limit: 64m
+    networks:
+      edge:
+        aliases: [advisor-web]
+  db:
+    image: portfolio/advisor-radar:${IMAGE_TAG:?Set IMAGE_TAG}
+    profiles: [tools]
+    command: [/app/bin/db, migrate]
+    environment: *databases
+    networks: [data]
+networks:
+  edge:
+    external: true
+    name: portfolio-edge
+  data:
+    external: true
+    name: portfolio-data
+  telemetry:
+    external: true
+    name: portfolio-telemetry

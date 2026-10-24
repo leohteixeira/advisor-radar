@@ -1,6 +1,6 @@
 # Advisor Radar — agent instructions
 
-Repository-specific extension. Read `/workspace/CLAUDE.md` first; what is written here prevails
+Repository-specific extension. Read `/workspace/AGENTS.md` first; what is written here prevails
 only inside `repos/advisor-radar`.
 
 The product brief is at `/workspace/docs/advisor_radar_brief.md`. This is a technical demo with
@@ -11,7 +11,8 @@ fictional data and no link to any real institution.
 The repository has a Go module (`github.com/leohteixeira/advisor-radar`), six service
 commands under `cmd/`, a shared event envelope, transactional outbox support in
 `account-sim`, Compose for local Postgres/RabbitMQ/Elasticsearch, and the six ADRs
-under `specs/adr/`. The React frontend is not present yet.
+under `specs/adr/`. The React/Vite frontend is present; production packaging connects to the
+workspace infrastructure and publishes `/advisor-radar/`.
 
 ## Architecture rules
 
@@ -41,8 +42,8 @@ under `specs/adr/`. The React frontend is not present yet.
   decorator. Numbers and dates stay in code and never go to the model. The model decides; it
   does not draft text. Human review applies when intent probability is below 0.85. A degraded
   result is marked and does not enter review unless its probability is also below 0.85. When the
-  external model is down, classification is heuristic and marked degraded. The public demo host
-  is leohts.tech.
+  external model is down, classification is heuristic and marked degraded. The public demo URL
+  is https://leohteixeira.com/advisor-radar/.
 - Frontend: React, TypeScript, and Vite, mobile-first. It talks to the BFF only, through
   versioned HTTP/JSON, plus one SSE connection for the advisor queue. Business rules, scoring,
   and SLA stay in the backend. Shipped UI copy is Portuguese. Data, names, and branding are

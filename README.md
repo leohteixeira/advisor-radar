@@ -173,3 +173,10 @@ Deploy advisory before cases. Cases intake reads the advisor from advisory `GetC
 ## Contract
 
 The BFF HTTP contract, including the POV routes, is in [specs/http/bff.md](specs/http/bff.md). To add a variant to an existing screen section, follow the [`add-sdui-variant` skill](.claude/skills/add-sdui-variant/SKILL.md). Client commands are recorded in [specs/adr/0008-client-command-grpc-outbox.md](specs/adr/0008-client-command-grpc-outbox.md). OpenTelemetry is described under [Observability](#observability).
+
+## VPS production deployment
+
+`compose.production.yaml` connects this application to the portfolio infrastructure external
+networks. Production is operated on the VPS host through the workspace `infra/portfolio` command;
+see the workspace `infra/README.md` for provisioning, secrets, deployment and recovery.
+The existing local development commands remain independent.
