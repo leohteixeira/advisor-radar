@@ -21,3 +21,6 @@ web/dist/
 .env.development
 .env.test
 .env.production
+
+# Local frontend coverage reports
+web/coverage/
