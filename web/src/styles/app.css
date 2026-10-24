@@ -5997,3 +5997,7 @@ a.detail__360 {
   text-decoration: none;
   font: 700 14px/1 Manrope, sans-serif;
 }
+
+/* The embed height follows its content, never the containing iframe viewport. */
+.selection.selection--embed { min-height: 0; }
+.selection--embed .selection__sdui { padding: 0; }

@@ -6,12 +6,14 @@ import { QueueScreen } from './screens/QueueScreen';
 import { ReviewScreen } from './screens/ReviewScreen';
 import { ClientAppScreen } from './screens/ClientAppScreen';
 import { ClientListScreen } from './screens/ClientListScreen';
-import { SelectionScreen } from './screens/SelectionScreen';
+import { PresentationRedirect } from './screens/PresentationRedirect';
+import { SduiEmbedScreen } from './screens/SduiEmbedScreen';
 
 export function App() {
   return (
     <Routes>
-      <Route index element={<SelectionScreen />} />
+      <Route index element={<PresentationRedirect />} />
+      <Route path="embed/sdui" element={<SduiEmbedScreen />} />
       <Route path="client-pov" element={<ClientListScreen />} />
       <Route path="client-pov/:id/:tab?" element={<ClientAppScreen />} />
       <Route element={<AppShell />}>
