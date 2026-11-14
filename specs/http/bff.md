@@ -10,18 +10,62 @@ The BFF stores nothing durable. POV progress lives in an in-memory hub. Requests
 |---|---|---|
 | GET | `/v1/queue` | JSON `{"items":[...],"facets":...}` |
 | GET | `/v1/queue/stream` | `text/event-stream`, event name `signal` |
-| GET | `/v1/cases` | Open cases |
-| POST | `/v1/cases/{id}/advance` | Next case state |
+| GET | `/v1/cases` | JSON `{"items":[...],"states":[...],"facets":...}`: the cases, open ones unless the Andamento filter asks otherwise |
+| POST | `/v1/cases/{id}/advance` | Next case state; answers the case |
+| POST | `/v1/signals/{id}/case` | Abrir caso: `202` `{"request_id"}` once the command is accepted (see "Opening a case from a signal") |
 | GET | `/v1/actions` | Advisor actions |
 | PUT | `/v1/actions/{id}` | Contatado or Adiar 1 h |
-| DELETE | `/v1/actions/{id}` | Undo |
+| DELETE | `/v1/actions/{id}` | Removes the advisor's marks from the signal: reactivates a snoozed signal and unmarks a contacted one (both at once when it has both) |
 | GET | `/v1/customers/{id}` | Customer book row |
-| GET | `/v1/customers/{id}/timeline` | Customer 360 rows. Each row may carry `source`, the routing key of its event, and `occurred_at`, the event time in RFC 3339; `ago` stays as indexed. An account row may also carry `product_id` (a purchase) and `amount_cents`, the event amount in USD cents (v1 dollars are scaled by 100; an amount that is not a number or is past 2^53 cents is left out) |
+| GET | `/v1/customers/{id}/timeline` | Customer 360 rows. Each row may carry `source`, the routing key of its event, and `occurred_at`, the event time in RFC 3339; `ago` stays as indexed. An account row may also carry `product_id` (a purchase) and `amount_cents`, the event amount in USD cents (v1 dollars are scaled by 100; an amount that is not a number or is past 2^53 cents is left out). A `reavaliacao` row that changed nothing (`amount_cents` 0) is not listed |
 | GET | `/v1/review` | Triage review queue |
 | PUT | `/v1/review/{id}` | Correct an intent |
-| GET | `/v1/manager` | Manager snapshot |
+| GET | `/v1/manager` | Manager snapshot: `backlog` per advisor (`open`, `risk`, `overdue`), `avgFirstContactMin` and `avgFirstContactYesterday`, `reviewPct` (share of the triaged messages still awaiting human review, whole percent), `fallbackPct`, `intents` (intent label, as in the Motivo filter, to its share of the triaged messages in whole percent, rounded half up, so the sum may be a point off 100; intents without messages are left out), and `atRisk` (cases with the SLA at risk or overdue, least time left first). "At risk" and "overdue" are cases' own SLA states, the ones `GET /v1/cases` reports as `slaState` |
 
 A queue alert item carries `alert`, the advisory kind (`saque`, `queda`, `aporte`, `segmento`, `contato`, or `perfil`), with `rule` and `reason`. A `perfil` item ("Compra acima do perfil de investidor") also carries `amount` in dollars, `product_id`, `risk`, `profile`, and `max_risk`; its `reason` names the product from the account-sim catalog, for example "Compra de US$ 1.000,00 em Cobalto Semicondutores, risco 5. Perfil conservador vai até risco 2.", and falls back to the `product_id`, then "produto", when the catalog is unavailable; without a `risk` it leaves the risk out. The BFF reads the catalog with a 300 ms deadline and keeps the names after the first successful read; a failed read is retried on the next render. The motivo facet labels it "Compra acima do perfil". A `perfil` alert opens no case.
+
+### Advisor queue: filters, facets and visibility
+
+`GET /v1/queue` and `GET /v1/cases` take the same query: `q` (client name) and the repeated `andamento`, `sla`, `sinal`, `motivo` and `segmento`. Values of one parameter are alternatives; different parameters must all hold. Both routes filter the same set of cards, signals plus cases, with the same rules, and answer the same `facets`.
+
+- **Search.** `q` matches the client name ignoring case and accents: `sergio` finds "Sérgio" and `Patricia` finds "Patrícia". The BFF folds the Portuguese accented letters (and drops combining marks) on both sides.
+- **Andamento.** Values are `Novo sinal`, `Adiados`, `Aberto`, `Em atendimento`, `Aguardando cliente` and `Resolvido`. Without the parameter the board is the new signals plus the cases that are not resolved. A snoozed signal is listed only with `andamento=Adiados`, a resolved case only with `andamento=Resolvido`.
+- **Facets.** `facets` has one list per parameter with every value and its `count`. The count is the number of cards (signals plus cases) the two routes list together when that value is the only one picked for its parameter and every other parameter stays as requested, the default Andamento rule included. The `Resolvido` count is what the `/fila` header shows as "resolvidos".
+- **SLA, Sinal and Motivo of a case.** A case is filtered and counted by its own `slaState` and segment, and by the signal it came from for Sinal and Motivo. A case whose signal the queue does not serve matches no Sinal or Motivo value.
+- **A signal a case represents is not listed.** A signal that opened or joined a case is shown by that case: `GET /v1/queue` leaves out, and no facet counts as a signal, every signal for which some case, of any state, has `signal` equal to the signal's id or has a history entry whose `signal` is that id. For a live message the board also keeps the id of the `message.received` event it was triaged from (`source_event_id` of `message.triaged`) and matches it the same way, because a case opened by cases' intake, and the history line of a later message, name that id. The source id stays inside the BFF; it is not in the signal JSON.
+- **Advisor actions on a signal.** A contacted signal carries `contacted_at`. A signal snoozed until a future time carries `snoozed_until`; once that time passes it is a new signal again and the field is gone. Without the advisory actions port no signal is contacted or snoozed.
+
+### Case JSON
+
+A case in `GET /v1/cases` and in the answer of `POST /v1/cases/{id}/advance`:
+
+| Field | Meaning |
+|---|---|
+| `id`, `client`, `name`, `segment` | Case id, customer id, and the name and segment of the advisory book |
+| `signal` | Id of the signal the case was opened from |
+| `state` | Index into `states` (`Aberto`, `Em atendimento`, `Aguardando cliente`, `Resolvido`) |
+| `openedAgo`, `slaTotal` | Minutes since the case opened, and the SLA in minutes |
+| `slaHalved` | `true` when cases halved the segment's SLA for this case (exit risk, frustration, a request for a human, or a relevant withdrawal), so `slaTotal` is half the segment's own; left out when false. The card and the detail then show "Prazo prioritário: metade do SLA {segment}" |
+| `slaRemaining` | Minutes left of the SLA as cases counts them, negative once overdue. The clock restarts when the client changes segment (ADR 0012), so it is not `slaTotal − openedAgo` |
+| `slaState` | `No prazo`, `Vencendo`, `Vencido` or `Concluído`, decided by cases at read time; the manager panel counts by the same state. Only when cases sends none (an older cases binary during a deploy) the BFF applies the same formula to `slaRemaining`: resolved → `Concluído`; below 0 → `Vencido`; below `max(slaTotal × 33 / 100, 20)` → `Vencendo`; otherwise `No prazo` |
+| `origin` | The signal the case came from, for the card: `mensagem · {intent}` or the alert label in lower case (`saque relevante`). Left out when the queue does not serve that signal, and in the answer of `advance` |
+| `escalated` | The SLA escalation fired |
+| `history` | Lines `{ago, kind, text, signal?}`, oldest first: the opening, every state change, every later client message while the case is open, and every signal an advisor joined to it. `signal` is the id of the queue signal the line is about, when there is one |
+
+### Opening a case from a signal
+
+`POST /v1/signals/{id}/case` is the advisor's Abrir caso (ADR 0013). It has no body and requires an `Idempotency-Key` header of 1 to 128 bytes; the same key for the same signal is the same command, so a retry after a failed or refused POST sends the key again. A key already answered `202` replays the `202` and publishes nothing, so once the browser gives up waiting for an outcome its retry sends a new key.
+
+| Status | When |
+|---|---|
+| `202` `{"request_id"}` | advisory has the command in its outbox. Nothing is opened yet |
+| `400` | The id is not a UUIDv7, or the key is missing or too long |
+| `404` | The queue does not serve that signal |
+| `429` `{"error":"ten_minutes"}` | More than 20 new keys in ten minutes, counted across every caller. A key already answered `202` replays for free. advisory is not called; the browser keeps the card and the key and shows "Muitos casos abertos em pouco tempo. Aguarde alguns minutos e tente de novo." |
+| `503` | The advisory actions port is not configured |
+| `502` | The queue or advisory failed |
+
+The signal is looked up among every signal the queue serves, including one a case already represents and `GET /v1/queue` no longer lists, so a retry does not become `404` once cases has acted. cases then either opens a case whose `signal` is the signal id, with the SLA of the client's segment, or, when the client already has an open case, adds one history line whose `signal` is the signal id to that case and opens nothing. There is no reply event. The browser shows the card as pending and re-reads the unfiltered `GET /v1/cases` once a second, ten times: a case that is not resolved with `signal` equal to the id means "opened"; a history entry with that `signal` means "joined the client's open case". It then reloads both lists, where the signal is gone and the case carries it. Without an outcome in that time, or on a refusal, the signal card stays and the advisor can retry.
 
 ## POV routes
 
@@ -29,8 +73,8 @@ Money fields are integer USD cents. Every POST requires `Idempotency-Key`. A mis
 
 | Method | Path | Result |
 |---|---|---|
-| GET | `/v1/client-pov/customers` | The three clients: name, segment, assets, SLA, advisor, since from the book, hint |
-| GET | `/v1/client-pov/customers/{id}` | Home: assets, caixa, allocation, advisor, since from the book, activity, messages |
+| GET | `/v1/client-pov/customers` | The three clients: name, assets, advisor, hint (which names no segment), and `segment`, `sla` and `since` from the advisory book. `segment` is the client's current segment and `sla` the response-time text of that segment ("12 h"); all three are empty strings when advisory cannot answer, and `sla` is also empty for a segment without an SLA text. The UI leaves out an empty segment or SLA |
+| GET | `/v1/client-pov/customers/{id}` | Home: assets, caixa, allocation, advisor, activity, messages, and `segment`, `sla` and `since` from the advisory book, with the same rule |
 | POST | `/v1/client-pov/customers/{id}/deposits` | `202` `{"event_id"}`. Body: `amount`, `origin` |
 | POST | `/v1/client-pov/customers/{id}/withdrawals` | `202`, or `422` when amount exceeds caixa. Body: `amount`, `destination` |
 | POST | `/v1/client-pov/customers/{id}/messages` | `202`. Body: `channel` `chat` or `e-mail`, `text` |
@@ -188,7 +232,7 @@ The BFF serves home `v1` with every moment variant of the priority list and the 
 
 - `moment`: one card, the first variant of the list whose sources answered and whose fact holds. Every `{{first}}` title has a form without the name for when the advisory customer read fails ("Faltam …", "Você agora é …", "Sua revisão …", "89% do seu …").
   - `portfolio_drop` (moments and advisory; catalog for the product name): advisory reports `portfolio_drop` when the customer's latest `reavaliacao` is for the current simulated day (the day account-sim reports) and lost more than 15% of the patrimony before it, with `drop_bp` (the loss in positive basis points), `drop_product_id`, `drop_product_bp` (signed), and `drop_day`. Kicker "Sua carteira hoje", title "{{first}}, sua carteira caiu {{drop_pct}} hoje" ("Sua carteira caiu …" without the name), body "{{product}} recuou {{product_pct}} no dia simulado {{day}}. A {{advisor}} já foi avisada e vai falar com você.", `tone` `neg`, `icon` `drop`, action "Ver carteira" → `navigate` `carteira`. `drop_pct` and `product_pct` are unsigned with one decimal ("15,5%", "53,5%"); `product` is the catalog name. When the catalog fails or does not name the product, the product did not fall (`drop_product_bp` ≥ 0), or advisory has no advisor, the variant is skipped. On the next flat day the fact no longer holds, so Mariana is back to `portfolio_review` (or `case_open` with an open case).
-  - `case_open` (cases and advisory): kicker "Atendimento em andamento", title "Sua reclamação está com a {{advisor}}", body "Como cliente {{segment}}, você recebe resposta em até {{sla}}." with the book segment's catalog SLA (a segment without one skips the variant), meta "Protocolo {{protocol}} · aberto {{age}}", `tone` `info`, `icon` `inbox`, action "Ver conversa" → `panel` `message`. It shows the most recently opened case that is not "Resolvido". `protocol` is the first 13 characters of the case id, uppercased (`01A0E3A5-2F4C`); `age` is the relative time since the case opened ("há 3 min").
+  - `case_open` (cases and advisory): kicker "Atendimento em andamento", title "Sua reclamação está com a {{advisor}}", body "Como cliente {{segment}}, este atendimento tem resposta em até {{sla}}." where `sla` is the SLA of that case (its `slaTotal` minutes, written as "30 min" or "12 h"), not the segment's catalog SLA (a segment without a catalog SLA, or a case without an SLA, skips the variant). When the case SLA is not the segment's own, the body is the `body_priority` copy instead: "Como cliente {{segment}}, seu prazo padrão é de {{base sla}}. Este atendimento é prioritário: resposta em até {{case sla}}.". Meta "Protocolo {{protocol}} · aberto {{age}}", `tone` `info`, `icon` `inbox`, action "Ver conversa" → `panel` `message`. It shows the most recently opened case that is not "Resolvido". `protocol` is the first 13 characters of the case id, uppercased (`01A0E3A5-2F4C`); `age` is the relative time since the case opened ("há 3 min").
   - `segment_upgraded` (moments): kicker "Novo segmento", title "{{first}}, você agora é cliente {{segment}}", body "Sua assessoria passa a responder em até {{sla}}." with the upgraded segment and its SLA (a segment without one skips the variant), `tone` `gold`, `icon` `segment`, action "Ver produtos" → `navigate` `investir`.
   - `segment_upgrade_near` (moments): kicker "Perto do Advance", title "{{first}}, faltam {{gap}} para o Advance" with the advisory gap in cents formatted as money, body "A partir de {{threshold}} você vira cliente Advance, com resposta da assessoria em até {{sla}}." with the Essencial bound formatted as money ("US$ 10.000,00") and the Advance catalog SLA, `tone` `gold`, `icon` `segment`, action "Depositar" → `panel` `deposit`.
   - `idle_cash` (moments and profile): kicker "Caixa parado", title "{{first}}, {{cash_share}} do seu patrimônio está em caixa", body "{{cash}} parados há {{idle_days}}. Veja produtos para o seu perfil {{profile}}.", `tone` `info`, `icon` `cash`, action "Ver produtos" → `navigate` `investir`. `cash_share` is the largest-remainder share of cash in the advisory patrimony, `profile` is lowercase, and `idle_days` ("1 dia", "4 dias") is the whole days since the newest `account.event.recorded` row of the timeline that is not a `reavaliacao`, at least 1. When the timeline failed or has no such row, the body is "{{cash}} parados em caixa. Veja produtos para o seu perfil {{profile}}."

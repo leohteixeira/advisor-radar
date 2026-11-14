@@ -72,6 +72,7 @@ context in the headers.
 | `message.received` | account-sim | triage, timeline-indexer |
 | `message.triaged` | triage | advisory, cases, timeline-indexer |
 | `alert.raised` | advisory | bff, cases, timeline-indexer |
+| `case.open.requested` | advisory | cases |
 | `case.opened`, `case.status.changed` | cases | bff, timeline-indexer |
 | `case.sla.breached` | cases | bff, advisory |
 
