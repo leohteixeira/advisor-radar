@@ -258,7 +258,7 @@ func (c customerCases) CustomerCases(context.Context, string) ([]Case, []string,
 func TestScreenCases_OpenCases(t *testing.T) {
 	t.Parallel()
 	src := screenCases{cases: customerCases{items: []Case{
-		{ID: "open", State: 0, OpenedAgo: 3},
+		{ID: "open", State: 0, OpenedAgo: 3, SlaTotal: 720},
 		{ID: "working", State: 1, OpenedAgo: 60},
 		{ID: "resolved", State: 3, OpenedAgo: 5},
 		{ID: "unknown state", State: 9, OpenedAgo: -4},
@@ -268,7 +268,7 @@ func TestScreenCases_OpenCases(t *testing.T) {
 		t.Fatalf("OpenCases error = %v", err)
 	}
 	want := []screen.OpenCase{
-		{ID: "open", State: "Aberto", Age: 3 * time.Minute},
+		{ID: "open", State: "Aberto", Age: 3 * time.Minute, SLAMinutes: 720},
 		{ID: "working", State: "Em atendimento", Age: time.Hour},
 		{ID: "unknown state", State: "", Age: 0},
 	}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchManager } from '../api/bff';
+import { protocolOf } from '../api/pov';
 import type { ManagerSnapshot } from '../domain/types';
 
 function remainingText(remaining: number): string {
@@ -8,6 +9,32 @@ function remainingText(remaining: number): string {
     return `vencido há ${abs} min`;
   }
   return `${remaining} min`;
+}
+
+/** First-contact time against yesterday; a lower time is the good direction. */
+function contactDelta(today: number, yesterday: number): { text: string; tone: 'ok' | 'crit' | '' } {
+  if (yesterday <= 0) {
+    return { text: 'sem contatos ontem', tone: '' };
+  }
+  const diff = today - yesterday;
+  if (diff === 0) {
+    return { text: 'igual a ontem', tone: '' };
+  }
+  return diff < 0
+    ? { text: `−${-diff} min vs. ontem`, tone: 'ok' }
+    : { text: `+${diff} min vs. ontem`, tone: 'crit' };
+}
+
+/**
+ * What the "Classificação simplificada" share means. The figure is the share
+ * of triaged messages the keyword heuristic classified because the external
+ * model did not answer; the note never claims the model is healthy while any
+ * message took that path.
+ */
+function fallbackNote(pct: number): string {
+  return pct > 0
+    ? 'das mensagens classificadas sem o modelo externo'
+    : 'todas as mensagens passaram pelo modelo externo';
 }
 
 export function ManagerScreen() {
@@ -48,8 +75,8 @@ export function ManagerScreen() {
   const maxOpen = Math.max(...snap.backlog.map((b) => b.open), 1);
   const overdueCount = snap.atRisk.filter((k) => k.remaining < 0).length;
   const maxIntent = Math.max(...Object.values(snap.intents), 1);
-  const intents = Object.entries(snap.intents).sort((a, b) => b[1] - a[1]);
-  const delta = snap.avgFirstContactYesterday - snap.avgFirstContactMin;
+  const intents = Object.entries(snap.intents).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const delta = contactDelta(snap.avgFirstContactMin, snap.avgFirstContactYesterday);
 
   return (
     <div className="manager-screen">
@@ -57,24 +84,30 @@ export function ManagerScreen() {
         <div className="metric-card metric-card--risk">
           <span className="metric-card__label">Casos com SLA em risco</span>
           <span className="metric-card__value">{snap.atRisk.length}</span>
-          <span className="metric-card__note metric-card__note--crit">{overdueCount} vencidos</span>
+          <span className="metric-card__note metric-card__note--crit">
+            {overdueCount} {overdueCount === 1 ? 'vencido' : 'vencidos'}
+          </span>
         </div>
         <div className="metric-card">
           <span className="metric-card__label">Alerta → primeiro contato</span>
           <span className="metric-card__value">
             {snap.avgFirstContactMin} <span className="metric-card__unit">min</span>
           </span>
-          <span className="metric-card__note metric-card__note--ok">−{delta} min vs. ontem</span>
+          <span
+            className={delta.tone ? `metric-card__note metric-card__note--${delta.tone}` : 'metric-card__note'}
+          >
+            {delta.text}
+          </span>
         </div>
         <div className="metric-card">
           <span className="metric-card__label">Mensagens em revisão humana</span>
           <span className="metric-card__value">{snap.reviewPct}%</span>
-          <span className="metric-card__note">taxa de revisão</span>
+          <span className="metric-card__note">das mensagens aguardam revisão</span>
         </div>
         <div className="metric-card">
           <span className="metric-card__label">Classificação simplificada</span>
           <span className="metric-card__value">{snap.fallbackPct}%</span>
-          <span className="metric-card__note">modelo externo saudável</span>
+          <span className="metric-card__note">{fallbackNote(snap.fallbackPct)}</span>
         </div>
       </div>
 
@@ -107,6 +140,9 @@ export function ManagerScreen() {
 
         <section className="manager-panel">
           <h2>Casos com SLA em risco</h2>
+          {snap.atRisk.length === 0 ? (
+            <p className="manager-panel__empty">Nenhum caso com SLA em risco agora.</p>
+          ) : null}
           {snap.atRisk.map((k) => (
             <div key={k.id} className="manager-risk" data-testid={`risk-${k.id}`}>
               <div>
@@ -114,7 +150,7 @@ export function ManagerScreen() {
                   {k.client} <span>{k.segment}</span>
                 </strong>
                 <span>
-                  {k.advisor} · <code>{k.id}</code>
+                  {k.advisor} · Caso <code>{protocolOf(k.id)}</code>
                 </span>
               </div>
               <span className={k.remaining < 0 ? 'manager-risk__rem--over' : 'manager-risk__rem'}>

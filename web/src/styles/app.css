@@ -240,17 +240,43 @@ button {
   padding: 0 16px 24px;
 }
 
+/* Below the desktop board the columns stack, so nothing scrolls sideways:
+   one column on a phone; from 720px two, the signals on the left beside the
+   case columns stacked on the right. */
 .queue-board--phone {
-  grid-auto-flow: column;
-  grid-auto-columns: min(84vw, 320px);
-  grid-template-columns: none;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scroll-padding-left: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px 12px;
 }
 
-.queue-board--phone .queue-column {
-  scroll-snap-align: start;
+@media (min-width: 720px) {
+  .queue-board--phone {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    /* The last row takes the height the signals column adds, so the case
+       columns stay together at the top. */
+    grid-template-rows: repeat(3, auto) 1fr;
+  }
+
+  .queue-board--phone .queue-column--signals {
+    grid-row: 1 / -1;
+  }
+}
+
+.queue-hint {
+  margin: 0;
+  padding: 0 16px 12px;
+  font-size: 13px;
+  color: var(--ar-ink-2);
+}
+
+.queue-hint button {
+  min-height: 36px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--ar-ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
 }
 
 .queue-board--desktop {
@@ -816,6 +842,25 @@ a.detail__360 {
   right: 0;
 }
 
+/* On a phone a menu hangs from the whole filter row, edge to edge, instead of
+   from its own button, so it never leaves the viewport. */
+@media (max-width: 719px) {
+  .filter-bar__row {
+    position: relative;
+  }
+
+  .filter-bar__group {
+    position: static;
+  }
+
+  .filter-bar__menu,
+  .filter-bar__group--right .filter-bar__menu {
+    left: 0;
+    right: 0;
+    min-width: 0;
+  }
+}
+
 .filter-bar__option {
   display: flex;
   align-items: center;
@@ -1005,18 +1050,39 @@ a.detail__360 {
 }
 
 @media (max-width: 719px) {
+  /* The destinations take a second row, so none is clipped on a phone. */
   .app-shell__header {
-    gap: 8px;
+    height: auto;
+    flex-wrap: wrap;
+    gap: 0 8px;
     padding: 0 12px;
   }
 
   .app-shell__brand {
+    min-height: 52px;
+    margin-right: auto;
     font-size: 16px;
     gap: 8px;
   }
 
   .app-shell__persona {
+    order: 1;
+    flex: 1 0 100%;
     margin-left: 0;
+    overflow-x: visible;
+  }
+
+  .persona-switch__btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 4px;
+    font-size: 13px;
+  }
+
+  /* Under the header: 52px brand row, 44px destinations row, 1px border. */
+  .queue-toolbar {
+    top: 97px;
   }
 
   .review-screen,
@@ -1246,10 +1312,9 @@ a.detail__360 {
 
 .timeline-chips {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  overflow-x: auto;
   margin-top: var(--ar-space-2);
-  scrollbar-width: none;
 }
 
 .chip {
@@ -1679,6 +1744,12 @@ a.detail__360 {
   margin: 0;
   font-weight: 600;
   font-size: 13px;
+}
+
+.manager-panel__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ar-ink-2);
 }
 
 .manager-backlog__row {
@@ -5080,6 +5151,13 @@ a.detail__360 {
   color: var(--p-acc-text);
 }
 
+/* With no cash to invest the amount and its suggestions are inactive. */
+.pov-app .pov-buy__chips button:disabled,
+.pov-buy__amount input:disabled {
+  color: var(--p-ink3);
+  cursor: default;
+}
+
 .pov-buy__warn {
   display: flex;
   flex-direction: column;
@@ -5106,7 +5184,8 @@ a.detail__360 {
   color: var(--p-ink2);
 }
 
-.pov-buy > p[role='alert'] {
+.pov-buy > p[role='alert'],
+.pov-buy__amount > p[role='alert'] {
   margin: 0;
   font-size: 13.5px;
   font-weight: 700;
@@ -5481,6 +5560,12 @@ a.detail__360 {
   background: var(--p-bg);
 }
 
+/* The panel takes focus as a container when it opens; the ring belongs to
+   its controls. */
+.pov-app__panel:focus {
+  outline: none;
+}
+
 .pov-app[data-layout='desktop'] .pov-app__panel {
   position: absolute;
   top: 0;
@@ -5539,7 +5624,7 @@ a.detail__360 {
   border-bottom: 2px solid var(--p-line);
 }
 
-.pov-app__amount > span[data-over='true'] {
+.pov-app__amount > span[data-invalid='true'] {
   border-bottom-color: var(--p-neg);
 }
 
@@ -6001,3 +6086,119 @@ a.detail__360 {
 /* The embed height follows its content, never the containing iframe viewport. */
 .selection.selection--embed { min-height: 0; }
 .selection--embed .selection__sdui { padding: 0; }
+/* So the phone mockup shows its whole screen instead of scrolling inside, and
+   the JSON wraps instead of scrolling sideways. */
+.selection--embed .selection__sdui-phone,
+.selection--embed.selection--wide .selection__sdui-phone {
+  height: auto;
+  overflow: hidden;
+}
+.selection--embed.selection--wide .selection__sdui-json {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: visible;
+}
+
+/* Advisor queue: snoozed signals, a pending Abrir caso, and the case history. */
+.signal-card__snoozed {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--ar-radius-sm);
+  background: var(--ar-line-2);
+  color: var(--ar-ink-2);
+  font: var(--ar-text-label);
+  align-self: flex-start;
+}
+
+.signal-card__actions button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.detail__history {
+  margin: var(--ar-space-4) 0;
+}
+
+.detail__history-title {
+  margin: 0 0 8px;
+  font: 600 13px/1.2 var(--ar-font-sans);
+  color: var(--ar-ink-2);
+}
+
+.detail__history-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ar-ink-3);
+}
+
+.detail__history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail__history-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ar-line-2);
+  font-size: 13px;
+}
+
+.detail__history-age {
+  flex: none;
+  color: var(--ar-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Unknown route. */
+.not-found {
+  box-sizing: border-box;
+  min-height: 100vh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 48px 16px;
+  color: var(--ar-ink);
+}
+
+.not-found__brand {
+  margin: 0 0 24px;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.not-found h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.not-found p {
+  margin: 0 0 16px;
+  color: var(--ar-ink-2);
+}
+
+.not-found ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.not-found a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--ar-line);
+  border-radius: 6px;
+  background: var(--ar-surface);
+  color: var(--ar-ink);
+  font-weight: 600;
+  text-decoration: none;
+}

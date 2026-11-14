@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +29,8 @@ type memStore struct {
 	history []cases.HistoryRow
 	locks   map[string]*sync.Mutex
 	failIns string
+	// arms numbers the delay arms, so every arm has its own ArmedAt.
+	arms int
 }
 
 type memOutbox struct {
@@ -42,6 +45,7 @@ type memTx struct {
 	outbox  map[string]cases.OutboxRow
 	order   []string
 	delays  []cases.DelayArm
+	rearmed map[string]struct{}
 	history []cases.HistoryRow
 	dirty   map[string]cases.CaseRow
 	held    []*sync.Mutex
@@ -98,8 +102,25 @@ func (s *memStore) WithTx(ctx context.Context, fn func(cases.Tx) error) error {
 		s.outbox[id] = memOutbox{row: row}
 		s.order = append(s.order, id)
 	}
-	s.delays = append(s.delays, tx.delays...)
-	s.history = append(s.history, tx.history...)
+	// A re-arm replaces the case's delay row, like the upsert on sla_delay.
+	s.delays = slices.DeleteFunc(s.delays, func(arm cases.DelayArm) bool {
+		_, replaced := tx.rearmed[arm.CaseID]
+		return replaced
+	})
+	for _, arm := range tx.delays {
+		s.arms++
+		arm.ArmedAt = time.Unix(int64(s.arms), 0).UTC()
+		s.delays = append(s.delays, arm)
+	}
+	for _, row := range tx.history {
+		// A signal joins a case at most once (case_history_case_signal_idx).
+		if row.SignalID != "" && slices.ContainsFunc(s.history, func(h cases.HistoryRow) bool {
+			return h.CaseID == row.CaseID && h.SignalID == row.SignalID
+		}) {
+			continue
+		}
+		s.history = append(s.history, row)
+	}
 	return nil
 }
 
@@ -220,6 +241,19 @@ func (t *memTx) ArmDelay(ctx context.Context, caseID string, ttlMs int) error {
 	if t.store.failIns == "delay" {
 		return errors.New("forced delay arm failure")
 	}
+	t.delays = append(t.delays, cases.DelayArm{CaseID: caseID, TTLMs: ttlMs})
+	return nil
+}
+
+func (t *memTx) RearmDelay(ctx context.Context, caseID string, ttlMs int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if t.rearmed == nil {
+		t.rearmed = make(map[string]struct{})
+	}
+	t.rearmed[caseID] = struct{}{}
+	t.delays = slices.DeleteFunc(t.delays, func(arm cases.DelayArm) bool { return arm.CaseID == caseID })
 	t.delays = append(t.delays, cases.DelayArm{CaseID: caseID, TTLMs: ttlMs})
 	return nil
 }
@@ -351,20 +385,22 @@ func (s *memStore) ListUnpublishedDelays(ctx context.Context) ([]cases.DelayArm,
 	return out, nil
 }
 
-func (s *memStore) MarkDelayPublished(ctx context.Context, caseID string, at time.Time) error {
+// MarkDelayPublished marks the listed arm. An arm replaced since it was
+// listed is left alone, like the armed_at match on sla_delay.
+func (s *memStore) MarkDelayPublished(ctx context.Context, arm cases.DelayArm, at time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.delays {
-		if s.delays[i].CaseID == caseID && !s.delays[i].Published {
+		if s.delays[i].CaseID == arm.CaseID && s.delays[i].ArmedAt.Equal(arm.ArmedAt) && !s.delays[i].Published {
 			s.delays[i].Published = true
 			_ = at
 			return nil
 		}
 	}
-	return fmt.Errorf("unknown delay %s", caseID)
+	return nil
 }
 
 func (s *memStore) delayCount() int {
@@ -596,7 +632,8 @@ func TestHandleBreach_Idempotent(t *testing.T) {
 	}
 	before := store.mustCase(t, "k-breach")
 
-	if err := cases.HandleBreach(ctx, store, "k-breach", time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)); err != nil {
+	// Advance halved is 120 minutes: the delay dead-letters at 14:00.
+	if err := cases.HandleBreach(ctx, store, "k-breach", time.Date(2026, 9, 27, 14, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("first HandleBreach: %v", err)
 	}
 	after := store.mustCase(t, "k-breach")
@@ -617,7 +654,7 @@ func TestHandleBreach_Idempotent(t *testing.T) {
 		t.Fatalf("breach outbox rows = %d, want 1", breachCount)
 	}
 
-	if err := cases.HandleBreach(ctx, store, "k-breach", time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)); err != nil {
+	if err := cases.HandleBreach(ctx, store, "k-breach", time.Date(2026, 9, 27, 14, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("second HandleBreach: %v", err)
 	}
 	if store.outboxCount() != 2 { // opened + one breach
@@ -724,7 +761,7 @@ func TestPublish_BrokerRefusesThenAccepts(t *testing.T) {
 		t.Fatalf("published = %d, want 1 after opened", store.publishedCount())
 	}
 
-	if err := cases.HandleBreach(ctx, store, "k-pub", time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)); err != nil {
+	if err := cases.HandleBreach(ctx, store, "k-pub", time.Date(2026, 9, 27, 14, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("HandleBreach: %v", err)
 	}
 
@@ -1052,7 +1089,7 @@ func TestApplyBreachDelivery_PlainAndJSON(t *testing.T) {
 		}
 		body := []byte(`{
 			"event_id":"ignore-me",
-			"occurred_at":"2026-09-27T12:00:00Z",
+			"occurred_at":"2026-09-27T16:00:00Z",
 			"customer_id":"c02",
 			"schema_version":1,
 			"payload":{"case_id":"k-json","state":"Aberto","escalated":false,"sla_total_minutes":240}

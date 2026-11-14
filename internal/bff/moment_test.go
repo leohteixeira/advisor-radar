@@ -180,7 +180,13 @@ func (r *recordingCases) ListCases(_ context.Context, req *casesv1.ListCasesRequ
 	r.seen = append(r.seen, req.GetCustomerId())
 	r.mu.Unlock()
 	return &casesv1.ListCasesResponse{
-		Items:  []*casesv1.Case{{Id: "k1", Client: req.GetCustomerId(), State: 1, OpenedAgo: 12}},
+		Items: []*casesv1.Case{{
+			Id: "k1", Client: req.GetCustomerId(), State: 1, OpenedAgo: 12, SlaTotal: 120, RemainingMinutes: 100, SlaHalved: true,
+			History: []*casesv1.CaseHistoryEntry{
+				{Ago: 12, Kind: "caso", Text: "Caso aberto"},
+				{Ago: 3, Kind: "sinal", Text: "Sinal anexado ao caso pela assessoria: Saque relevante", Signal: "s-joined"},
+			},
+		}},
 		States: bff.CaseStates,
 	}, nil
 }
@@ -203,6 +209,17 @@ func TestGRPCCases_CustomerCases(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ID != "k1" || items[0].Client != sim.CustomerMariana || items[0].State != 1 || items[0].OpenedAgo != 12 {
 		t.Errorf("items = %+v", items)
+	}
+	// The SLA clock and the joined signal are what cases reports.
+	if len(items) == 1 {
+		got := items[0]
+		wantHistory := []bff.CaseHistoryEntry{
+			{Ago: 12, Kind: "caso", Text: "Caso aberto"},
+			{Ago: 3, Kind: "sinal", Text: "Sinal anexado ao caso pela assessoria: Saque relevante", Signal: "s-joined"},
+		}
+		if got.SlaTotal != 120 || got.SlaRemaining != 100 || !got.SlaHalved || !slices.Equal(got.History, wantHistory) {
+			t.Errorf("case = %+v, want 100 of 120 halved minutes left and history %+v", got, wantHistory)
+		}
 	}
 	if len(states) != len(bff.CaseStates) {
 		t.Errorf("states = %v", states)

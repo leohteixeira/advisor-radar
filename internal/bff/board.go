@@ -15,36 +15,42 @@ const ringCapacity = 64
 const alertPerfil = "perfil"
 
 // Signal is one queue card. Field names match the frontend contract.
+// SourceID is the id of the message.received event a live message was triaged
+// from: a case opened by cases' intake names that id, not the triaged event's,
+// so the queue matches both. It stays inside the BFF. SnoozedUntil is set only
+// while the signal is snoozed.
 type Signal struct {
-	ID          string             `json:"id"`
-	Kind        string             `json:"kind"`
-	Client      string             `json:"client"`
-	Name        string             `json:"name,omitempty"`
-	Segment     string             `json:"segment,omitempty"`
-	Ago         int                `json:"ago,omitempty"`
-	Text        string             `json:"text,omitempty"`
-	Intent      string             `json:"intent,omitempty"`
-	Dist        map[string]float64 `json:"dist,omitempty"`
-	Frustration *int               `json:"frustration,omitempty"`
-	Churn       *bool              `json:"churn,omitempty"`
-	ChurnConf   string             `json:"churnConf,omitempty"`
-	Human       *bool              `json:"human,omitempty"`
-	Channel     string             `json:"channel,omitempty"`
-	Fallback    bool               `json:"fallback,omitempty"`
-	Alert       string             `json:"alert,omitempty"`
-	Amount      float64            `json:"amount,omitempty"`
-	Before      float64            `json:"before,omitempty"`
-	After       float64            `json:"after,omitempty"`
-	From        string             `json:"from,omitempty"`
-	To          string             `json:"to,omitempty"`
-	Days        int                `json:"days,omitempty"`
-	Rule        string             `json:"rule,omitempty"`
-	Reason      string             `json:"reason,omitempty"`
-	ProductID   string             `json:"product_id,omitempty"`
-	Risk        int                `json:"risk,omitempty"`
-	Profile     string             `json:"profile,omitempty"`
-	MaxRisk     int                `json:"max_risk,omitempty"`
-	ContactedAt *time.Time         `json:"contacted_at,omitempty"`
+	ID           string             `json:"id"`
+	SourceID     string             `json:"-"`
+	Kind         string             `json:"kind"`
+	Client       string             `json:"client"`
+	Name         string             `json:"name,omitempty"`
+	Segment      string             `json:"segment,omitempty"`
+	Ago          int                `json:"ago,omitempty"`
+	Text         string             `json:"text,omitempty"`
+	Intent       string             `json:"intent,omitempty"`
+	Dist         map[string]float64 `json:"dist,omitempty"`
+	Frustration  *int               `json:"frustration,omitempty"`
+	Churn        *bool              `json:"churn,omitempty"`
+	ChurnConf    string             `json:"churnConf,omitempty"`
+	Human        *bool              `json:"human,omitempty"`
+	Channel      string             `json:"channel,omitempty"`
+	Fallback     bool               `json:"fallback,omitempty"`
+	Alert        string             `json:"alert,omitempty"`
+	Amount       float64            `json:"amount,omitempty"`
+	Before       float64            `json:"before,omitempty"`
+	After        float64            `json:"after,omitempty"`
+	From         string             `json:"from,omitempty"`
+	To           string             `json:"to,omitempty"`
+	Days         int                `json:"days,omitempty"`
+	Rule         string             `json:"rule,omitempty"`
+	Reason       string             `json:"reason,omitempty"`
+	ProductID    string             `json:"product_id,omitempty"`
+	Risk         int                `json:"risk,omitempty"`
+	Profile      string             `json:"profile,omitempty"`
+	MaxRisk      int                `json:"max_risk,omitempty"`
+	ContactedAt  *time.Time         `json:"contacted_at,omitempty"`
+	SnoozedUntil *time.Time         `json:"snoozed_until,omitempty"`
 }
 
 // StreamEvent is one retained SSE frame (event name is always "signal").
@@ -141,6 +147,7 @@ func (b *Board) applyAlert(ctx context.Context, eventID, customerID string, payl
 	var p struct {
 		Kind      string  `json:"kind"`
 		Rule      string  `json:"rule"`
+		Reason    string  `json:"reason"`
 		Amount    float64 `json:"amount"`
 		Before    float64 `json:"before"`
 		After     float64 `json:"after"`
@@ -179,6 +186,12 @@ func (b *Board) applyAlert(ctx context.Context, eventID, customerID string, payl
 		Profile:   p.Profile,
 		MaxRisk:   p.MaxRisk,
 	}
+	// advisory describes what happened on every alert. A perfil card keeps the
+	// reason enrichSignals writes, which names the product; advisory's only
+	// has its id. An alert raised before advisory sent a reason has none.
+	if p.Kind != alertPerfil {
+		sig.Reason = p.Reason
+	}
 	return b.appendLive(sig)
 }
 
@@ -187,6 +200,7 @@ func (b *Board) applyTriaged(ctx context.Context, eventID, customerID string, pa
 		return err
 	}
 	var p struct {
+		SourceID    string  `json:"source_event_id"`
 		Text        string  `json:"text"`
 		Intent      string  `json:"intent"`
 		IntentProb  float64 `json:"intent_prob"`
@@ -215,6 +229,7 @@ func (b *Board) applyTriaged(ctx context.Context, eventID, customerID string, pa
 	human := p.WantsHuman >= 0.5
 	sig := Signal{
 		ID:          eventID,
+		SourceID:    p.SourceID,
 		Kind:        "message",
 		Client:      customerID,
 		Text:        p.Text,

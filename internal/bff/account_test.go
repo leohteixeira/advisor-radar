@@ -23,12 +23,198 @@ import (
 	"github.com/leohteixeira/advisor-radar/internal/sim"
 )
 
-// sinceQueue answers the book "since" for any customer so the POV JSON is
-// fully populated.
+// seedSegments is the advisory book segment of each demo client at the seed.
+var seedSegments = map[string]string{
+	sim.CustomerMariana:  "Singular",
+	sim.CustomerFernanda: "Essencial",
+	sim.CustomerThiago:   "Advance",
+}
+
+// sinceQueue answers the seeded book segment and a "since" for any customer,
+// so the POV JSON is fully populated.
 type sinceQueue struct{ bff.EmptyQueue }
 
 func (sinceQueue) GetCustomer(_ context.Context, id string) (bff.Customer, error) {
-	return bff.Customer{Since: "since-" + id[len(id)-4:]}, nil
+	return bff.Customer{ID: id, Segment: seedSegments[id], Since: "since-" + id[len(id)-4:]}, nil
+}
+
+// bookQueue is an advisory book whose segments a test moves. It counts the
+// lookups per customer and fails them all while err is set.
+type bookQueue struct {
+	bff.EmptyQueue
+	mu       sync.Mutex
+	segments map[string]string
+	err      error
+	calls    map[string]int
+}
+
+func (q *bookQueue) GetCustomer(_ context.Context, id string) (bff.Customer, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.calls == nil {
+		q.calls = map[string]int{}
+	}
+	q.calls[id]++
+	if q.err != nil {
+		return bff.Customer{}, q.err
+	}
+	segment, ok := q.segments[id]
+	if !ok {
+		return bff.Customer{}, bff.ErrCustomerNotFound
+	}
+	return bff.Customer{ID: id, Segment: segment, Since: "2024"}, nil
+}
+
+func (q *bookQueue) lookups(id string) int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.calls[id]
+}
+
+// povBook is the part of a client POV body that follows the advisory book.
+type povBook struct {
+	CustomerID string `json:"customer_id"`
+	Segment    string `json:"segment"`
+	SLA        string `json:"sla"`
+	Since      string `json:"since"`
+	Assets     int64  `json:"assets"`
+	Hint       string `json:"hint"`
+}
+
+func decodeBody[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
+	t.Helper()
+	var body T
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d %q, want 200", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode %q: %v", rr.Body.String(), err)
+	}
+	return body
+}
+
+// The client POV shows the segment the advisory book holds now and the SLA of
+// that segment, whatever the client's segment was at the seed.
+func TestPOV_SegmentAndSLAFollowTheAdvisoryBook(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		segments map[string]string
+		want     map[string][2]string // customer id -> segment, sla
+	}{
+		{
+			name:     "seed",
+			segments: seedSegments,
+			want: map[string][2]string{
+				sim.CustomerMariana:  {"Singular", "1 h"},
+				sim.CustomerFernanda: {"Essencial", "24 h"},
+				sim.CustomerThiago:   {"Advance", "4 h"},
+			},
+		},
+		{
+			name: "after Fernanda went up and Thiago and Mariana went down",
+			segments: map[string]string{
+				sim.CustomerMariana:  "Advance",
+				sim.CustomerFernanda: "Advance",
+				sim.CustomerThiago:   "Essencial",
+			},
+			want: map[string][2]string{
+				sim.CustomerMariana:  {"Advance", "4 h"},
+				sim.CustomerFernanda: {"Advance", "4 h"},
+				sim.CustomerThiago:   {"Essencial", "24 h"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			queue := &bookQueue{segments: tt.segments}
+			h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, queue, nil, nil, dialPOV(t, sim.NewGRPCServer(sim.NewMemory(), nil)), nil)
+
+			list := decodeBody[struct {
+				Items []povBook `json:"items"`
+			}](t, getPath(t, h, t.Context(), "/v1/client-pov/customers"))
+			if len(list.Items) != len(tt.want) {
+				t.Fatalf("list has %d clients, want %d", len(list.Items), len(tt.want))
+			}
+			for _, item := range list.Items {
+				want := tt.want[item.CustomerID]
+				if item.Segment != want[0] || item.SLA != want[1] || item.Since != "2024" {
+					t.Errorf("list %s = %q/%q since %q, want %q/%q since 2024", item.CustomerID, item.Segment, item.SLA, item.Since, want[0], want[1])
+				}
+				if n := queue.lookups(item.CustomerID); n != 1 {
+					t.Errorf("list looked %s up %d times, want once", item.CustomerID, n)
+				}
+				// The hint sits under the segment badge, which moves during a
+				// walk: it must not name a segment the client may have left.
+				for _, segment := range []string{"Essencial", "Advance", "Singular"} {
+					if item.Hint == "" || strings.Contains(item.Hint, segment) {
+						t.Errorf("hint of %s = %q, want one that names no segment", item.CustomerID, item.Hint)
+					}
+				}
+			}
+
+			for id, want := range tt.want {
+				home := decodeBody[povBook](t, getPath(t, h, t.Context(), "/v1/client-pov/customers/"+id))
+				if home.Segment != want[0] || home.SLA != want[1] || home.Since != "2024" {
+					t.Errorf("home %s = %q/%q since %q, want %q/%q since 2024", id, home.Segment, home.SLA, home.Since, want[0], want[1])
+				}
+				if n := queue.lookups(id); n != 2 {
+					t.Errorf("home looked %s up %d times after the list, want once more", id, n-1)
+				}
+			}
+		})
+	}
+}
+
+// Without advisory the client POV states no segment and no SLA, never the
+// seed's; the account data, which comes from account-sim, still answers.
+func TestPOV_AdvisoryUnavailableStatesNoSegment(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		queue *bookQueue
+	}{
+		{name: "advisory is down", queue: &bookQueue{segments: seedSegments, err: status.Error(codes.Unavailable, "advisory down")}},
+		{name: "advisory does not know the client", queue: &bookQueue{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, tt.queue, nil, nil, dialPOV(t, sim.NewGRPCServer(sim.NewMemory(), nil)), nil)
+
+			list := decodeBody[struct {
+				Items []povBook `json:"items"`
+			}](t, getPath(t, h, t.Context(), "/v1/client-pov/customers"))
+			if len(list.Items) != 3 {
+				t.Fatalf("list has %d clients, want 3", len(list.Items))
+			}
+			for _, item := range list.Items {
+				if item.Segment != "" || item.SLA != "" || item.Since != "" || item.Assets == 0 {
+					t.Errorf("list %s = %+v, want assets and no segment, sla or since", item.CustomerID, item)
+				}
+			}
+			home := decodeBody[povBook](t, getPath(t, h, t.Context(), "/v1/client-pov/customers/"+sim.CustomerThiago))
+			if home.Segment != "" || home.SLA != "" || home.Since != "" || home.Assets != 6_800_000 {
+				t.Errorf("home = %+v, want assets 6800000 and no segment, sla or since", home)
+			}
+		})
+	}
+}
+
+// A segment the screen catalog has no SLA text for is still the client's
+// segment; only the SLA is left out.
+func TestPOV_SegmentWithoutSLAText(t *testing.T) {
+	t.Parallel()
+
+	queue := &bookQueue{segments: map[string]string{sim.CustomerThiago: "Prime"}}
+	h := bff.NewHandlerWithPOV(bff.NewBoard(), nil, nil, queue, nil, nil, dialPOV(t, sim.NewGRPCServer(sim.NewMemory(), nil)), nil)
+	home := decodeBody[povBook](t, getPath(t, h, t.Context(), "/v1/client-pov/customers/"+sim.CustomerThiago))
+	if home.Segment != "Prime" || home.SLA != "" {
+		t.Fatalf("home = %+v, want segment Prime and no sla", home)
+	}
 }
 
 // startPOV serves srv over bufconn and returns the BFF handler wired to it
@@ -137,7 +323,7 @@ func TestGRPCPOV_Commands(t *testing.T) {
 		route       string
 		body        string
 		wantCode    int
-		wantBody    string // exact JSON for refusals; empty means an event_id
+		wantBody    string // exact body of a refusal; empty means an event_id
 		wantCaixa   int64
 		wantAction  string
 		wantRefusal string
@@ -170,6 +356,46 @@ func TestGRPCPOV_Commands(t *testing.T) {
 		{
 			name: "zero amount is InvalidArgument", customerID: sim.CustomerFernanda, route: "deposits",
 			body: `{"amount":0,"origin":"pix"}`, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
+		},
+		{
+			name: "negative deposit is InvalidArgument", customerID: sim.CustomerFernanda, route: "deposits",
+			body: `{"amount":-500,"origin":"pix"}`, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
+		},
+		{
+			name: "negative withdrawal is InvalidArgument", customerID: sim.CustomerFernanda, route: "withdrawals",
+			body: `{"amount":-500,"destination":"conta-eua"}`, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
+		},
+		{
+			name: "zero withdrawal is InvalidArgument", customerID: sim.CustomerFernanda, route: "withdrawals",
+			body: `{"amount":0,"destination":"conta-eua"}`, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
+		},
+		{
+			name: "withdrawal without an amount is InvalidArgument", customerID: sim.CustomerFernanda, route: "withdrawals",
+			body: `{"destination":"conta-eua"}`, wantCode: http.StatusUnprocessableEntity,
+			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
+		},
+		{
+			name: "amount as text never reaches account-sim", customerID: sim.CustomerFernanda, route: "withdrawals",
+			body: `{"amount":"-5","destination":"conta-eua"}`, wantCode: http.StatusBadRequest,
+			wantBody: "Bad Request", wantCaixa: fernandaCaixa,
+		},
+		{
+			name: "amount with an exponent never reaches account-sim", customerID: sim.CustomerFernanda, route: "withdrawals",
+			body: `{"amount":1e3,"destination":"conta-eua"}`, wantCode: http.StatusBadRequest,
+			wantBody: "Bad Request", wantCaixa: fernandaCaixa,
+		},
+		{
+			name: "amount with a fraction of a cent never reaches account-sim", customerID: sim.CustomerFernanda, route: "deposits",
+			body: `{"amount":500.5,"origin":"pix"}`, wantCode: http.StatusBadRequest,
+			wantBody: "Bad Request", wantCaixa: fernandaCaixa,
+		},
+		{
+			name: "negative purchase is InvalidArgument", customerID: sim.CustomerFernanda, route: "purchases",
+			body: `{"product_id":"cobalto","amount_cents":-100000}`, wantCode: http.StatusUnprocessableEntity,
 			wantBody: `{"error":"invalid"}`, wantCaixa: fernandaCaixa, wantRefusal: "invalid",
 		},
 		{
@@ -418,8 +644,8 @@ func TestGRPCPOV_RefusalSpendsBudget(t *testing.T) {
 const (
 	goldenList = `{"items":[` +
 		`{"advisor":"Ana Paula Ribeiro","assets":24830000,"customer_id":"01a0e3a4-9a44-7566-b5de-eb2e365799f8","hint":"Já reclamou de uma transferência atrasada. Um saque grande ou uma ameaça de saída sobem a prioridade na hora.","name":"Mariana Costa","segment":"Singular","since":"since-99f8","sla":"1 h"},` +
-		`{"advisor":"Ana Paula Ribeiro","assets":820000,"customer_id":"01a0e3a4-9a44-757a-ac8f-dab7db5eb068","hint":"Perto do teto da faixa. Um depósito pode subir o segmento; uma reclamação mostra o SLA mais longo.","name":"Fernanda Lima","segment":"Essencial","since":"since-b068","sla":"24 h"},` +
-		`{"advisor":"Ana Paula Ribeiro","assets":6800000,"customer_id":"01a0e3a4-9a44-75dd-b3a0-403a7a87836e","hint":"Acabou de subir de Essencial para Advance com um depósito grande.","name":"Thiago Azevedo","segment":"Advance","since":"since-836e","sla":"4 h"}` +
+		`{"advisor":"Ana Paula Ribeiro","assets":820000,"customer_id":"01a0e3a4-9a44-757a-ac8f-dab7db5eb068","hint":"Depósitos e saques podem mudar o segmento desta cliente, e o prazo de resposta acompanha.","name":"Fernanda Lima","segment":"Essencial","since":"since-b068","sla":"24 h"},` +
+		`{"advisor":"Ana Paula Ribeiro","assets":6800000,"customer_id":"01a0e3a4-9a44-75dd-b3a0-403a7a87836e","hint":"Recebeu um depósito grande há pouco. Um saque grande pode mudar o segmento, e o prazo de resposta acompanha.","name":"Thiago Azevedo","segment":"Advance","since":"since-836e","sla":"4 h"}` +
 		`]}` + "\n"
 	goldenFernanda = `{"activity":[],"advisor":"Ana Paula Ribeiro","allocation":{"acoes":164000,"caixa":114800,"etfs":369000,"renda_fixa":172200},"assets":820000,"caixa":114800,"customer_id":"01a0e3a4-9a44-757a-ac8f-dab7db5eb068","messages":[],"name":"Fernanda Lima","segment":"Essencial","since":"since-b068","sla":"24 h"}` + "\n"
 	goldenMariana  = `{"activity":[],"advisor":"Ana Paula Ribeiro","allocation":{"acoes":9090000,"caixa":6000000,"etfs":6060000,"renda_fixa":3680000},"assets":24830000,"caixa":6000000,"customer_id":"01a0e3a4-9a44-7566-b5de-eb2e365799f8","messages":[],"name":"Mariana Costa","segment":"Singular","since":"since-99f8","sla":"1 h"}` + "\n"

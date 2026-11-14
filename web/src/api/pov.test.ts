@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from './bff';
-import { postAdvanceDay } from './pov';
+import { formatCents, postAdvanceDay, readAmount } from './pov';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -41,5 +41,55 @@ describe('postAdvanceDay', () => {
   it('rejects an error answer with its status and code', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ error: 'ten_minutes' }, 429)));
     await expect(postAdvanceDay('k1')).rejects.toMatchObject({ status: 429, code: 'ten_minutes' });
+  });
+});
+
+describe('readAmount', () => {
+  it.each([
+    ['1', 100],
+    ['1000', 100_000],
+    ['1.000', 100_000],
+    ['1.000,5', 100_050],
+    ['1.000,50', 100_050],
+    ['1.234.567,89', 123_456_789],
+    ['0,01', 1],
+    ['007', 700],
+    ['5,', 500],
+    ['US$ 1.000,00', 100_000],
+    ['US$1.000,00', 100_000],
+    ['  250,00  ', 25_000],
+    [formatCents(114_800), 114_800],
+  ])('reads %j as %d cents', (text, cents) => {
+    expect(readAmount(text)).toEqual({ cents, problem: null });
+  });
+
+  it.each(['', '   '])('reports %j as empty', (text) => {
+    expect(readAmount(text)).toEqual({ cents: 0, problem: 'empty' });
+  });
+
+  it.each(['0', '0,00', '0.000', 'US$ 0,00'])('reports %j as zero', (text) => {
+    expect(readAmount(text)).toEqual({ cents: 0, problem: 'zero' });
+  });
+
+  it.each([
+    '-5',
+    '+5',
+    '1e3',
+    'abc',
+    '5 reais',
+    '1,234',
+    '1.5',
+    '1.00',
+    '1.0000',
+    '10,5,0',
+    ',50',
+    '1 000',
+    'US$',
+    'R$ 5',
+    '$5',
+    '５',
+    '99999999999999999999',
+  ])('reports %j as unrecognised', (text) => {
+    expect(readAmount(text)).toEqual({ cents: 0, problem: 'unrecognised' });
   });
 });

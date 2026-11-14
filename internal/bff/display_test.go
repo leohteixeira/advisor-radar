@@ -168,7 +168,7 @@ func TestHTTP_CasesAndReviewIncludeDisplayFields(t *testing.T) {
 		},
 	}
 	cases := stubCases{items: []bff.Case{{
-		ID: caseID, Client: cust, Signal: "s1", State: 0, OpenedAgo: 10, SlaTotal: 60, History: []bff.CaseHistoryEntry{},
+		ID: caseID, Client: cust, Signal: "s1", State: 0, OpenedAgo: 10, SlaTotal: 60, SlaRemaining: 50, History: []bff.CaseHistoryEntry{},
 	}}}
 	review := stubReview{items: []bff.ReviewRow{{
 		ID: revID, Client: cust, Text: "preciso resgatar", Dist: map[string]float64{"Resgate": 0.4}, Ago: 3, Intent: "Resgate",

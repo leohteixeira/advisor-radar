@@ -45,13 +45,37 @@ export function formatCents(cents: number): string {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'USD' });
 }
 
+/** Why a typed amount cannot be sent. */
+export type AmountProblem = 'empty' | 'unrecognised' | 'zero';
+
+/** A typed amount in cents; with a `problem` the cents are 0 and the form must not send them. */
+export interface TypedAmount {
+  cents: number;
+  problem: AmountProblem | null;
+}
+
+// Digits, alone or in groups of three split by ".", then an optional "," with
+// up to two decimals; "US$" may come first.
+const AMOUNT = /^(?:US\$)?\s*(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{0,2}))?$/;
+
 /**
- * Parses a user-typed dollar amount ("1.000,50", "US$ 1.000,00") in pt-BR
- * notation; anything unreadable is 0.
+ * Reads a user-typed money amount in the pt-BR notation the forms show
+ * ("1000", "1.000,50", "US$ 1.000,00"). Nothing is stripped or guessed: a
+ * sign, an exponent, letters, a third decimal, or misplaced separators make
+ * the text unrecognised instead of a different amount. Whether a positive
+ * amount is acceptable (balance, minimum) is the backend's decision.
  */
-export function dollars(value: string): number {
-  const parsed = Number(value.replace(/[^0-9.,]/g, '').replace(/\./g, '').replace(',', '.'));
-  return Number.isFinite(parsed) ? parsed : 0;
+export function readAmount(value: string): TypedAmount {
+  const text = value.trim();
+  if (text === '') {
+    return { cents: 0, problem: 'empty' };
+  }
+  const match = AMOUNT.exec(text);
+  const cents = match ? Number((match[1] ?? '').replace(/\./g, '')) * 100 + Number((match[2] ?? '').padEnd(2, '0')) : NaN;
+  if (!Number.isSafeInteger(cents)) {
+    return { cents: 0, problem: 'unrecognised' };
+  }
+  return { cents, problem: cents === 0 ? 'zero' : null };
 }
 
 /** The `error` code of a JSON error body, or '' when there is none. */

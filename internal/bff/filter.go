@@ -6,11 +6,13 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Queue query labels match the Portuguese UI filter chips.
 const (
 	andamentoNovoSinal = "Novo sinal"
+	andamentoAdiados   = "Adiados"
 
 	slaNoPrazo   = "No prazo"
 	slaVencendo  = "Vencendo"
@@ -50,13 +52,19 @@ var sinalOptions = []string{
 
 var slaOptions = []string{slaNoPrazo, slaVencendo, slaVencido}
 
+// andamentoOptions is the Andamento menu: new signals, snoozed signals, then
+// the case states in CaseStates order.
 var andamentoOptions = []string{
-	andamentoNovoSinal, "Aberto", "Em atendimento", "Aguardando cliente", "Resolvido",
+	andamentoNovoSinal, andamentoAdiados, "Aberto", "Em atendimento", "Aguardando cliente", "Resolvido",
 }
+
+// caseStateResolved is the index of "Resolvido" in CaseStates.
+const caseStateResolved = 3
 
 var segmentoOptions = []string{"Essencial", "Advance", "Singular"}
 
 // ListFilters holds repeated query params for queue and cases list endpoints.
+// Query is folded (see fold), so the name search ignores case and accents.
 type ListFilters struct {
 	Query     string
 	Andamento []string
@@ -66,7 +74,9 @@ type ListFilters struct {
 	Segmento  []string
 }
 
-// FacetCount is one option with a count that ignores that dimension's own filter.
+// FacetCount is one filter value and the number of cards, signals plus cases,
+// the board shows when that value is the only one picked in its dimension and
+// every other filter stays as requested.
 type FacetCount struct {
 	Label string `json:"label"`
 	Count int    `json:"count"`
@@ -110,31 +120,37 @@ type scoredCase struct {
 	rem      int
 }
 
+// card is one board card, a signal or a case, reduced to what the filters
+// compare. Both list routes filter and count the same cards, so a facet count
+// is the number of cards its filter shows.
+type card struct {
+	andamento string
+	name      string // folded
+	segment   string
+	slaState  string
+	// origin is the signal the card is about: the signal itself, or the one a
+	// case was opened from. It is nil for a case whose signal the queue does
+	// not serve.
+	origin *scoredSignal
+}
+
+// listing is what GET /v1/queue and GET /v1/cases filter and count: the
+// signals the queue lists (snoozed ones included, marked by SnoozedUntil) and
+// every case.
+type listing struct {
+	signals []scoredSignal
+	cases   []scoredCase
+	origins map[string]scoredSignal
+}
+
 func parseListFilters(q url.Values) ListFilters {
 	return ListFilters{
-		Query:     strings.TrimSpace(q.Get("q")),
+		Query:     fold(strings.TrimSpace(q.Get("q"))),
 		Andamento: q["andamento"],
 		SLA:       q["sla"],
 		Sinal:     q["sinal"],
 		Motivo:    q["motivo"],
 		Segmento:  q["segmento"],
-	}
-}
-
-func (f ListFilters) has(dim filterDim) bool {
-	switch dim {
-	case dimAndamento:
-		return len(f.Andamento) > 0
-	case dimSLA:
-		return len(f.SLA) > 0
-	case dimSinal:
-		return len(f.Sinal) > 0
-	case dimMotivo:
-		return len(f.Motivo) > 0
-	case dimSegmento:
-		return len(f.Segmento) > 0
-	default:
-		return false
 	}
 }
 
@@ -248,7 +264,56 @@ func scoreSignal(sig Signal) scoredSignal {
 	}
 }
 
+// fold lowers s and strips the accents of Portuguese letters, so "sergio"
+// matches "Sérgio". Combining marks are dropped too, for names that arrive
+// decomposed.
+func fold(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case 'á', 'à', 'â', 'ã', 'ä':
+			return 'a'
+		case 'é', 'è', 'ê', 'ë':
+			return 'e'
+		case 'í', 'ì', 'î', 'ï':
+			return 'i'
+		case 'ó', 'ò', 'ô', 'õ', 'ö':
+			return 'o'
+		case 'ú', 'ù', 'û', 'ü':
+			return 'u'
+		case 'ç':
+			return 'c'
+		case 'ñ':
+			return 'n'
+		}
+		if r >= 0x0300 && r <= 0x036F {
+			return -1
+		}
+		return r
+	}, strings.ToLower(s))
+}
+
+// withSLAState returns c with its SLA state set. cases decides the state; an
+// older cases binary sends none, and only then the BFF applies the same
+// formula to the remaining minutes cases reported.
+func withSLAState(c Case) Case {
+	if c.SlaState != "" {
+		return c
+	}
+	switch {
+	case c.State == caseStateResolved:
+		c.SlaState = slaConcluido
+	case c.SlaRemaining < 0:
+		c.SlaState = slaVencido
+	case c.SlaRemaining < max(c.SlaTotal*33/100, 20):
+		c.SlaState = slaVencendo
+	default:
+		c.SlaState = slaNoPrazo
+	}
+	return c
+}
+
 func scoreCase(c Case) scoredCase {
+	c = withSLAState(c)
 	segment := c.Segment
 	if segment == "" {
 		segment = "Essencial"
@@ -257,20 +322,106 @@ func scoreCase(c Case) scoredCase {
 	if name == "" {
 		name = c.Client
 	}
-	done := c.State == 3
-	rem := c.SlaTotal - c.OpenedAgo
-	var slaState string
-	switch {
-	case done:
-		slaState = slaConcluido
-	case rem < 0:
-		slaState = slaVencido
-	case rem < max(c.SlaTotal*33/100, 20):
-		slaState = slaVencendo
-	default:
-		slaState = slaNoPrazo
+	return scoredCase{caseItem: c, name: name, segment: segment, slaState: c.SlaState, rem: c.SlaRemaining}
+}
+
+// originLabel is the line a case card shows for the signal it came from, for
+// example "mensagem · Reclamação" or "saque relevante".
+func originLabel(row scoredSignal) string {
+	if row.signal.Kind != "message" {
+		return strings.ToLower(row.typeLabel)
 	}
-	return scoredCase{caseItem: c, name: name, segment: segment, slaState: slaState, rem: rem}
+	if row.signal.Intent == "" {
+		return "mensagem"
+	}
+	return "mensagem · " + row.signal.Intent
+}
+
+// newListing joins the signals the queue serves with the advisor's actions
+// and the cases.
+//
+// A signal that opened or joined a case is represented by that case and is
+// not listed: any case, of any state, whose signal or history names the
+// signal's id or its source message id hides it. A snoozed signal stays
+// listed with SnoozedUntil set, so only the Adiados filter shows it.
+func newListing(signals []Signal, actions []SignalAction, cases []Case, now time.Time) listing {
+	inCase := make(map[string]struct{}, len(cases))
+	for _, c := range cases {
+		inCase[c.Signal] = struct{}{}
+		for _, line := range c.History {
+			if line.Signal != "" {
+				inCase[line.Signal] = struct{}{}
+			}
+		}
+	}
+	delete(inCase, "")
+	actionOf := make(map[string]SignalAction, len(actions))
+	for _, a := range actions {
+		actionOf[a.SignalID] = a
+	}
+
+	out := listing{
+		signals: make([]scoredSignal, 0, len(signals)),
+		cases:   make([]scoredCase, 0, len(cases)),
+		origins: make(map[string]scoredSignal, len(signals)),
+	}
+	for _, sig := range signals {
+		if a, ok := actionOf[sig.ID]; ok {
+			sig.ContactedAt = a.ContactedAt
+			if a.SnoozedUntil != nil && a.SnoozedUntil.After(now) {
+				sig.SnoozedUntil = a.SnoozedUntil
+			}
+		}
+		row := scoreSignal(sig)
+		out.origins[sig.ID] = row
+		_, byID := inCase[sig.ID]
+		_, bySource := inCase[sig.SourceID]
+		if sig.SourceID != "" {
+			out.origins[sig.SourceID] = row
+		}
+		if byID || bySource {
+			continue
+		}
+		out.signals = append(out.signals, row)
+	}
+	for _, c := range cases {
+		row := scoreCase(c)
+		if origin, ok := out.origins[c.Signal]; ok {
+			row.caseItem.Origin = originLabel(origin)
+		}
+		out.cases = append(out.cases, row)
+	}
+	return out
+}
+
+func (l listing) signalCard(row scoredSignal) card {
+	andamento := andamentoNovoSinal
+	if row.signal.SnoozedUntil != nil {
+		andamento = andamentoAdiados
+	}
+	return card{andamento: andamento, name: fold(row.name), segment: row.segment, slaState: row.slaState, origin: &row}
+}
+
+func (l listing) caseCard(row scoredCase) card {
+	c := card{name: fold(row.name), segment: row.segment, slaState: row.slaState}
+	if state := row.caseItem.State; state >= 0 && state < len(CaseStates) {
+		c.andamento = CaseStates[state]
+	}
+	if origin, ok := l.origins[row.caseItem.Signal]; ok {
+		c.origin = &origin
+	}
+	return c
+}
+
+func (l listing) cards() []card {
+	out := make([]card, 0, len(l.signals)+len(l.cases))
+	for _, row := range l.signals {
+		out = append(out, l.signalCard(row))
+	}
+	for _, row := range l.cases {
+		out = append(out, l.caseCard(row))
+	}
+	return out
 }
 
 func sinalOn(row scoredSignal, option string) bool {
@@ -286,90 +437,67 @@ func sinalOn(row scoredSignal, option string) bool {
 	}
 }
 
-func signalMatches(row scoredSignal, f ListFilters, skip filterDim) bool {
-	q := strings.ToLower(strings.TrimSpace(f.Query))
-	if q != "" && !strings.Contains(strings.ToLower(row.name), q) {
+// has reports whether the card carries value label in dimension dim.
+func (c card) has(dim filterDim, label string) bool {
+	switch dim {
+	case dimAndamento:
+		return c.andamento == label
+	case dimSLA:
+		return c.slaState == label
+	case dimSegmento:
+		return c.segment == label
+	case dimSinal:
+		return c.origin != nil && sinalOn(*c.origin, label)
+	case dimMotivo:
+		return c.origin != nil && (c.origin.typeLabel == label || c.origin.signal.Intent == label)
+	default:
 		return false
 	}
-	if skip != dimSinal && f.has(dimSinal) {
-		ok := false
-		for _, o := range f.Sinal {
-			if sinalOn(row, o) {
-				ok = true
-				break
-			}
-		}
-		if !ok {
-			return false
-		}
-	}
-	if skip != dimSLA && f.has(dimSLA) && !slices.Contains(f.SLA, row.slaState) {
-		return false
-	}
-	if skip != dimMotivo && f.has(dimMotivo) {
-		if !slices.Contains(f.Motivo, row.typeLabel) && !slices.Contains(f.Motivo, row.signal.Intent) {
-			return false
-		}
-	}
-	if skip != dimSegmento && f.has(dimSegmento) && !slices.Contains(f.Segmento, row.segment) {
-		return false
-	}
-	return true
 }
 
-func caseMatches(row scoredCase, bySignal map[string]scoredSignal, f ListFilters, skip filterDim) bool {
-	q := strings.ToLower(strings.TrimSpace(f.Query))
-	if q != "" && !strings.Contains(strings.ToLower(row.name), q) {
+func (f ListFilters) values(dim filterDim) []string {
+	switch dim {
+	case dimAndamento:
+		return f.Andamento
+	case dimSLA:
+		return f.SLA
+	case dimSinal:
+		return f.Sinal
+	case dimMotivo:
+		return f.Motivo
+	case dimSegmento:
+		return f.Segmento
+	default:
+		return nil
+	}
+}
+
+var filterDims = []filterDim{dimAndamento, dimSLA, dimSinal, dimMotivo, dimSegmento}
+
+// matches reports whether the board shows the card under f. skip leaves one
+// dimension out, which is how a facet counts its own values. Without an
+// Andamento filter the board shows new signals and open cases: snoozed
+// signals and resolved cases appear only when asked for.
+func (c card) matches(f ListFilters, skip filterDim) bool {
+	if f.Query != "" && !strings.Contains(c.name, f.Query) {
 		return false
 	}
-	if skip != dimSLA && f.has(dimSLA) && !slices.Contains(f.SLA, row.slaState) {
-		return false
-	}
-	if skip != dimSegmento && f.has(dimSegmento) && !slices.Contains(f.Segmento, row.segment) {
-		return false
-	}
-	sig, ok := bySignal[row.caseItem.Signal]
-	if skip != dimSinal && f.has(dimSinal) {
-		if !ok {
-			return false
+	for _, dim := range filterDims {
+		if dim == skip {
+			continue
 		}
-		hit := false
-		for _, o := range f.Sinal {
-			if sinalOn(sig, o) {
-				hit = true
-				break
+		picked := f.values(dim)
+		if len(picked) == 0 {
+			if dim == dimAndamento && (c.andamento == andamentoAdiados || c.andamento == CaseStates[caseStateResolved]) {
+				return false
 			}
+			continue
 		}
-		if !hit {
-			return false
-		}
-	}
-	if skip != dimMotivo && f.has(dimMotivo) {
-		if !ok {
-			return false
-		}
-		if !slices.Contains(f.Motivo, sig.typeLabel) && !slices.Contains(f.Motivo, sig.signal.Intent) {
+		if !slices.ContainsFunc(picked, func(label string) bool { return c.has(dim, label) }) {
 			return false
 		}
 	}
 	return true
-}
-
-func andamentoAllowsSignal(f ListFilters) bool {
-	if !f.has(dimAndamento) {
-		return true
-	}
-	return slices.Contains(f.Andamento, andamentoNovoSinal)
-}
-
-func andamentoAllowsCase(f ListFilters, state int) bool {
-	if !f.has(dimAndamento) {
-		return state < 3
-	}
-	if state < 0 || state >= len(CaseStates) {
-		return false
-	}
-	return slices.Contains(f.Andamento, CaseStates[state])
 }
 
 func motivoOptionLabels() []string {
@@ -384,145 +512,65 @@ func motivoOptionLabels() []string {
 	return out
 }
 
-func filterAndSortSignals(items []Signal, f ListFilters) []Signal {
-	scored := make([]scoredSignal, 0, len(items))
-	for _, it := range items {
-		row := scoreSignal(it)
-		if !andamentoAllowsSignal(f) {
-			continue
+// filteredSignals is the GET /v1/queue list: highest score first.
+func (l listing) filteredSignals(f ListFilters) []Signal {
+	rows := make([]scoredSignal, 0, len(l.signals))
+	for _, row := range l.signals {
+		if l.signalCard(row).matches(f, "") {
+			rows = append(rows, row)
 		}
-		if !signalMatches(row, f, "") {
-			continue
-		}
-		scored = append(scored, row)
 	}
-	slices.SortFunc(scored, func(a, b scoredSignal) int {
+	slices.SortStableFunc(rows, func(a, b scoredSignal) int {
 		return cmp.Compare(b.score, a.score)
 	})
-	out := make([]Signal, len(scored))
-	for i, row := range scored {
+	out := make([]Signal, len(rows))
+	for i, row := range rows {
 		out[i] = row.signal
 	}
 	return out
 }
 
-func filterAndSortCases(items []Case, signals []Signal, f ListFilters) []Case {
-	bySignal := make(map[string]scoredSignal, len(signals))
-	for _, s := range signals {
-		bySignal[s.ID] = scoreSignal(s)
-	}
-	scored := make([]scoredCase, 0, len(items))
-	for _, it := range items {
-		row := scoreCase(it)
-		if !andamentoAllowsCase(f, row.caseItem.State) {
-			continue
+// filteredCases is the GET /v1/cases list: least time left first.
+func (l listing) filteredCases(f ListFilters) []Case {
+	rows := make([]scoredCase, 0, len(l.cases))
+	for _, row := range l.cases {
+		if l.caseCard(row).matches(f, "") {
+			rows = append(rows, row)
 		}
-		if !caseMatches(row, bySignal, f, "") {
-			continue
-		}
-		scored = append(scored, row)
 	}
-	slices.SortFunc(scored, func(a, b scoredCase) int {
+	slices.SortStableFunc(rows, func(a, b scoredCase) int {
 		return cmp.Compare(a.rem, b.rem)
 	})
-	out := make([]Case, len(scored))
-	for i, row := range scored {
+	out := make([]Case, len(rows))
+	for i, row := range rows {
 		out[i] = row.caseItem
 	}
 	return out
 }
 
-func buildSignalFacets(items []Signal, cases []Case, f ListFilters) ListFacets {
-	scored := make([]scoredSignal, len(items))
-	for i, it := range items {
-		scored[i] = scoreSignal(it)
-	}
-	bySignal := make(map[string]scoredSignal, len(items))
-	for _, row := range scored {
-		bySignal[row.signal.ID] = row
-	}
-	scoredCases := make([]scoredCase, len(cases))
-	for i, c := range cases {
-		scoredCases[i] = scoreCase(c)
-	}
-
-	andamento := make([]FacetCount, 0, len(andamentoOptions))
-	for i, label := range andamentoOptions {
-		count := 0
-		if i == 0 {
-			for _, row := range scored {
-				if signalMatches(row, f, dimAndamento) {
-					count++
+// facets counts, for every filter value, the cards the board shows with that
+// value picked. Both list routes answer the same facets.
+func (l listing) facets(f ListFilters) ListFacets {
+	cards := l.cards()
+	count := func(dim filterDim, labels []string) []FacetCount {
+		out := make([]FacetCount, 0, len(labels))
+		for _, label := range labels {
+			n := 0
+			for _, c := range cards {
+				if c.has(dim, label) && c.matches(f, dim) {
+					n++
 				}
 			}
-		} else {
-			state := i - 1
-			for _, row := range scoredCases {
-				if row.caseItem.State == state && caseMatches(row, bySignal, f, dimAndamento) {
-					count++
-				}
-			}
+			out = append(out, FacetCount{Label: label, Count: n})
 		}
-		andamento = append(andamento, FacetCount{Label: label, Count: count})
+		return out
 	}
-
-	sla := make([]FacetCount, 0, len(slaOptions))
-	for _, label := range slaOptions {
-		count := 0
-		for _, row := range scored {
-			if row.slaState == label && signalMatches(row, f, dimSLA) {
-				count++
-			}
-		}
-		sla = append(sla, FacetCount{Label: label, Count: count})
-	}
-
-	sinal := make([]FacetCount, 0, len(sinalOptions))
-	for _, label := range sinalOptions {
-		count := 0
-		for _, row := range scored {
-			if !sinalOn(row, label) {
-				continue
-			}
-			if signalMatches(row, f, dimSinal) {
-				count++
-			}
-		}
-		sinal = append(sinal, FacetCount{Label: label, Count: count})
-	}
-
-	motivos := motivoOptionLabels()
-	motivo := make([]FacetCount, 0, len(motivos))
-	for _, label := range motivos {
-		count := 0
-		for _, row := range scored {
-			if row.typeLabel != label && row.signal.Intent != label {
-				continue
-			}
-			if signalMatches(row, f, dimMotivo) {
-				count++
-			}
-		}
-		motivo = append(motivo, FacetCount{Label: label, Count: count})
-	}
-
-	segmento := make([]FacetCount, 0, len(segmentoOptions))
-	for _, label := range segmentoOptions {
-		count := 0
-		for _, row := range scored {
-			if row.segment == label && signalMatches(row, f, dimSegmento) {
-				count++
-			}
-		}
-		segmento = append(segmento, FacetCount{Label: label, Count: count})
-	}
-
 	return ListFacets{
-		Andamento: andamento,
-		SLA:       sla,
-		Sinal:     sinal,
-		Motivo:    motivo,
-		Segmento:  segmento,
+		Andamento: count(dimAndamento, andamentoOptions),
+		SLA:       count(dimSLA, slaOptions),
+		Sinal:     count(dimSinal, sinalOptions),
+		Motivo:    count(dimMotivo, motivoOptionLabels()),
+		Segmento:  count(dimSegmento, segmentoOptions),
 	}
 }
 

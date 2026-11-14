@@ -1,14 +1,26 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { apiPath } from '../api/base';
 import { ApiError } from '../api/bff';
-import { dollars, fetchPOVHome, fetchSimulation, formatCents, postAdvanceDay, postPOV, protocolOf, putPreferences, type POVHome } from '../api/pov';
+import {
+  fetchPOVHome,
+  fetchSimulation,
+  formatCents,
+  postAdvanceDay,
+  postPOV,
+  protocolOf,
+  putPreferences,
+  readAmount,
+  type AmountProblem,
+  type POVHome,
+} from '../api/pov';
 import { fetchScreen, UnsupportedSchemaError } from '../sdui/api';
 import { SduiContext, type SduiContextValue } from '../sdui/context';
 import { findPurchase, type PurchaseTarget } from '../sdui/purchase';
 import { SduiError, SduiLoading, SduiScreen, SduiUpdate } from '../sdui/SduiScreen';
 import type { Preferences, Screen, Slug } from '../sdui/types';
-import { purchaseSteps, PurchaseForm, PurchaseSent, type Bought, type LiveStep } from './PurchasePanel';
+import complaintPresets from './complaintPresets.json';
+import { AMOUNT_PROBLEMS, purchaseSteps, PurchaseForm, PurchaseSent, type Bought, type LiveStep } from './PurchasePanel';
 
 interface Sent {
   event_id: string;
@@ -58,24 +70,10 @@ const TABS = [
 
 type TabSlug = (typeof TABS)[number]['slug'];
 
-const PRESETS = [
-  {
-    title: 'Minha transferência está atrasada',
-    text: 'Pedi uma transferência há dias e até agora não caiu. Preciso de uma posição hoje.',
-  },
-  {
-    title: 'Uma cobrança que não reconheço',
-    text: 'Apareceu uma cobrança no meu extrato que eu não reconheço. Quero entender o que é.',
-  },
-  {
-    title: 'Quero falar com uma pessoa',
-    text: 'Não quero mais resposta automática. Preciso que alguém da assessoria me ligue.',
-  },
-  {
-    title: 'Estou pensando em sair',
-    text: 'Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.',
-  },
-];
+// The complaint presets live in a JSON file so the Go triage test
+// (internal/triage/heuristic_test.go) reads the same texts and proves each one
+// opens a case when the fallback classifier is on.
+const PRESETS: { title: string; text: string }[] = complaintPresets;
 
 const ICONS: Record<string, string> = {
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
@@ -107,12 +105,34 @@ const TOO_MANY_DAYS = 'Muitos dias avançados em pouco tempo. Espere até 10 min
 // advisory consumes the reavaliacao events after the 202, so the screen is
 // read once more this long after an advance to show the drop moment and row.
 const ADVANCE_REFETCH_MS = 1500;
+// A command is accepted (202) before its effects exist: the account-sim
+// outbox, RabbitMQ, then advisory (book, segment, alerts) or triage and cases
+// each take about a second, triage up to several. The read that follows the
+// 202 or the closing of the confirmation can therefore still see the old
+// state, so every accepted command starts a bounded series of re-reads at
+// these offsets from the acceptance; it ends after the last one. The
+// Bastidores stream is not the signal for this: it reports the broker hops the
+// BFF observes for one event (or a quiet timeout when no rule fires), not the
+// advisory book or the cases write that the screens read, so it cannot say
+// those have settled.
+const SETTLE_REFETCH_MS = [1_500, 4_000, 8_000, 15_000];
 
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={ICONS[name] ?? ''} />
     </svg>
+  );
+}
+
+/** What Tab can reach inside the action panel. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+
+/** The buttons of the screen on view that read `label`, in document order. */
+function sameLabelButtons(label: string): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('.pov-app__main button')).filter(
+    (button) => button.textContent === label,
   );
 }
 
@@ -256,6 +276,8 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const [simReads, setSimReads] = useState(0);
   // The screen an advance asked to read again after ADVANCE_REFETCH_MS.
   const [followUp, setFollowUp] = useState<{ id: string; slug: Slug } | null>(null);
+  // Counts the commands the BFF accepted; each one restarts the settle re-reads.
+  const [commands, setCommands] = useState(0);
   // A tab change, including browser back and forward, closes any panel.
   const [panelTab, setPanelTab] = useState(tab);
   if (panelTab !== tab) {
@@ -271,6 +293,10 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   // One Idempotency-Key per advance until a definite answer (202, or a 4xx
   // other than 429), so a retry after an uncertain failure cannot advance twice.
   const advanceKey = useRef<string | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  // The control that opened the action panel, with its label and its position
+  // among the screen buttons that share it (two sections may offer "Depositar").
+  const opener = useRef<{ node: HTMLElement; label: string; index: number } | null>(null);
   const liveEvent = panel === 'done' ? sent?.event_id : panel === 'bought' ? bought?.event_id : undefined;
 
   useEffect(() => {
@@ -311,6 +337,19 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     return () => window.clearTimeout(timer);
   }, [followUp, id, slug]);
 
+  // The settle re-reads of the last accepted command (SETTLE_REFETCH_MS). They
+  // outlive the confirmation panel and tab changes: each one re-reads the shell
+  // and the tab on view, and one that fires under a panel is covered by the
+  // read every panel close makes. A new command restarts the series; leaving
+  // the app, or changing client (which remounts it), cancels it.
+  useEffect(() => {
+    if (commands === 0) {
+      return;
+    }
+    const timers = SETTLE_REFETCH_MS.map((ms) => window.setTimeout(() => setReload((value) => value + 1), ms));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [commands]);
+
   useEffect(() => {
     if (!liveEvent) {
       return;
@@ -330,7 +369,8 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   }, [liveEvent, id]);
 
   // The phase-2 customer read feeds the shell and the coded panels (name,
-  // cash to withdraw, advisor, messages); it is re-read when a panel closes.
+  // segment, cash to withdraw, advisor, messages); it is re-read when a panel
+  // closes and with every re-read of the screen.
   useEffect(() => {
     if (panel !== 'home') {
       return;
@@ -350,7 +390,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     return () => {
       gone = true;
     };
-  }, [id, panel]);
+  }, [id, panel, reload]);
 
   // One screen request per tab visit, panel close, or retry. A re-fetch of
   // the same screen keeps the current one on view until it settles.
@@ -378,10 +418,70 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     };
   }, [id, panel, slug, reload]);
 
-  const cents = Math.round(dollars(amount) * 100);
+  // The action panel behaves as a dialog. Whenever it shows a view, focus
+  // moves into it unless the view already took it; when it closes, focus goes
+  // back to the control that opened it. On the phone the screen is rebuilt
+  // behind the panel, so that control is found again by its label.
+  useEffect(() => {
+    const node = panelRef.current;
+    if (node) {
+      if (!node.contains(document.activeElement)) {
+        node.focus();
+      }
+      return;
+    }
+    if (panel !== 'home') {
+      return;
+    }
+    const from = opener.current;
+    opener.current = null;
+    if (!from) {
+      return;
+    }
+    const target = from.node.isConnected ? from.node : (sameLabelButtons(from.label)[from.index] ?? null);
+    target?.focus();
+  }, [panel, wide]);
+
+  const { cents, problem } = readAmount(amount);
   const overCash = panel === 'withdraw' && home != null && cents > home.caixa;
 
+  function rememberOpener() {
+    const active = document.activeElement;
+    if (panel === 'home' && active instanceof HTMLElement && active !== document.body) {
+      const label = active.textContent;
+      opener.current = { node: active, label, index: sameLabelButtons(label).indexOf(active) };
+    }
+  }
+
+  // Esc closes the panel and Tab stays inside it.
+  function onPanelKey(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === 'Escape') {
+      open('home');
+      return;
+    }
+    if (event.key !== 'Tab') {
+      return;
+    }
+    const node = event.currentTarget;
+    const items = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE));
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (!first || !last) {
+      event.preventDefault();
+    } else if (event.shiftKey && (active === first || active === node)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   function open(next: Panel) {
+    if (next !== 'home') {
+      rememberOpener();
+    }
     setAmount('');
     setNotice('');
     setText('');
@@ -453,6 +553,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
       console.error(`sdui: purchase product ${productID} is not on the screen`);
       return;
     }
+    rememberOpener();
     buyKey.current = null;
     // A form opened over another one is a new form: a late answer for the
     // previous product must not land on it, even when `panel` stays 'purchase'.
@@ -476,6 +577,8 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     try {
       const done = await postPOV(id, 'purchases', { product_id: target.product.product_id, amount_cents: amountCents }, key);
       buyKey.current = null;
+      // Accepted even when its form has closed, so the screens still follow it.
+      setCommands((value) => value + 1);
       if (form.current !== opened) {
         return;
       }
@@ -504,6 +607,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
     setNotice('');
     try {
       const done = await postPOV(id, kind, body, crypto.randomUUID());
+      setCommands((value) => value + 1);
       setSent({ ...next, event_id: done.event_id });
       setSteps(accepted(labels));
       setPanel('done');
@@ -513,7 +617,9 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) {
-        setNotice('Valor acima do disponível para saque');
+        // `insufficient` is a withdrawal above the cash; any other refusal
+        // (`invalid`) is an amount account-sim does not accept.
+        setNotice(err.code === 'insufficient' ? 'Valor acima do disponível para saque' : 'Confira o valor e tente de novo.');
         return;
       }
       if (err instanceof ApiError && err.status === 429) {
@@ -559,7 +665,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
   const buyInScreen = buyingOnView && !wide;
   const drawer = (panel !== 'home' && panel !== 'purchase' && panel !== 'bought') || (buyingOnView && wide);
   const showScreen = !buyInScreen && (wide || panel === 'home');
-  const complaintText = preset >= 0 ? PRESETS[preset]?.text ?? '' : text.trim();
+  const complaintText = text.trim();
   const ready = view.slug === slug && view.status === 'ready' ? view.screen : null;
   // Raio-X only has something to outline while an SDUI screen of its own tab is on view.
   const sduiOnView = showScreen && ready !== null;
@@ -644,7 +750,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
               <span aria-hidden="true">{initials(home.name)}</span>
               <div>
                 <strong>{home.name}</strong>
-                <em>Cliente {home.segment}</em>
+                {home.segment ? <em>Cliente {home.segment}</em> : null}
               </div>
             </div>
           </aside>
@@ -662,13 +768,13 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
         ) : null}
         {drawer && wide ? <button type="button" className="pov-app__scrim" aria-label="Fechar painel" onClick={() => open('home')} /> : null}
         {drawer ? (
-          <aside className="pov-app__panel" aria-label="Ação">
+          <aside ref={panelRef} tabIndex={-1} className="pov-app__panel" aria-label="Ação" onKeyDown={onPanelKey}>
             {buyInScreen ? null : buyView}
             {panel === 'deposit' || panel === 'withdraw' ? (
               <MoneyPanel
                 kind={panel}
                 amount={amount}
-                cents={cents}
+                problem={problem}
                 overCash={overCash}
                 cash={formatCents(home.caixa)}
                 aum={formatCents(home.assets)}
@@ -691,7 +797,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
                         title: 'Depósito solicitado',
                         lead: `${formatCents(cents)} por ${origin === 'Câmbio a partir do Brasil' ? 'câmbio a partir do Brasil' : 'wire de outro banco'}.`,
                         routing: 'account.event.recorded',
-                        detail: `kind: aporte · amount: ${dollars(amount)}`,
+                        detail: `kind: aporte · amount: ${cents / 100}`,
                         backLabel: 'Voltar ao início',
                       },
                       ACCOUNT_STEPS,
@@ -705,7 +811,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
                       title: 'Saque solicitado',
                       lead: `${formatCents(cents)} para ${destination === 'Conta nos EUA' ? 'a conta nos EUA · final 4821' : 'a conta no Brasil · final 0937'}.`,
                       routing: 'account.event.recorded',
-                      detail: `kind: saque · amount: ${dollars(amount)}`,
+                      detail: `kind: saque · amount: ${cents / 100}`,
                       backLabel: 'Voltar ao início',
                     },
                     ACCOUNT_STEPS,
@@ -743,7 +849,7 @@ function ClientApp({ id, tab }: { id: string; tab: TabSlug }) {
                       aria-pressed={preset === index}
                       onClick={() => {
                         setPreset(index);
-                        setText('');
+                        setText(item.text);
                       }}
                     >
                       <i />
@@ -1021,7 +1127,7 @@ function Note({ kicker, children }: { kicker: string; children: string }) {
 function MoneyPanel({
   kind,
   amount,
-  cents,
+  problem,
   overCash,
   cash,
   aum,
@@ -1039,7 +1145,8 @@ function MoneyPanel({
 }: {
   kind: 'deposit' | 'withdraw';
   amount: string;
-  cents: number;
+  /** Why the typed amount cannot be sent, or null when it can. */
+  problem: AmountProblem | null;
   overCash: boolean;
   cash: string;
   aum: string;
@@ -1067,32 +1174,52 @@ function MoneyPanel({
         ['Conta no Brasil', 'Com câmbio para reais · final 0937'],
       ];
   const selected = deposit ? origin : destination;
+  const field = deposit ? 'aporte-valor' : 'saque-valor';
+  // An empty field is not an error: its sentence is helper text.
+  const invalid = overCash || (problem !== null && problem !== 'empty');
+  const blocked = problem !== null || overCash;
   return (
     <form
       className="pov-app__form"
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit();
+        if (!blocked) {
+          onSubmit();
+        }
       }}
     >
       <PanelHead title={deposit ? 'Depositar' : 'Sacar'} closeLabel={closeLabel} onClose={onClose} />
-      <label className="pov-app__amount" htmlFor={deposit ? 'aporte-valor' : 'saque-valor'}>
+      <label className="pov-app__amount" htmlFor={field}>
         {deposit ? 'Quanto você quer depositar?' : 'Quanto você quer sacar?'}
-        <span data-over={overCash ? 'true' : 'false'}>
+        <span data-invalid={invalid ? 'true' : 'false'}>
           <em>US$</em>
           <input
-            id={deposit ? 'aporte-valor' : 'saque-valor'}
+            id={field}
             inputMode="decimal"
             autoComplete="off"
             placeholder="0,00"
+            aria-invalid={invalid}
+            aria-describedby={blocked ? `${field}-ajuda` : undefined}
             value={amount}
             onChange={(event) => onAmount(event.target.value)}
           />
         </span>
       </label>
+      {problem === 'empty' ? (
+        <p id={`${field}-ajuda`} className="pov-app__hint">
+          {AMOUNT_PROBLEMS.empty}
+        </p>
+      ) : null}
+      {problem !== null && problem !== 'empty' ? (
+        <p id={`${field}-ajuda`} role="alert">
+          {AMOUNT_PROBLEMS[problem]}
+        </p>
+      ) : null}
       {deposit ? <p className="pov-app__hint">Patrimônio atual: {aum}</p> : null}
       {!deposit && overCash ? (
-        <p role="alert">Valor acima do disponível para saque ({cash}).</p>
+        <p id={`${field}-ajuda`} role="alert">
+          Valor acima do disponível para saque ({cash}).
+        </p>
       ) : null}
       {!deposit && !overCash ? <p className="pov-app__hint">Disponível: {cash}</p> : null}
       <div className="pov-app__chips">
@@ -1131,7 +1258,7 @@ function MoneyPanel({
           : 'O advisory decide se vira alerta de saque relevante ou de queda de patrimônio. O app não calcula regra nenhuma.'}
       </Note>
       {notice ? <p role="alert">{notice}</p> : null}
-      <button type="submit" className="pov-app__primary" disabled={cents <= 0 || overCash}>
+      <button type="submit" className="pov-app__primary" disabled={blocked}>
         {deposit ? 'Confirmar depósito' : 'Confirmar saque'}
       </button>
     </form>

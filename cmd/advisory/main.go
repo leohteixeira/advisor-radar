@@ -97,9 +97,14 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 	if httpAddr != "" {
 		actions := advisory.NewActions(actionStore, nil)
+		// Without a database there is no outbox to accept a case command.
+		var commands *advisory.CaseCommands
+		if store != nil {
+			commands = advisory.NewCaseCommands(store, nil)
+		}
 		httpSrv = &http.Server{
 			Addr:              httpAddr,
-			Handler:           advisory.NewActionsHandler(actions),
+			Handler:           advisory.NewActionsHandler(actions, commands),
 			ReadHeaderTimeout: 5 * time.Second,
 			BaseContext:       func(net.Listener) context.Context { return runCtx },
 		}

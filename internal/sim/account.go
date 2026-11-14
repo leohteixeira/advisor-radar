@@ -558,7 +558,7 @@ func build(account Account, products []Product, cmd Command) (plan, error) {
 		if cmd.Text == "" {
 			return plan{}, fmt.Errorf("%w: complaint needs text", ErrCommand)
 		}
-		return messagePlan(MessagePayload{Channel: "chat", Text: cmd.Text, Origin: OriginClientApp}, account), nil
+		return messagePlan(MessagePayload{Channel: "chat", Text: cmd.Text, Origin: OriginClientApp, Kind: KindComplaint}, account), nil
 	default:
 		return plan{}, ErrCommand
 	}

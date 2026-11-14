@@ -442,3 +442,32 @@ func TestGetScreen_ShockDay(t *testing.T) {
 		t.Errorf("day 4 wealth = %s, want the default", kind)
 	}
 }
+
+// A simulated day writes one reavaliacao per client, moved or not. The
+// customer 360 lists the ones that changed the patrimony and leaves the
+// zero-change ones out.
+func TestHTTP_TimelineHidesUnchangedRevaluations(t *testing.T) {
+	t.Parallel()
+	idx := timeline.NewIndex()
+	moved, still := identity.MustNewV7(), identity.MustNewV7()
+	indexRevaluation(t, idx, still, 1, 0, 24_830_000, "", 0)
+	indexRevaluation(t, idx, moved, 2, -3_852_000, 24_830_000, "cobalto", -5350)
+	h := bff.NewHandler(bff.NewBoard(), nil, startTimeline(t, idx), nil, nil, nil)
+
+	for _, query := range []string{"", "?order=desc", "?kind=conta"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/customers/"+sim.CustomerMariana+"/timeline"+query, nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("timeline%s status = %d", query, rr.Code)
+		}
+		var body struct {
+			Items []bff.TimelineEntry `json:"items"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Items) != 1 || body.Items[0].EventID != moved {
+			t.Errorf("timeline%s items = %+v, want only the revaluation that moved", query, body.Items)
+		}
+	}
+}

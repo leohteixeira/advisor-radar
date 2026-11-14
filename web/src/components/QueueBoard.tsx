@@ -25,7 +25,10 @@ interface QueueBoardProps {
   onOpenCase: (id: string) => void;
   onContacted: (id: string) => void;
   onSnooze: (id: string) => void;
+  onUndoAction: (id: string) => void;
   onAdvanceCase: (id: string) => void;
+  /** Ids of the signals whose Abrir caso is waiting for its outcome. */
+  pendingCases: ReadonlySet<string>;
 }
 
 export function QueueBoard({
@@ -42,7 +45,9 @@ export function QueueBoard({
   onOpenCase,
   onContacted,
   onSnooze,
+  onUndoAction,
   onAdvanceCase,
+  pendingCases,
 }: QueueBoardProps) {
   const visible: {
     key: string;
@@ -82,7 +87,11 @@ export function QueueBoard({
         const isEmpty =
           col.kind === 'signals' ? !loading && !error && signals.length === 0 : col.cases.length === 0 && !loading;
         return (
-          <section key={col.key} className={`queue-column queue-column--${col.accent}`} aria-label={col.label}>
+          <section
+            key={col.key}
+            className={`queue-column queue-column--${col.accent}${col.kind === 'signals' ? ' queue-column--signals' : ''}`}
+            aria-label={col.label}
+          >
             <header className="queue-column__header">
               <span>{col.label}</span>
               <span className="queue-column__count">{loading && col.kind === 'signals' ? '' : count}</span>
@@ -145,6 +154,8 @@ export function QueueBoard({
                       onOpenCase={onOpenCase}
                       onContacted={onContacted}
                       onSnooze={onSnooze}
+                      onUndoAction={onUndoAction}
+                      pending={pendingCases.has(row.signal.id)}
                     />
                   ))
                 : null}

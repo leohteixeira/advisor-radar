@@ -42,9 +42,12 @@ type AlertRow struct {
 // AlertPayload is the domain payload on alert.raised. Money is whole USD
 // dollars on every kind. A perfil alert also names the product bought
 // (ProductID, AssetClass, Risk) and the profile it exceeds (Profile, MaxRisk).
+// Reason is the one-line description of what happened (see Reason); alerts
+// raised before it existed do not carry it.
 type AlertPayload struct {
 	Kind          string  `json:"kind"`
 	Rule          string  `json:"rule"`
+	Reason        string  `json:"reason,omitempty"`
 	SourceEventID string  `json:"source_event_id,omitempty"`
 	Amount        float64 `json:"amount,omitempty"`
 	Before        float64 `json:"before,omitempty"`
@@ -379,6 +382,7 @@ func raise(ctx context.Context, store Store, in raiseInput) error {
 			payload := AlertPayload{
 				Kind:          d.Kind,
 				Rule:          d.Rule,
+				Reason:        Reason(d),
 				SourceEventID: in.sourceEventID,
 				Amount:        d.Amount,
 				Before:        d.Before,

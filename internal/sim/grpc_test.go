@@ -370,6 +370,11 @@ func TestGRPCServer_MessageAndComplaint(t *testing.T) {
 			if !strings.Contains(string(rows[0].Payload), `"origin":"`+sim.OriginClientApp+`"`) {
 				t.Fatalf("payload = %s, want origin %s", rows[0].Payload, sim.OriginClientApp)
 			}
+			// Only the complaint panel marks its message as a complaint.
+			marked := strings.Contains(string(rows[0].Payload), `"kind":"`+sim.KindComplaint+`"`)
+			if marked != (tt.name == "complaint") {
+				t.Fatalf("payload = %s, complaint kind present = %v", rows[0].Payload, marked)
+			}
 			if got := caixaOf(t, client, sim.CustomerMariana); got != caixa {
 				t.Fatalf("caixa = %d, want %d", got, caixa)
 			}

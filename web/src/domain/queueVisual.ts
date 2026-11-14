@@ -45,6 +45,7 @@ export const SLA_OPTIONS = ['No prazo', 'Vencendo', 'Vencido'] as const;
 
 export const ANDAMENTO_OPTIONS = [
   'Novo sinal',
+  'Adiados',
   'Aberto',
   'Em atendimento',
   'Aguardando cliente',
@@ -163,10 +164,12 @@ export function signalSla(signal: Signal, segment: string): { rem: number; state
   let total = SEGMENT_SLA[segment] ?? SEGMENT_SLA.Essencial ?? 1440;
   const frustration = signal.frustration ?? 0;
   if (signal.churn || frustration >= 2 || signal.human || signal.alert === 'saque') {
-    total = Math.round(total / 2);
+    total = Math.floor(total / 2);
   }
   const rem = total - (signal.ago ?? 0);
-  const state: SlaState = rem < 0 ? 'Vencido' : rem < Math.max(total * 0.33, 20) ? 'Vencendo' : 'No prazo';
+  // Whole minutes, as the BFF computes the state its filters and facets use.
+  const dueBelow = Math.max(Math.floor((total * 33) / 100), 20);
+  const state: SlaState = rem < 0 ? 'Vencido' : rem < dueBelow ? 'Vencendo' : 'No prazo';
   const text = rem < 0 ? `Vencido há ${dur(rem)}` : `SLA ${dur(rem)}`;
   return { rem, state, text };
 }
@@ -223,28 +226,44 @@ function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-export function decorateCase(caseItem: CaseItem, signals: Signal[]): DecoratedCase {
+/** How Abrir caso ended, read from the unfiltered case list. */
+export type CaseOutcome = 'opened' | 'joined';
+
+/**
+ * Finds what cases did with the Abrir caso command for a signal: a case that
+ * is not resolved and names the signal was opened for it; a history line that
+ * names the signal means it joined the case the client already had open.
+ */
+export function caseOutcome(cases: CaseItem[], signalId: string): CaseOutcome | null {
+  if (cases.some((c) => c.state < 3 && c.signal === signalId)) {
+    return 'opened';
+  }
+  if (cases.some((c) => c.history.some((line) => line.signal === signalId))) {
+    return 'joined';
+  }
+  return null;
+}
+
+/** Presents a case card. State and remaining minutes of the SLA come from the BFF. */
+/** Why cases halves an SLA; the rule itself stays in the backend. */
+export const SLA_HALVED_WHY =
+  'Risco de saída, frustração, pedido de atendimento humano ou saque relevante reduzem o prazo à metade.';
+
+/** The note shown beside the clock of a case whose SLA was halved. */
+export function slaHalvedNote(segment: string): string {
+  return `Prazo prioritário: metade do SLA ${segment}`;
+}
+
+export function decorateCase(caseItem: CaseItem): DecoratedCase {
   const segment = caseItem.segment ?? 'Essencial';
   const name = caseItem.name ?? caseItem.client;
   const done = caseItem.state === 3;
-  const rem = caseItem.slaTotal - caseItem.openedAgo;
-  const slaState: SlaState = done
-    ? 'Concluído'
-    : rem < 0
-      ? 'Vencido'
-      : rem < Math.max(caseItem.slaTotal * 0.33, 20)
-        ? 'Vencendo'
-        : 'No prazo';
+  const rem = caseItem.slaRemaining;
+  const slaState = caseItem.slaState as SlaState;
   const secs = Math.max(0, Math.floor(Math.abs(rem) * 60));
   const hh = Math.floor(secs / 3600);
   const mm = Math.floor((secs % 3600) / 60);
   const ss = secs % 60;
-  const sig = signals.find((s) => s.id === caseItem.signal);
-  const origin = sig
-    ? sig.kind === 'message'
-      ? `mensagem · ${sig.intent ?? ''}`.trim()
-      : (ALERT_LABELS[String(sig.alert ?? '')] ?? 'alerta').toLowerCase()
-    : 'sinal arquivado';
   const last = caseItem.history[caseItem.history.length - 1];
   const next = ['Iniciar atendimento', 'Aguardar cliente', 'Marcar resolvido'][caseItem.state] ?? '';
 
@@ -253,94 +272,39 @@ export function decorateCase(caseItem: CaseItem, signals: Signal[]): DecoratedCa
     name,
     segment,
     slaState,
-    slaTone: done ? 'done' : slaToneOf(rem, slaState),
+    slaTone: done ? 'done' : slaState === 'Vencido' ? 'over' : slaState === 'Vencendo' ? 'due' : 'ok',
     countdown: done ? '—' : `${rem < 0 ? '−' : ''}${pad(hh)}:${pad(mm)}:${pad(ss)}`,
-    origin,
+    origin: caseItem.origin ?? '',
     lastText: last?.text ?? '',
     nextLabel: next,
     rem,
   };
 }
 
-function has(filters: QueueFilters, key: FilterKey): boolean {
-  return filters[key].length > 0;
+/** "1 sinal", "2 sinais": a count with the noun in the matching number. */
+export function countLabel(count: number, singular: string, plural: string): string {
+  return count === 1 ? singular : plural;
 }
 
-function sinalOn(row: DecoratedSignal, option: string): boolean {
-  if (option === 'Risco de saída') {
-    return Boolean(row.signal.churn);
-  }
-  if (option === 'Pedido humano') {
-    return Boolean(row.signal.human);
-  }
-  if (option === 'Precisa de revisão') {
-    return row.needsReview;
-  }
-  return Boolean(row.signal.fallback);
-}
-
-export function signalMatches(
-  row: DecoratedSignal,
-  query: string,
-  filters: QueueFilters,
-  skip?: FilterKey,
-): boolean {
-  const q = query.trim().toLowerCase();
-  if (q && !row.name.toLowerCase().includes(q)) {
-    return false;
-  }
-  if (skip !== 'sinal' && has(filters, 'sinal') && !filters.sinal.some((o) => sinalOn(row, o))) {
-    return false;
-  }
-  if (skip !== 'sla' && has(filters, 'sla') && !filters.sla.includes(row.slaState)) {
-    return false;
-  }
-  if (
-    skip !== 'motivo' &&
-    has(filters, 'motivo') &&
-    !filters.motivo.includes(row.typeLabel) &&
-    !filters.motivo.includes(String(row.signal.intent ?? ''))
-  ) {
-    return false;
-  }
-  if (skip !== 'segmento' && has(filters, 'segmento') && !filters.segmento.includes(row.segment)) {
-    return false;
-  }
-  return true;
-}
-
-export function caseMatches(
-  row: DecoratedCase,
-  signals: DecoratedSignal[],
-  query: string,
-  filters: QueueFilters,
-  skip?: FilterKey,
-): boolean {
-  const q = query.trim().toLowerCase();
-  if (q && !row.name.toLowerCase().includes(q)) {
-    return false;
-  }
-  if (skip !== 'sla' && has(filters, 'sla') && !filters.sla.includes(row.slaState)) {
-    return false;
-  }
-  if (skip !== 'segmento' && has(filters, 'segmento') && !filters.segmento.includes(row.segment)) {
-    return false;
-  }
-  const sig = signals.find((s) => s.signal.id === row.caseItem.signal);
-  if (skip !== 'sinal' && has(filters, 'sinal')) {
-    if (!sig || !filters.sinal.some((o) => sinalOn(sig, o))) {
-      return false;
-    }
-  }
-  if (skip !== 'motivo' && has(filters, 'motivo')) {
-    if (
-      !sig ||
-      (!filters.motivo.includes(sig.typeLabel) && !filters.motivo.includes(String(sig.signal.intent ?? '')))
-    ) {
-      return false;
-    }
-  }
-  return true;
+/**
+ * The SLA facet counts for the cards on the board. The BFF counts each value
+ * at the instant of its own response, and the signal and case lists are two
+ * responses, so a deadline that passes between them would leave a count one
+ * card away from the board. Every count the cards can answer is taken from
+ * them: all values while no SLA value is picked, and the picked values
+ * otherwise (the board then holds only those). The other counts stay as the
+ * BFF sent them.
+ */
+export function slaFacetsFromCards(
+  facets: { label: string; count: number }[],
+  cardStates: readonly string[],
+  picked: readonly string[],
+): { label: string; count: number }[] {
+  return facets.map((facet) =>
+    picked.length === 0 || picked.includes(facet.label)
+      ? { label: facet.label, count: cardStates.filter((state) => state === facet.label).length }
+      : facet,
+  );
 }
 
 export function motivoOptions(): string[] {
@@ -352,9 +316,19 @@ export function motivoOptions(): string[] {
   ];
 }
 
-export function columnVisible(label: string, filters: QueueFilters, state: number | null): boolean {
+/** Whether the board shows the column of a case state under the Andamento filter. */
+export function columnVisible(label: string, filters: QueueFilters, state: number): boolean {
   if (filters.andamento.length === 0) {
-    return state == null || state < 3;
+    return state < 3;
   }
   return filters.andamento.includes(label);
+}
+
+/** New and snoozed signals share the signals column. */
+export function signalsColumnVisible(filters: QueueFilters): boolean {
+  return (
+    filters.andamento.length === 0 ||
+    filters.andamento.includes('Novo sinal') ||
+    filters.andamento.includes('Adiados')
+  );
 }

@@ -161,7 +161,29 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
+
+/** Lets pending promises and effects run, after moving the fake clock by `ms`. */
+async function elapse(ms = 0) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+  for (let i = 0; i < 5; i++) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  }
+}
+
+/** Fernanda's Investir envelope with another cash. */
+function investirWithCash(display: string, cents: number): Screen {
+  const envelope = fernandaInvestir();
+  const summary = envelope.sections[0]?.components[0]?.props as Record<string, unknown>;
+  summary.cash = display;
+  summary.cash_cents = cents;
+  return envelope;
+}
 
 describe('Investir route', () => {
   it('renders the investir envelope with one screen request', async () => {
@@ -230,7 +252,7 @@ describe('purchase form', () => {
     expect(form.querySelector('.sdui-risk')).toHaveAttribute('data-above', 'false');
   });
 
-  it('fills the amount from the chips and caps it at the cash', async () => {
+  it('fills the amount from the chips and refuses a typed amount above the cash', async () => {
     stubBFF(fernanda);
     const { user, form } = await openCobaltoForFernanda();
     const input = within(form).getByLabelText('Quanto investir');
@@ -253,10 +275,135 @@ describe('purchase form', () => {
     expect(input).toHaveValue('300,5');
     expect(confirmButton(30_050)).toBeEnabled();
 
+    // A typed amount stays as typed: above the cash it is refused, not rewritten.
     await user.clear(input);
     await user.type(input, '5000');
-    expect(input).toHaveValue(formatCents(114_800));
-    expect(confirmButton(114_800)).toBeInTheDocument();
+    expect(input).toHaveValue('5000');
+    expect(within(form).getByRole('alert')).toHaveTextContent('Valor acima do caixa disponível.');
+    expect(input).toHaveAttribute('aria-describedby', 'valor-compra-caixa valor-compra-minimo valor-compra-aviso valor-compra-problema');
+    expect(confirmButton(500_000)).toBeDisabled();
+    await user.type(input, '{Backspace}');
+    expect(within(form).queryByRole('alert')).not.toBeInTheDocument();
+    expect(confirmButton(50_000)).toBeEnabled();
+  });
+
+  it('says why an amount is not accepted and sends nothing', async () => {
+    const unrecognised = 'Valor não reconhecido. Use o formato 1.000,00.';
+    const zero = 'O valor precisa ser maior que zero.';
+    const { posts } = stubBFF(fernanda);
+    const { user, form } = await openCobaltoForFernanda();
+    const input = within(form).getByLabelText('Quanto investir');
+    for (const [typed, sentence] of [
+      ['-5', unrecognised],
+      ['1e3', unrecognised],
+      ['abc', unrecognised],
+      ['1,234', unrecognised],
+      ['US$ 1.000,005', unrecognised],
+      ['0', zero],
+      ['0,00', zero],
+      ['9,99', 'Valor abaixo do mínimo deste produto.'],
+      ['1.148,01', 'Valor acima do caixa disponível.'],
+    ] as const) {
+      await user.clear(input);
+      await user.type(input, typed);
+      expect(input).toHaveValue(typed);
+      expect(within(form).getByRole('alert')).toHaveTextContent(sentence);
+      expect(input).toHaveAttribute('aria-invalid', 'true');
+      expect(within(form).getByRole('button', { name: /^Confirmar compra de/ })).toBeDisabled();
+      fireEvent.submit(form);
+    }
+
+    // Empty is not an error: the sentence is helper text.
+    await user.clear(input);
+    expect(within(form).queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(form).getByText('Informe um valor maior que zero.')).toHaveAttribute('id', 'valor-compra-problema');
+    expect(input).toHaveAttribute('aria-invalid', 'false');
+    expect(confirmButton(0)).toBeDisabled();
+    fireEvent.submit(form);
+    expect(posts).toHaveLength(0);
+  });
+
+  it.each([
+    ['1.000,50', 100_050],
+    ['US$ 1.000,00', 100_000],
+  ])('sends the cents of the valid amount %s', async (typed, cents) => {
+    const { posts } = stubBFF(fernanda);
+    const { user, form } = await openCobaltoForFernanda();
+    const input = within(form).getByLabelText('Quanto investir');
+    await user.clear(input);
+    await user.type(input, typed);
+    expect(within(form).queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(confirmButton(cents));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Compra enviada' })).toBeInTheDocument();
+    expect(posts.map((post) => post.body)).toEqual([{ product_id: 'cobalto', amount_cents: cents }]);
+  });
+
+  it('highlights a suggested amount only while the field holds its value', async () => {
+    stubBFF(fernanda);
+    const { user, form } = await openCobaltoForFernanda();
+    const input = within(form).getByLabelText('Quanto investir');
+    const pressed = () =>
+      within(within(form).getByRole('group', { name: 'Valores sugeridos' }))
+        .getAllByRole('button')
+        .filter((chip) => chip.getAttribute('aria-pressed') === 'true')
+        .map((chip) => chip.textContent);
+    expect(pressed()).toEqual(['US$ 1.000']);
+
+    await user.clear(input);
+    expect(pressed()).toEqual([]);
+    await user.type(input, '250');
+    expect(pressed()).toEqual(['US$ 250']);
+    await user.type(input, ',01');
+    expect(pressed()).toEqual([]);
+    await user.clear(input);
+    await user.type(input, '1.148,00');
+    expect(pressed()).toEqual(['Tudo']);
+    await user.type(input, '0');
+    expect(pressed()).toEqual([]);
+    await user.click(within(form).getByRole('button', { name: 'US$ 250' }));
+    expect(pressed()).toEqual(['US$ 250']);
+  });
+
+  it('explains that there is no cash, keeps the amount at US$ 0,00, and sends nothing', async () => {
+    const user = userEvent.setup();
+    const { posts } = stubBFF({ ...fernanda, investir: () => investirWithCash('US$ 0,00', 0) });
+    renderAt(`/client-pov/${SEED.fernanda}/investir`);
+    // The screen is server-driven and the envelope does not disable the products: they stay active.
+    const product = await screen.findByRole('button', { name: /Orla T-Bill 6 meses/ });
+    expect(product).toBeEnabled();
+    await user.click(product);
+    const form = screen.getByRole('form', { name: 'Investir em Orla T-Bill 6 meses' });
+    const input = within(form).getByLabelText('Quanto investir');
+
+    expect(within(form).getByRole('alert')).toHaveTextContent('Sem caixa disponível para investir.');
+    expect(within(form).getByText('Disponível no caixa: US$ 0,00')).toBeInTheDocument();
+    expect(input).toHaveValue(formatCents(0));
+    expect(input).toBeDisabled();
+    const chips = within(within(form).getByRole('group', { name: 'Valores sugeridos' })).getAllByRole('button');
+    expect(chips.map((chip) => chip.textContent)).toEqual(['US$ 250', 'US$ 1.000', 'Tudo']);
+    for (const chip of chips) {
+      expect(chip).toBeDisabled();
+      expect(chip).toHaveAttribute('aria-pressed', 'false');
+    }
+    expect(confirmButton(0)).toBeDisabled();
+
+    // Nothing typed or picked reaches the field: it never reads "US$ 0,000".
+    await user.type(input, '50');
+    await user.click(within(form).getByRole('button', { name: 'US$ 250' }));
+    expect(input).toHaveValue(formatCents(0));
+    expect(within(form).getByRole('alert')).toHaveTextContent('Sem caixa disponível para investir.');
+    fireEvent.submit(form);
+    expect(posts).toHaveLength(0);
+  });
+
+  it('says the cash is below the minimum when it cannot cover it', async () => {
+    const user = userEvent.setup();
+    stubBFF({ ...fernanda, investir: () => investirWithCash('US$ 5,00', 500) });
+    renderAt(`/client-pov/${SEED.fernanda}/investir`);
+    await user.click(await screen.findByRole('button', { name: /Orla T-Bill 6 meses/ }));
+    expect(screen.getByLabelText('Quanto investir')).toHaveValue(formatCents(500));
+    expect(screen.getByRole('alert')).toHaveTextContent('Valor abaixo do mínimo deste produto.');
+    expect(confirmButton(500)).toBeDisabled();
   });
 
   it('caps the default and the chips when the cash is below them', async () => {
@@ -514,6 +661,38 @@ describe('client app shell', () => {
 });
 
 describe('purchase confirmation', () => {
+  it('re-reads the screens after an accepted purchase, also when its form closed first', async () => {
+    vi.useFakeTimers();
+    const pending = deferred();
+    const { gets } = stubBFF({ ...fernanda, purchases: [() => json({ event_id: EVENT }, 202), () => pending.promise] });
+    const reads = (slug: string) => gets.filter((url) => url.endsWith(`/screens/${slug}`)).length;
+    renderAt(`/client-pov/${SEED.fernanda}/investir`);
+    await elapse();
+    fireEvent.click(screen.getByRole('button', { name: /Orla T-Bill 6 meses/ }));
+    fireEvent.click(confirmButton(100_000));
+    await elapse();
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao início' }));
+    await elapse();
+    expect(reads('home')).toBe(1);
+    await elapse(1_500);
+    expect(reads('home')).toBe(2);
+
+    // A purchase accepted after its form closed shows no confirmation, and is followed all the same.
+    fireEvent.click(screen.getByRole('button', { name: 'Investir' }));
+    await elapse();
+    fireEvent.click(screen.getByRole('button', { name: /Orla T-Bill 6 meses/ }));
+    fireEvent.click(confirmButton(100_000));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    await elapse();
+    const investir = reads('investir');
+    await act(async () => pending.resolve(json({ event_id: EVENT }, 202)));
+    await elapse(1_400);
+    expect(screen.queryByRole('heading', { name: 'Compra enviada' })).not.toBeInTheDocument();
+    expect(reads('investir')).toBe(investir);
+    await elapse(200);
+    expect(reads('investir')).toBe(investir + 1);
+  });
+
   it('posts the purchase and shows the rule step above the profile', async () => {
     stubStream(['feito', 'feito', 'agora', 'aguardando']);
     const { posts } = stubBFF(fernanda);

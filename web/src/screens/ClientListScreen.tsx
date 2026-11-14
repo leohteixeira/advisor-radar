@@ -90,9 +90,9 @@ export function ClientListScreen() {
               </span>
             </span>
             <span className="pov-card__meta">
-              <span className="pov-card__segment">{client.segment}</span>
+              {client.segment ? <span className="pov-card__segment">{client.segment}</span> : null}
               <span className="pov-card__money">{formatCents(client.assets)}</span>
-              <span className="pov-card__sla">SLA base {client.sla}</span>
+              {client.sla ? <span className="pov-card__sla">SLA base {client.sla}</span> : null}
             </span>
             <p>{client.hint}</p>
           </Link>

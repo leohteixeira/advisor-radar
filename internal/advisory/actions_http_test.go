@@ -15,7 +15,7 @@ func TestActionsHTTP_PutSnoozeContactDelete(t *testing.T) {
 	fixed := time.Date(2026, 9, 27, 15, 0, 0, 0, time.UTC)
 	store := advisory.NewMemoryActionStore()
 	svc := advisory.NewActions(store, func() time.Time { return fixed })
-	h := advisory.NewActionsHandler(svc)
+	h := advisory.NewActionsHandler(svc, nil)
 
 	put := func(id, action string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPut, "/v1/actions/"+id, strings.NewReader(`{"action":"`+action+`"}`))

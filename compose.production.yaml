@@ -168,7 +168,10 @@ services:
     image: portfolio/advisor-radar:${IMAGE_TAG:?Set IMAGE_TAG}
     profiles: [tools]
     command: [/app/bin/db, migrate]
-    environment: *databases
+    environment:
+      <<: *databases
+      # `db seed` empties the broker queues before it loads the seed.
+      BROKER_URL: "${BROKER_URL:?Set BROKER_URL}"
     networks: [data]
 networks:
   edge:

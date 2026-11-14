@@ -13,7 +13,7 @@ const marianaCaseID = "01a0e3a5-2f4c-7b1e-9d2a-5c6f7e8a9b0c"
 // withCase is Mariana after she files a complaint: one open case, three
 // minutes old.
 func withCase(f fixture) fixture {
-	f.cases = []OpenCase{{ID: marianaCaseID, State: "Aberto", Age: 3 * time.Minute}}
+	f.cases = []OpenCase{{ID: marianaCaseID, State: "Aberto", Age: 3 * time.Minute, SLAMinutes: 60}}
 	return f
 }
 
@@ -183,7 +183,7 @@ func TestCaseOpenMoment(t *testing.T) {
 	t.Parallel()
 	v := caseOpenMoment{cat: embedded(t)}
 	snap := withCase(marianaFixture()).snapshot()
-	snap.Cases.Value = append(snap.Cases.Value, OpenCase{ID: "01a0e3a4-0000-7000-8000-000000000001", State: "Em análise", Age: 2 * 24 * time.Hour})
+	snap.Cases.Value = append(snap.Cases.Value, OpenCase{ID: "01a0e3a4-0000-7000-8000-000000000001", State: "Em análise", Age: 2 * 24 * time.Hour, SLAMinutes: 1440})
 	if !v.Matches(snap) {
 		t.Fatal("case_open does not match an open case")
 	}
@@ -191,7 +191,7 @@ func TestCaseOpenMoment(t *testing.T) {
 	expected := MomentCard{
 		Kicker: "Atendimento em andamento",
 		Title:  "Sua reclamação está com a Ana Paula Ribeiro",
-		Body:   "Como cliente Singular, você recebe resposta em até 1 h.",
+		Body:   "Como cliente Singular, este atendimento tem resposta em até 1 h.",
 		Meta:   "Protocolo 01A0E3A5-2F4C · aberto há 3 min",
 		Tone:   ToneInfo,
 		Icon:   "inbox",
@@ -218,6 +218,54 @@ func TestCaseOpenMoment(t *testing.T) {
 	}
 	if _, err := v.Build(unknown, embedded(t)); err == nil {
 		t.Error("case_open builds for a segment without an SLA")
+	}
+}
+
+// The case_open copy states the SLA of the case itself, the number the
+// advisor's queue clock counts from: halved when a churn risk opened the
+// case, and the new segment's after a segment change (ADR 0012). A halved
+// SLA is stated next to the segment's own, so the two do not contradict.
+func TestCaseOpenMoment_StatesTheCaseSLA(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		segment  string
+		minutes  int
+		expected string
+	}{
+		{name: "essencial", segment: "Essencial", minutes: 1440, expected: "Como cliente Essencial, este atendimento tem resposta em até 24 h."},
+		{name: "essencial halved by churn risk", segment: "Essencial", minutes: 720, expected: "Como cliente Essencial, seu prazo padrão é de 24 h. Este atendimento é prioritário: resposta em até 12 h."},
+		{name: "advance after an upgrade, still halved", segment: "Advance", minutes: 120, expected: "Como cliente Advance, seu prazo padrão é de 4 h. Este atendimento é prioritário: resposta em até 2 h."},
+		{name: "advance", segment: "Advance", minutes: 240, expected: "Como cliente Advance, este atendimento tem resposta em até 4 h."},
+		{name: "singular halved", segment: "Singular", minutes: 30, expected: "Como cliente Singular, seu prazo padrão é de 1 h. Este atendimento é prioritário: resposta em até 30 min."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			v := caseOpenMoment{cat: embedded(t)}
+			snap := withCase(marianaFixture()).snapshot()
+			snap.Customer.Value.Segment = tt.segment
+			snap.Cases.Value[0].SLAMinutes = tt.minutes
+			if !v.Matches(snap) {
+				t.Fatal("case_open does not match an open case")
+			}
+			p := props[MomentCard](t, build(t, v, snap), typeMomentCard, momentCaseOpen)
+			if p.Body != tt.expected {
+				t.Fatalf("body = %q, want %q", p.Body, tt.expected)
+			}
+		})
+	}
+
+	// A case without an SLA states none.
+	v := caseOpenMoment{cat: embedded(t)}
+	snap := withCase(marianaFixture()).snapshot()
+	snap.Cases.Value[0].SLAMinutes = 0
+	if v.Matches(snap) {
+		t.Error("case_open matches a case without an SLA")
+	}
+	if _, err := v.Build(snap, embedded(t)); err == nil {
+		t.Error("case_open builds for a case without an SLA")
 	}
 }
 
@@ -337,10 +385,27 @@ func TestIdleCashMoment(t *testing.T) {
 	// Patrimony includes cash, so more cash than patrimony is a bad read;
 	// the share caps at 100% instead of failing the section.
 	over := snap
+	over.Account = Fetched[Account]{Err: errDown}
 	over.Moments.Value.CashCents = 7_000_000
 	p = props[MomentCard](t, build(t, v, over), typeMomentCard, momentIdleCash)
 	if p.Title != "Thiago, 100% do seu patrimônio está em caixa" {
 		t.Errorf("title with cash above patrimony = %q", p.Title)
+	}
+
+	// The share is the cash row of the allocation Carteira shows, not a
+	// two-way split of the moment facts: 90,6% of cash reads 90% beside two
+	// classes whose remainders are larger, as it does in the breakdown.
+	uneven := snap
+	uneven.Account.Value = Account{Acoes: 47_000, ETFs: 47_000, RendaFixa: 0, Cash: 906_000, Patrimony: 1_000_000}
+	uneven.Moments.Value = MomentFacts{IdleCash: true, CashCents: 906_000, PatrimonyCents: 1_000_000}
+	p = props[MomentCard](t, build(t, v, uneven), typeMomentCard, momentIdleCash)
+	breakdown := props[AllocationBreakdown](t, build(t, allocationBreakdown{}, uneven), typeAllocationBreakdown, "default")
+	cashRow := breakdown.Rows[len(breakdown.Rows)-1]
+	if cashRow.Class != "cash" || p.Title != "Thiago, "+cashRow.Share+" do seu patrimônio está em caixa" {
+		t.Errorf("moment title %q does not use the breakdown cash share %q", p.Title, cashRow.Share)
+	}
+	if cashRow.Share != "90%" {
+		t.Errorf("breakdown cash share = %q, want 90%% (the two-way split would read 91%%)", cashRow.Share)
 	}
 
 	upper := snap

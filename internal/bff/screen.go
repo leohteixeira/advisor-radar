@@ -266,6 +266,8 @@ func (c screenCases) OpenCases(ctx context.Context, customerID string) ([]screen
 			ID:    it.ID,
 			State: state,
 			Age:   time.Duration(max(it.OpenedAgo, 0)) * time.Minute,
+			// The case's own SLA, as the queue clock counts it.
+			SLAMinutes: it.SlaTotal,
 		})
 	}
 	return out, nil

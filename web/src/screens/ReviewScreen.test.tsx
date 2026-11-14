@@ -211,6 +211,34 @@ describe('ReviewScreen', () => {
     expect(screen.getByText('Confirmado: Reclamação')).toBeTruthy();
   });
 
+  it('shows the backend intent label on a fallback card without a distribution', async () => {
+    mockFetch([
+      {
+        id: RID.roberto,
+        client: CID.roberto,
+        name: 'Roberto Nascimento',
+        segment: 'Essencial',
+        text: 'Fui cobrado duas vezes pela mesma remessa.',
+        dist: {},
+        ago: 4,
+        fallback: true,
+        intent: 'Reclamação',
+      },
+    ]);
+    const user = userEvent.setup();
+    render(<ReviewScreen />);
+
+    const card = await screen.findByTestId(`review-${RID.roberto}`);
+    expect(within(card).getByText('Classificação simplificada')).toBeTruthy();
+    expect(within(card).getByText('Reclamação')).toBeTruthy();
+    expect(within(card).queryByText('reclamacao')).toBeNull();
+
+    await user.click(within(card).getByRole('button', { name: 'Confirmar Reclamação' }));
+    await waitFor(() => {
+      expect(within(card).getByRole('status')).toHaveTextContent('Confirmado como Reclamação');
+    });
+  });
+
   it('keeps cards and shows a toast when correction fails', async () => {
     mockFetch(structuredClone(reviewSeed), { failCorrect: true });
     const user = userEvent.setup();

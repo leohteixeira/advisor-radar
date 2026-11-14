@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -27,11 +26,41 @@ import (
 
 const amqpDialTimeout = 10 * time.Second
 
+// intakeQueue is one event queue cases consumes with the intake policy:
+// prefetch 1, transient errors retried with backoff, and its own dead-letter
+// queue. apply handles one delivery body.
+type intakeQueue struct {
+	name       string
+	dlq        string
+	routingKey string
+	consumer   string
+	apply      func(ctx context.Context, store cases.IntakeStore, lookup cases.CustomerLookup, body []byte) (cases.IntakeResult, error)
+}
+
 // Triaged intake queue and its dead-letter queue.
 const (
 	triagedQueue = "cases.message.triaged"
 	triagedDLQ   = "cases.message.triaged.dlq"
 )
+
+// intakeQueues are the three event queues: triaged messages open or join
+// cases, the advisor's open-case command does the same for a queue signal
+// (ADR 0013), and alert.raised only recalculates the SLA of an open case
+// after a segment change (ADR 0012).
+var intakeQueues = []intakeQueue{
+	{
+		name: triagedQueue, dlq: triagedDLQ,
+		routingKey: event.NameMessageTriaged, consumer: "cases-intake", apply: cases.Intake,
+	},
+	{
+		name: "cases.case.open.requested", dlq: "cases.case.open.requested.dlq",
+		routingKey: event.NameCaseOpenRequested, consumer: "cases-open-command", apply: cases.OpenRequested,
+	},
+	{
+		name: "cases.alert.raised", dlq: "cases.alert.raised.dlq",
+		routingKey: event.NameAlertRaised, consumer: "cases-resegment", apply: cases.Resegment,
+	},
+}
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -83,7 +112,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errCh := make(chan error, 4)
+	errCh := make(chan error, 3+len(intakeQueues))
 	workers := 0
 	var grpcSrv *grpc.Server
 	var amqpCleanup func()
@@ -175,10 +204,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	// Intake setup completes before any broker worker starts.
-	var intakeCh *amqp.Channel
+	var intakeChs []*amqp.Channel
 	var lookup cases.CustomerLookup
 	if advisoryTarget == "" {
-		logger.Warn("triaged intake disabled: ADVISORY_GRPC_TARGET is not set", "service", "cases")
+		logger.Warn("event intake disabled: ADVISORY_GRPC_TARGET is not set", "service", "cases")
 	} else {
 		advisoryConn, err := grpc.NewClient(advisoryTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), telemetry.GRPCClientOption())
 		if err != nil {
@@ -187,18 +216,21 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		// Closed when run returns, after every worker (the intake included) exited.
 		defer advisoryConn.Close()
 
-		intakeCh, err = session.conn.Channel()
-		if err != nil {
-			return abort(fmt.Errorf("cases: open intake channel: %w", err))
-		}
-		defer intakeCh.Close()
-		if err := declareTriagedTopology(intakeCh, session.exchange); err != nil {
-			return abort(err)
+		for _, q := range intakeQueues {
+			ch, err := session.conn.Channel()
+			if err != nil {
+				return abort(fmt.Errorf("cases: open intake channel: %w", err))
+			}
+			defer ch.Close()
+			if err := declareIntakeTopology(ch, session.exchange, q); err != nil {
+				return abort(err)
+			}
+			intakeChs = append(intakeChs, ch)
 		}
 		lookup = cases.NewAdvisoryLookup(advisoryv1.NewAdvisoryServiceClient(advisoryConn))
 	}
 
-	publisher := &amqpPublisher{ch: pubCh, exchange: session.exchange}
+	publisher := &amqpPublisher{ch: pubCh, exchange: session.exchange, delayQueues: map[int]struct{}{}}
 
 	workers += 2
 	go func() {
@@ -207,10 +239,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	go func() {
 		errCh <- runBreachConsumer(runCtx, store, consumeCh)
 	}()
-	if intakeCh != nil {
+	for i, ch := range intakeChs {
 		workers++
 		go func() {
-			errCh <- runTriagedConsumer(runCtx, logger, store, lookup, intakeCh)
+			errCh <- runIntakeConsumer(runCtx, logger, store, lookup, ch, intakeQueues[i])
 		}()
 	}
 
@@ -247,9 +279,13 @@ type amqpSession struct {
 	exchange string
 }
 
+// amqpPublisher publishes events and SLA delays on one channel. It is used
+// by the single publisher goroutine, so delayQueues needs no lock.
 type amqpPublisher struct {
 	ch       *amqp.Channel
 	exchange string
+	// delayQueues are the TTLs whose delay queue this run already declared.
+	delayQueues map[int]struct{}
 }
 
 func dialAMQP(ctx context.Context, url string) (*amqpSession, func(), error) {
@@ -327,15 +363,16 @@ type topologyChannel interface {
 	QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error
 }
 
+// declareSLATopology declares the breach queue and the legacy delay queue.
+// The legacy queue is kept, with its original arguments, only so the delays a
+// previous version published into it keep dead-lettering; new delays go to
+// the per-TTL queues declareDelayQueue creates (ADR 0012).
 func declareSLATopology(ch topologyChannel, exchange string) error {
-	const delayQueue = "cases.sla.delay"
 	const breachQueue = "cases.sla.breached"
 
-	// Per-message TTL is set on publish via SLADelayArgs; the delay queue
-	// only wires the dead-letter path using the same routing key helper.
 	delayArgs := cases.SLADelayArgs(60)
 	if _, err := ch.QueueDeclare(
-		delayQueue,
+		cases.LegacyDelayQueue,
 		true,
 		false,
 		false,
@@ -385,20 +422,49 @@ func (b *amqpPublisher) Publish(ctx context.Context, routingKey string, body []b
 	return nil
 }
 
+// declareDelayQueue declares the delay queue of one TTL. The TTL is on the
+// queue, not on the message, so the queue is in expiry order and every
+// message dead-letters to exchange as case.sla.breached when its own TTL
+// ends.
+func declareDelayQueue(ch topologyChannel, exchange string, ttlMs int) error {
+	if _, err := ch.QueueDeclare(
+		cases.DelayQueue(ttlMs),
+		true,
+		false,
+		false,
+		false,
+		amqp.Table{
+			"x-message-ttl":             int64(ttlMs),
+			"x-dead-letter-exchange":    exchange,
+			"x-dead-letter-routing-key": cases.SLADelayArgs(0).DeadLetterRoutingKey,
+		},
+	); err != nil {
+		return fmt.Errorf("cases: declare delay queue %d ms: %w", ttlMs, err)
+	}
+	return nil
+}
+
+// PublishDelay sends one SLA delay to the queue of its TTL, declaring the
+// queue the first time this run uses that TTL.
 func (b *amqpPublisher) PublishDelay(ctx context.Context, caseID string, ttlMs int, body []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if _, declared := b.delayQueues[ttlMs]; !declared {
+		if err := declareDelayQueue(b.ch, b.exchange, ttlMs); err != nil {
+			return err
+		}
+		b.delayQueues[ttlMs] = struct{}{}
+	}
 	err := b.ch.PublishWithContext(
 		ctx,
 		"",
-		"cases.sla.delay",
+		cases.DelayQueue(ttlMs),
 		false,
 		false,
 		amqp.Publishing{
 			ContentType:  "text/plain",
 			DeliveryMode: amqp.Persistent,
-			Expiration:   strconv.Itoa(ttlMs),
 			Body:         body,
 		},
 	)
@@ -441,47 +507,47 @@ func runBreachConsumer(ctx context.Context, store *cases.PGXStore, ch *amqp.Chan
 	}
 }
 
-// declareTriagedTopology declares the intake queue bound to message.triaged
-// and its own dead-letter queue through the default exchange. It never binds
-// alert.raised: alerts (perfil included) do not open cases.
-func declareTriagedTopology(ch topologyChannel, exchange string) error {
-	if _, err := ch.QueueDeclare(triagedDLQ, true, false, false, false, nil); err != nil {
-		return fmt.Errorf("cases: declare triaged dlq: %w", err)
+// declareIntakeTopology declares one intake queue bound to its event and its
+// own dead-letter queue through the default exchange.
+func declareIntakeTopology(ch topologyChannel, exchange string, q intakeQueue) error {
+	if _, err := ch.QueueDeclare(q.dlq, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("cases: declare %s: %w", q.dlq, err)
 	}
 	if _, err := ch.QueueDeclare(
-		triagedQueue,
+		q.name,
 		true,
 		false,
 		false,
 		false,
 		amqp.Table{
 			"x-dead-letter-exchange":    "",
-			"x-dead-letter-routing-key": triagedDLQ,
+			"x-dead-letter-routing-key": q.dlq,
 		},
 	); err != nil {
-		return fmt.Errorf("cases: declare triaged queue: %w", err)
+		return fmt.Errorf("cases: declare %s: %w", q.name, err)
 	}
-	if err := ch.QueueBind(triagedQueue, event.NameMessageTriaged, exchange, false, nil); err != nil {
-		return fmt.Errorf("cases: bind triaged queue: %w", err)
+	if err := ch.QueueBind(q.name, q.routingKey, exchange, false, nil); err != nil {
+		return fmt.Errorf("cases: bind %s: %w", q.name, err)
 	}
 	return nil
 }
 
-// runTriagedConsumer applies message.triaged deliveries one at a time
+// runIntakeConsumer applies the deliveries of one intake queue one at a time
 // (prefetch 1, one goroutine) until ctx is canceled.
-func runTriagedConsumer(
+func runIntakeConsumer(
 	ctx context.Context,
 	logger *slog.Logger,
 	store *cases.PGXStore,
 	lookup cases.CustomerLookup,
 	ch *amqp.Channel,
+	q intakeQueue,
 ) error {
 	if err := ch.Qos(1, 0, false); err != nil {
-		return fmt.Errorf("cases: intake qos: %w", err)
+		return fmt.Errorf("cases: %s qos: %w", q.name, err)
 	}
-	deliveries, err := ch.Consume(triagedQueue, "cases-intake", false, false, false, false, nil)
+	deliveries, err := ch.Consume(q.name, q.consumer, false, false, false, false, nil)
 	if err != nil {
-		return fmt.Errorf("cases: consume triaged: %w", err)
+		return fmt.Errorf("cases: consume %s: %w", q.name, err)
 	}
 
 	for {
@@ -493,46 +559,49 @@ func runTriagedConsumer(
 				if ctx.Err() != nil {
 					return nil
 				}
-				return fmt.Errorf("cases: triaged deliveries channel closed")
+				return fmt.Errorf("cases: %s deliveries channel closed", q.name)
 			}
-			handleTriaged(ctx, logger, store, lookup, d)
+			handleIntake(ctx, logger, store, lookup, q, d)
 		}
 	}
 }
 
-// handleTriaged retries transient errors with backoff, then acks, requeues on
+// handleIntake retries transient errors with backoff, then acks, requeues on
 // shutdown, or dead-letters. Logs carry ids and the decision, never text.
-func handleTriaged(
+func handleIntake(
 	ctx context.Context,
 	logger *slog.Logger,
 	store *cases.PGXStore,
 	lookup cases.CustomerLookup,
+	q intakeQueue,
 	d amqp.Delivery,
 ) {
 	var res cases.IntakeResult
 	err := cases.RetryTransient(ctx, cases.IntakeAttempts, cases.IntakeBaseBackoff, func(ctx context.Context) error {
 		var err error
-		res, err = cases.Intake(ctx, store, lookup, d.Body)
+		res, err = q.apply(ctx, store, lookup, d.Body)
 		return err
 	})
 	ack, requeue := triagedOutcome(err, ctx.Err())
 	switch {
 	case ack:
-		logger.Info("triaged message applied",
+		logger.Info("event applied",
 			"service", "cases",
+			"queue", q.name,
 			"event_id", res.EventID,
 			"customer_id", res.CustomerID,
 			"case_id", res.CaseID,
 			"decision", string(res.Decision),
 		)
 		if ackErr := d.Ack(false); ackErr != nil {
-			logger.Warn("triaged ack failed", "service", "cases", "event_id", res.EventID, "error", ackErr.Error())
+			logger.Warn("event ack failed", "service", "cases", "queue", q.name, "event_id", res.EventID, "error", ackErr.Error())
 		}
 		return
 	case !requeue:
 		var perm cases.PermanentDeliveryError
-		logger.Warn("triaged message dead-lettered",
+		logger.Warn("event dead-lettered",
 			"service", "cases",
+			"queue", q.name,
 			"event_id", res.EventID,
 			"customer_id", res.CustomerID,
 			"permanent", errors.As(err, &perm),
@@ -540,8 +609,8 @@ func handleTriaged(
 		)
 	}
 	if nackErr := d.Nack(false, requeue); nackErr != nil {
-		logger.Warn("triaged nack failed",
-			"service", "cases", "event_id", res.EventID, "requeue", requeue, "error", nackErr.Error())
+		logger.Warn("event nack failed",
+			"service", "cases", "queue", q.name, "event_id", res.EventID, "requeue", requeue, "error", nackErr.Error())
 	}
 }
 

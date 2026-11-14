@@ -112,6 +112,21 @@ export async function deleteAction(id: string): Promise<void> {
   }
 }
 
+/**
+ * Sends the Abrir caso command for a queue signal. The BFF only accepts it
+ * (202); the case shows up later in GET /v1/cases. The same key for the same
+ * signal is the same command, so a retry reuses it.
+ */
+export async function openCase(signalId: string, idempotencyKey: string): Promise<void> {
+  const res = await fetch(apiPath(`v1/signals/${signalId}/case`), {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status);
+  }
+}
+
 export async function advanceCase(id: string): Promise<CaseItem> {
   return readJSON<CaseItem>(
     await fetch(apiPath(`v1/cases/${id}/advance`), { method: 'POST' }),

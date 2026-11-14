@@ -1,16 +1,17 @@
 -- Cases cast: Paulo, Ana Beatriz, Patrícia with Ana's operator id snapshotted.
-
--- A reseed returns the cases to this cast. Every case opened from the app
--- during a walk is resolved first, so each client's home leaves case_open, and
--- the upserts below never reopen a cast case next to another open case of the
--- same customer (cases_one_open_per_customer_idx).
-UPDATE cases SET state = 'Resolvido'
-WHERE state <> 'Resolvido'
-  AND id NOT IN (
-    '01a0e3a4-9a44-76e9-9644-aec5cdb8be90',
-    '01a0e3a4-9a44-76f2-9263-f892becdd32a',
-    '01a0e3a4-9a44-76fb-9df9-047e1974d2f6'
-  );
+--
+-- A reseed returns the service to this cast. Everything a walk recorded goes
+-- first: the cases opened from the app or from the queue, the history and
+-- state changes written on any case, the SLA delays armed for them, the inbox
+-- claims, and the events. A case resolved instead of removed would stay on
+-- the manager panel and in the client's timeline next to a reset account.
+-- Each cast case opens at the raised_at of its signal in seeds/advisory. Stop
+-- every service before reseeding (README, "Reseed before each walk").
+DELETE FROM outbox;
+DELETE FROM inbox;
+DELETE FROM sla_delay;
+DELETE FROM case_history;
+DELETE FROM cases;
 
 INSERT INTO cases (id, customer_id, signal_id, advisor_id, state, sla_total_minutes, escalated, opened_at)
 VALUES ('01a0e3a4-9a44-76e9-9644-aec5cdb8be90', '01a0e3a4-9a44-7571-9cd6-29d603ed75d1', '01a0e3a4-9a44-764a-90c1-20f5fd0964b8', '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', 'Em atendimento', 120, false, now() - interval '25 minutes')
@@ -35,7 +36,7 @@ ON CONFLICT (id) DO UPDATE SET
   opened_at = EXCLUDED.opened_at;
 
 INSERT INTO cases (id, customer_id, signal_id, advisor_id, state, sla_total_minutes, escalated, opened_at)
-VALUES ('01a0e3a4-9a44-76fb-9df9-047e1974d2f6', '01a0e3a4-9a44-75b5-b359-8d4428470a99', '01a0e3a4-9a44-768f-b9d1-3d7f36df3063', '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', 'Resolvido', 60, false, now() - interval '400 minutes')
+VALUES ('01a0e3a4-9a44-76fb-9df9-047e1974d2f6', '01a0e3a4-9a44-75b5-b359-8d4428470a99', '01a0e3a4-9a44-768f-b9d1-3d7f36df3063', '01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', 'Resolvido', 60, false, now() - interval '185 minutes')
 ON CONFLICT (id) DO UPDATE SET
   customer_id = EXCLUDED.customer_id,
   signal_id = EXCLUDED.signal_id,
@@ -102,7 +103,7 @@ ON CONFLICT (id) DO UPDATE SET
   occurred_at = EXCLUDED.occurred_at;
 
 INSERT INTO case_history (id, case_id, kind, text, occurred_at)
-VALUES ('01a0e3a4-9a44-78ec-b118-129671e9b7ac', '01a0e3a4-9a44-76fb-9df9-047e1974d2f6', 'caso', 'Caso aberto', now() - interval '400 minutes')
+VALUES ('01a0e3a4-9a44-78ec-b118-129671e9b7ac', '01a0e3a4-9a44-76fb-9df9-047e1974d2f6', 'caso', 'Caso aberto', now() - interval '185 minutes')
 ON CONFLICT (id) DO UPDATE SET
   case_id = EXCLUDED.case_id,
   kind = EXCLUDED.kind,
@@ -110,7 +111,7 @@ ON CONFLICT (id) DO UPDATE SET
   occurred_at = EXCLUDED.occurred_at;
 
 INSERT INTO case_history (id, case_id, kind, text, occurred_at)
-VALUES ('01a0e3a4-9a44-78f7-b83a-d40c869877f8', '01a0e3a4-9a44-76fb-9df9-047e1974d2f6', 'telefone', 'Ligação · 14 min · sugestão de Treasuries 2028', now() - interval '380 minutes')
+VALUES ('01a0e3a4-9a44-78f7-b83a-d40c869877f8', '01a0e3a4-9a44-76fb-9df9-047e1974d2f6', 'telefone', 'Ligação · 14 min · sugestão de Treasuries 2028', now() - interval '165 minutes')
 ON CONFLICT (id) DO UPDATE SET
   case_id = EXCLUDED.case_id,
   kind = EXCLUDED.kind,
@@ -118,7 +119,7 @@ ON CONFLICT (id) DO UPDATE SET
   occurred_at = EXCLUDED.occurred_at;
 
 INSERT INTO case_history (id, case_id, kind, text, occurred_at)
-VALUES ('01a0e3a4-9a44-7900-aff7-bb632e5b301c', '01a0e3a4-9a44-76fb-9df9-047e1974d2f6', 'caso', 'Resolvido', now() - interval '370 minutes')
+VALUES ('01a0e3a4-9a44-7900-aff7-bb632e5b301c', '01a0e3a4-9a44-76fb-9df9-047e1974d2f6', 'caso', 'Resolvido', now() - interval '155 minutes')
 ON CONFLICT (id) DO UPDATE SET
   case_id = EXCLUDED.case_id,
   kind = EXCLUDED.kind,
@@ -204,7 +205,7 @@ VALUES (
   'case.opened',
   jsonb_build_object(
     'event_id', '01a0e3a4-9a44-791c-9724-52d8a6b6eedd'::text,
-    'occurred_at', (now() - interval '400 minutes'),
+    'occurred_at', (now() - interval '185 minutes'),
     'customer_id', '01a0e3a4-9a44-75b5-b359-8d4428470a99'::text,
     'schema_version', 1,
     'payload', jsonb_build_object(

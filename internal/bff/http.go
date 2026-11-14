@@ -2,6 +2,7 @@ package bff
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,17 +23,21 @@ import (
 // Handler serves the queue, SSE stream, actions proxy, cases, timeline,
 // review queue, manager panel, and customer detail.
 type Handler struct {
-	board      *Board
-	actions    ActionsClient
-	queue      QueueSource
-	cases      CaseSource
-	review     ReviewSource
-	timeline   TimelineClient
-	pov        POVSource
-	screens    *screen.Engine
-	now        func() time.Time
-	limits     *povLimiter
-	advances   *advanceLimiter
+	board    *Board
+	actions  ActionsClient
+	queue    QueueSource
+	cases    CaseSource
+	review   ReviewSource
+	timeline TimelineClient
+	pov      POVSource
+	screens  *screen.Engine
+	now      func() time.Time
+	limits   *povLimiter
+	advances *advanceLimiter
+	// opens bounds POST /v1/signals/{id}/case with the advance-day budget:
+	// every new key writes an advisory outbox row, a broker message and a
+	// cases inbox row.
+	opens      *advanceLimiter
 	counts     *povCounts
 	bastidores *bastidoresHub
 	logger     *slog.Logger
@@ -101,6 +106,7 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 		now:        now,
 		limits:     newPOVLimiter(),
 		advances:   newAdvanceLimiter(),
+		opens:      newAdvanceLimiter(),
 		counts:     newPOVCounts(),
 		bastidores: newBastidoresHub(),
 		logger:     slog.Default(),
@@ -117,6 +123,7 @@ func newHandler(board *Board, actions ActionsClient, tl TimelineClient, queue Qu
 	mux.HandleFunc("GET /v1/queue/stream", h.stream)
 	mux.HandleFunc("GET /v1/cases", h.listCases)
 	mux.HandleFunc("POST /v1/cases/{id}/advance", h.advanceCase)
+	mux.HandleFunc("POST /v1/signals/{id}/case", h.openCase)
 	mux.HandleFunc("PUT /v1/actions/{id}", h.putAction)
 	mux.HandleFunc("DELETE /v1/actions/{id}", h.deleteAction)
 	mux.HandleFunc("GET /v1/actions", h.listActions)
@@ -189,6 +196,7 @@ func (h *Handler) customerTimeline(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []TimelineEntry{}
 	}
+	items = slices.DeleteFunc(items, unchangedRevaluation)
 	if parseTimelineOrder(r.URL.Query().Get("order")) == "desc" {
 		reverseTimeline(items)
 	}
@@ -199,16 +207,12 @@ func (h *Handler) customerTimeline(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func (h *Handler) queueHandler(w http.ResponseWriter, r *http.Request) {
-	if err := r.Context().Err(); err != nil {
-		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
-		return
-	}
-	filters := filtersFromRequest(r)
-	items, err := h.queue.ListQueue(r.Context())
+// signals is every signal the queue serves: advisory's seeded cast plus the
+// live board, once each.
+func (h *Handler) signals(ctx context.Context) ([]Signal, error) {
+	items, err := h.queue.ListQueue(ctx)
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
-		return
+		return nil, err
 	}
 	seen := make(map[string]struct{}, len(items))
 	for _, it := range items {
@@ -220,44 +224,51 @@ func (h *Handler) queueHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, live)
 	}
-	actions, err := h.actions.List(r.Context())
+	return items, nil
+}
+
+// listing loads what both list routes filter and count: the signals with the
+// advisor's actions applied, and the cases. It also returns the case state
+// labels. Advisory without the actions port means no signal is contacted or
+// snoozed.
+func (h *Handler) listing(ctx context.Context) (listing, []string, error) {
+	signals, err := h.signals(ctx)
+	if err != nil {
+		return listing{}, nil, err
+	}
+	actions, err := h.actions.List(ctx)
 	if err != nil && !errors.Is(err, ErrActionsUnavailable) {
-		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return listing{}, nil, err
+	}
+	cases, states, err := h.cases.ListCases(ctx)
+	if err != nil {
+		return listing{}, nil, err
+	}
+	if states == nil {
+		states = CaseStates
+	}
+	// The sources own their slices; enrichment writes into copies.
+	signals, cases = slices.Clone(signals), slices.Clone(cases)
+	h.enrichSignals(ctx, signals)
+	h.enrichCases(ctx, cases)
+	return newListing(signals, actions, cases, h.now().UTC()), states, nil
+}
+
+func (h *Handler) queueHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.Context().Err(); err != nil {
+		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
 		return
 	}
-	byID := make(map[string]SignalAction, len(actions))
-	for _, a := range actions {
-		byID[a.SignalID] = a
-	}
-	now := h.now().UTC()
-	out := make([]Signal, 0, len(items))
-	for _, item := range items {
-		if a, ok := byID[item.ID]; ok {
-			if a.SnoozedUntil != nil && a.SnoozedUntil.After(now) {
-				continue
-			}
-			item.ContactedAt = a.ContactedAt
-		}
-		out = append(out, item)
-	}
-	h.enrichSignals(r.Context(), out)
-
-	cases, _, err := h.cases.ListCases(r.Context())
+	filters := filtersFromRequest(r)
+	list, _, err := h.listing(r.Context())
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
 		return
 	}
-	if cases == nil {
-		cases = []Case{}
-	}
-	h.enrichCases(r.Context(), cases)
-
-	facets := buildSignalFacets(out, cases, filters)
-	filtered := filterAndSortSignals(out, filters)
 	body := struct {
 		Items  []Signal   `json:"items"`
 		Facets ListFacets `json:"facets"`
-	}{Items: filtered, Facets: facets}
+	}{Items: list.filteredSignals(filters), Facets: list.facets(filters)}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(body)
 }
@@ -300,45 +311,79 @@ func (h *Handler) listCases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filters := filtersFromRequest(r)
-	items, states, err := h.cases.ListCases(r.Context())
+	list, states, err := h.listing(r.Context())
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
 		return
 	}
-	if items == nil {
-		items = []Case{}
-	}
-	if states == nil {
-		states = CaseStates
-	}
-	h.enrichCases(r.Context(), items)
-
-	signals, err := h.queue.ListQueue(r.Context())
-	if err != nil {
-		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
-		return
-	}
-	seen := make(map[string]struct{}, len(signals))
-	for _, it := range signals {
-		seen[it.ID] = struct{}{}
-	}
-	for _, live := range h.board.Items() {
-		if _, ok := seen[live.ID]; ok {
-			continue
-		}
-		signals = append(signals, live)
-	}
-	h.enrichSignals(r.Context(), signals)
-
-	facets := buildSignalFacets(signals, items, filters)
-	filtered := filterAndSortCases(items, signals, filters)
 	body := struct {
 		Items  []Case     `json:"items"`
 		States []string   `json:"states"`
 		Facets ListFacets `json:"facets"`
-	}{Items: filtered, States: states, Facets: facets}
+	}{Items: list.filteredCases(filters), States: states, Facets: list.facets(filters)}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// maxIdempotencyKeyLen bounds the Idempotency-Key of an advisor command.
+const maxIdempotencyKeyLen = 128
+
+// openCase serves POST /v1/signals/{id}/case, the advisor's Abrir caso
+// (ADR 0013). It only accepts the command: 202 with the request id once
+// advisory has it in its outbox. cases opens the case later, or joins the
+// signal to the client's open case, and the browser learns which from
+// GET /v1/cases. 404 means the queue does not serve that signal.
+// The signal is looked up among every signal the queue serves, including one a
+// case already represents and GET /v1/queue no longer lists: a retry of the
+// same command must not turn into 404 once cases has acted on it.
+func (h *Handler) openCase(w http.ResponseWriter, r *http.Request) {
+	id, err := identity.ParseV7(r.PathValue("id"))
+	key := r.Header.Get("Idempotency-Key")
+	if err != nil || key == "" || len(key) > maxIdempotencyKeyLen {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	// A key already answered 202 is free, so a replay never spends; a
+	// command that was not accepted gives its slot back.
+	allowed, spend := h.opens.allow(key, h.now())
+	if !allowed {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": advanceWindowName})
+		return
+	}
+	accepted := false
+	defer func() { spend(!accepted, accepted) }()
+	signals, err := h.signals(r.Context())
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	i := slices.IndexFunc(signals, func(s Signal) bool { return s.ID == id })
+	if i < 0 {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	sig := signals[i]
+	requestID, err := h.actions.OpenCase(r.Context(), CaseCommand{
+		SignalID:       sig.ID,
+		CustomerID:     sig.Client,
+		IdempotencyKey: key,
+		Label:          scoreSignal(sig).typeLabel,
+		// The facts signalSLA halves the SLA on.
+		ChurnRisk:          ptrBool(sig.Churn),
+		Frustration:        ptrInt(sig.Frustration),
+		HumanRequested:     ptrBool(sig.Human),
+		RelevantWithdrawal: sig.Alert == "saque",
+	})
+	if errors.Is(err, ErrActionsUnavailable) {
+		http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+		return
+	}
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	accepted = true
+	writeJSON(w, http.StatusAccepted, map[string]string{"request_id": requestID})
 }
 
 func (h *Handler) advanceCase(w http.ResponseWriter, r *http.Request) {
@@ -356,7 +401,7 @@ func (h *Handler) advanceCase(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
 		return
 	}
-	items := []Case{c}
+	items := []Case{withSLAState(c)}
 	h.enrichCases(r.Context(), items)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(items[0])
@@ -554,12 +599,9 @@ func (h *Handler) buildManager(r *http.Request) (ManagerSnapshot, error) {
 	slices.SortFunc(atRisk, func(a, b ManagerAtRisk) int {
 		return cmp.Compare(a.Remaining, b.Remaining)
 	})
-	if intents == nil {
-		intents = map[string]int{}
-	}
 	return ManagerSnapshot{
 		Backlog: backlog, AvgFirstContactMin: avgToday, AvgFirstContactYesterday: avgYest,
-		ReviewPct: reviewPct, FallbackPct: fallbackPct, Intents: intents, AtRisk: atRisk,
+		ReviewPct: reviewPct, FallbackPct: fallbackPct, Intents: intentShares(intents), AtRisk: atRisk,
 	}, nil
 }
 

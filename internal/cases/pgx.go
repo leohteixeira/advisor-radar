@@ -45,24 +45,33 @@ func (s *PGXStore) WithTx(ctx context.Context, fn func(Tx) error) error {
 
 // GetCase loads one case by id.
 func (s *PGXStore) GetCase(ctx context.Context, id string) (CaseRow, bool, error) {
-	return getCase(ctx, s.pool, id)
+	return getCase(ctx, s.pool, id, false)
 }
 
+// GetCase loads one case by id and locks the row until the transaction ends:
+// every caller reads it to write it back (Advance, HandleBreach), and a
+// concurrent SLA recalculation must not be overwritten by a stale copy.
 func (t *pgxTx) GetCase(ctx context.Context, id string) (CaseRow, bool, error) {
-	return getCase(ctx, t.tx, id)
+	return getCase(ctx, t.tx, id, true)
 }
 
 type rowQuerier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-func getCase(ctx context.Context, q rowQuerier, id string) (CaseRow, bool, error) {
-	const query = `
-SELECT id, customer_id, COALESCE(signal_id::text, ''), advisor_id, state, sla_total_minutes, escalated, opened_at
-FROM cases
-WHERE id = $1`
+// caseColumns is the select list scanCase reads, in order.
+const caseColumns = `id, customer_id, COALESCE(signal_id::text, ''), advisor_id, state, sla_total_minutes, escalated, opened_at, sla_started_at`
+
+// rowScanner is the Scan of pgx.Row and pgx.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanCase reads one caseColumns row. A NULL sla_started_at stays zero.
+func scanCase(r rowScanner) (CaseRow, error) {
 	var row CaseRow
-	err := q.QueryRow(ctx, query, id).Scan(
+	var started *time.Time
+	if err := r.Scan(
 		&row.ID,
 		&row.CustomerID,
 		&row.SignalID,
@@ -71,7 +80,26 @@ WHERE id = $1`
 		&row.SLATotalMinutes,
 		&row.Escalated,
 		&row.OpenedAt,
-	)
+		&started,
+	); err != nil {
+		return CaseRow{}, err
+	}
+	if started != nil {
+		row.SLAStartedAt = *started
+	}
+	return row, nil
+}
+
+func getCase(ctx context.Context, q rowQuerier, id string, forUpdate bool) (CaseRow, bool, error) {
+	query := `
+SELECT ` + caseColumns + `
+FROM cases
+WHERE id = $1`
+	if forUpdate {
+		query += `
+FOR UPDATE`
+	}
+	row, err := scanCase(q.QueryRow(ctx, query, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CaseRow{}, false, nil
@@ -133,7 +161,7 @@ func (s *PGXStore) InboxSeen(ctx context.Context, eventID string) (bool, error) 
 
 func openCaseFor(ctx context.Context, q rowQuerier, customerID string, forUpdate bool) (CaseRow, bool, error) {
 	query := `
-SELECT id, customer_id, COALESCE(signal_id::text, ''), advisor_id, state, sla_total_minutes, escalated, opened_at
+SELECT ` + caseColumns + `
 FROM cases
 WHERE customer_id = $1 AND state <> $2
 ORDER BY opened_at DESC
@@ -142,17 +170,7 @@ LIMIT 1`
 		query += `
 FOR UPDATE`
 	}
-	var row CaseRow
-	err := q.QueryRow(ctx, query, customerID, StateResolvido).Scan(
-		&row.ID,
-		&row.CustomerID,
-		&row.SignalID,
-		&row.AdvisorID,
-		&row.State,
-		&row.SLATotalMinutes,
-		&row.Escalated,
-		&row.OpenedAt,
-	)
+	row, err := scanCase(q.QueryRow(ctx, query, customerID, StateResolvido))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CaseRow{}, false, nil
@@ -162,12 +180,14 @@ FOR UPDATE`
 	return row, true, nil
 }
 
-// InsertHistory stages one case_history row.
+// InsertHistory stages one case_history row. A row that names a signal the
+// case history already has is ignored: a signal joins a case at most once.
 func (t *pgxTx) InsertHistory(ctx context.Context, row HistoryRow) error {
 	const q = `
-INSERT INTO case_history (id, case_id, kind, text, occurred_at)
-VALUES ($1, $2, $3, $4, $5)`
-	if _, err := t.tx.Exec(ctx, q, row.ID, row.CaseID, row.Kind, row.Text, row.OccurredAt); err != nil {
+INSERT INTO case_history (id, case_id, kind, text, occurred_at, signal_id)
+VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::uuid)
+ON CONFLICT (case_id, signal_id) WHERE signal_id IS NOT NULL DO NOTHING`
+	if _, err := t.tx.Exec(ctx, q, row.ID, row.CaseID, row.Kind, row.Text, row.OccurredAt, row.SignalID); err != nil {
 		return fmt.Errorf("cases pgx: insert history: %w", err)
 	}
 	return nil
@@ -197,13 +217,18 @@ ON CONFLICT (id) DO NOTHING`
 	return nil
 }
 
-// UpdateCase writes state and escalated flag for an existing case.
+// UpdateCase writes the state, the escalated flag, and the SLA clock (total
+// and start) of an existing case. A zero SLAStartedAt is stored as NULL.
 func (t *pgxTx) UpdateCase(ctx context.Context, row CaseRow) error {
 	const q = `
 UPDATE cases
-SET state = $2, escalated = $3, sla_total_minutes = $4
+SET state = $2, escalated = $3, sla_total_minutes = $4, sla_started_at = $5
 WHERE id = $1`
-	tag, err := t.tx.Exec(ctx, q, row.ID, row.State, row.Escalated, row.SLATotalMinutes)
+	var started *time.Time
+	if !row.SLAStartedAt.IsZero() {
+		started = &row.SLAStartedAt
+	}
+	tag, err := t.tx.Exec(ctx, q, row.ID, row.State, row.Escalated, row.SLATotalMinutes, started)
 	if err != nil {
 		return fmt.Errorf("cases pgx: update case: %w", err)
 	}
@@ -238,10 +263,27 @@ ON CONFLICT (case_id) DO NOTHING`
 	return nil
 }
 
+// RearmDelay replaces the case's SLA delay with a new unpublished arm.
+// clock_timestamp gives every arm its own armed_at, even inside one
+// transaction.
+func (t *pgxTx) RearmDelay(ctx context.Context, caseID string, ttlMs int) error {
+	const q = `
+INSERT INTO sla_delay (case_id, ttl_ms, armed_at)
+VALUES ($1, $2, clock_timestamp())
+ON CONFLICT (case_id) DO UPDATE SET
+    ttl_ms = EXCLUDED.ttl_ms,
+    armed_at = EXCLUDED.armed_at,
+    published_at = NULL`
+	if _, err := t.tx.Exec(ctx, q, caseID, ttlMs); err != nil {
+		return fmt.Errorf("cases pgx: rearm delay: %w", err)
+	}
+	return nil
+}
+
 // ListUnpublishedDelays returns delays the broker has not accepted yet.
 func (s *PGXStore) ListUnpublishedDelays(ctx context.Context) ([]DelayArm, error) {
 	const q = `
-SELECT case_id, ttl_ms
+SELECT case_id, ttl_ms, armed_at
 FROM sla_delay
 WHERE published_at IS NULL
 ORDER BY case_id`
@@ -253,7 +295,7 @@ ORDER BY case_id`
 	out := make([]DelayArm, 0)
 	for rows.Next() {
 		var row DelayArm
-		if err := rows.Scan(&row.CaseID, &row.TTLMs); err != nil {
+		if err := rows.Scan(&row.CaseID, &row.TTLMs, &row.ArmedAt); err != nil {
 			return nil, fmt.Errorf("cases pgx: scan delay: %w", err)
 		}
 		out = append(out, row)
@@ -264,13 +306,15 @@ ORDER BY case_id`
 	return out, nil
 }
 
-// MarkDelayPublished stamps a delay after the broker accepts it.
-func (s *PGXStore) MarkDelayPublished(ctx context.Context, caseID string, at time.Time) error {
+// MarkDelayPublished stamps arm after the broker accepts it. An arm replaced
+// by RearmDelay since it was listed has another armed_at and stays
+// unpublished, so the newer delay is still sent.
+func (s *PGXStore) MarkDelayPublished(ctx context.Context, arm DelayArm, at time.Time) error {
 	const q = `
 UPDATE sla_delay
 SET published_at = $2
-WHERE case_id = $1 AND published_at IS NULL`
-	if _, err := s.pool.Exec(ctx, q, caseID, at); err != nil {
+WHERE case_id = $1 AND armed_at = $3 AND published_at IS NULL`
+	if _, err := s.pool.Exec(ctx, q, arm.CaseID, at, arm.ArmedAt); err != nil {
 		return fmt.Errorf("cases pgx: mark delay: %w", err)
 	}
 	return nil

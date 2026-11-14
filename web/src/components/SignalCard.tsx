@@ -6,7 +6,19 @@ interface SignalCardProps {
   onOpenCase: (id: string) => void;
   onContacted: (id: string) => void;
   onSnooze: (id: string) => void;
+  /** Removes the advisor's mark from the signal: reactivates a snoozed one, unmarks a contacted one. */
+  onUndoAction: (id: string) => void;
+  /** Abrir caso was sent and its outcome is not known yet. */
+  pending?: boolean;
   justArrived?: boolean;
+}
+
+function clock(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) {
+    return '';
+  }
+  return at.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
 function Bars({ filled, heights }: { filled: number; heights: number[] }) {
@@ -24,15 +36,19 @@ export function SignalCard({
   onOpenCase,
   onContacted,
   onSnooze,
+  onUndoAction,
+  pending = false,
   justArrived,
 }: SignalCardProps) {
   const { signal } = row;
+  const snoozedUntil = signal.snoozed_until ? clock(signal.snoozed_until) : '';
   const tone = row.accent === 'crit' ? 'crit' : row.accent === 'warn' ? 'warn' : 'neutral';
 
   return (
     <article
       className={justArrived ? `signal-card signal-card--${tone} signal-card--arrive` : `signal-card signal-card--${tone}`}
       data-testid={`signal-${signal.id}`}
+      aria-busy={pending}
     >
       <Link
         to={`/clientes/${signal.client}`}
@@ -55,6 +71,9 @@ export function SignalCard({
           {row.typeLabel} · {row.agoText}
         </p>
         {signal.contacted_at ? <span className="signal-card__contacted">Contatado</span> : null}
+        {signal.snoozed_until ? (
+          <span className="signal-card__snoozed">{snoozedUntil ? `Adiado até ${snoozedUntil}` : 'Adiado'}</span>
+        ) : null}
         {signal.kind === 'message' && signal.text ? (
           <p className="signal-card__quote">{signal.text}</p>
         ) : null}
@@ -82,17 +101,36 @@ export function SignalCard({
           {signal.fallback ? <span className="signal-tag signal-tag--fallback">Classificação simplificada</span> : null}
         </div>
       </Link>
-      <div className="signal-card__actions">
-        <button type="button" onClick={() => onOpenCase(signal.id)}>
-          Abrir caso
-        </button>
-        <button type="button" onClick={() => onContacted(signal.id)}>
-          Contatado
-        </button>
-        <button type="button" className="signal-card__snooze" onClick={() => onSnooze(signal.id)}>
-          Adiar 1 h
-        </button>
-      </div>
+      {signal.snoozed_until ? (
+        <div className="signal-card__actions">
+          <button type="button" onClick={() => onUndoAction(signal.id)}>
+            Reativar
+          </button>
+        </div>
+      ) : (
+        <div className="signal-card__actions">
+          <button type="button" disabled={pending} onClick={() => onOpenCase(signal.id)}>
+            {pending ? 'Abrindo caso…' : 'Abrir caso'}
+          </button>
+          {signal.contacted_at ? (
+            <button type="button" disabled={pending} onClick={() => onUndoAction(signal.id)}>
+              Desfazer contato
+            </button>
+          ) : (
+            <button type="button" disabled={pending} onClick={() => onContacted(signal.id)}>
+              Contatado
+            </button>
+          )}
+          <button
+            type="button"
+            className="signal-card__snooze"
+            disabled={pending}
+            onClick={() => onSnooze(signal.id)}
+          >
+            Adiar 1 h
+          </button>
+        </div>
+      )}
     </article>
   );
 }

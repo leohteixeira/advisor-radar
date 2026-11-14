@@ -30,6 +30,8 @@ type Fields struct {
 	Segment     string
 	Since       string
 	SLA         string
+	// BaseSLA is the segment's own SLA where SLA is a case's shorter one.
+	BaseSLA string
 	// Gap is the money missing to reach the next segment.
 	Gap string
 	// Threshold is the patrimony where Advance starts, as money.

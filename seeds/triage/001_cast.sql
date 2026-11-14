@@ -1,4 +1,17 @@
 -- Triage review results (7 under threshold + 1 at 0.85 excluded by query).
+--
+-- A reseed returns the service to this cast. Every classification, review
+-- correction, inbox claim, and triaged event goes first: a result kept from
+-- before the reseed would show its message older in review than in the queue.
+-- A cast message that is not claimed below is classified when account-sim
+-- publishes it and reaches the queue as a live card. A cast message that
+-- seeds/advisory already lists as a queue signal is therefore claimed at the
+-- end of this file, or the queue would show it twice. Each created_at is the
+-- occurred_at of its message in seeds/account_sim. Stop every service before
+-- reseeding (README, "Reseed before each walk").
+DELETE FROM outbox;
+DELETE FROM inbox;
+DELETE FROM results;
 
 INSERT INTO results (
   id, source_event_id, customer_id, intent, intent_prob, frustration, churn_risk,
@@ -173,7 +186,7 @@ INSERT INTO results (
   wants_human, classifier, model_version, degraded, needs_review, corrected_intent, created_at, payload
 ) VALUES (
   '01a0e3a4-9a44-7744-b40c-26645b5052eb', '01a0e3a4-9a44-7759-805d-04d97179d63d', '01a0e3a4-9a44-7566-b5de-eb2e365799f8', 'Tributação', 0.85, 0, 0, 0, 'jev', 'seed', false, false, NULL,
-  now() - interval '1 minutes', '{"channel":"chat","dist":{"Operacional":0.15,"Tributação":0.85},"text":"fixture at the review threshold"}'::jsonb
+  now() - interval '1500 minutes', '{"channel":"chat","dist":{"Operacional":0.15,"Tributação":0.85},"text":"fixture at the review threshold"}'::jsonb
 )
 ON CONFLICT (id) DO UPDATE SET
   source_event_id = EXCLUDED.source_event_id,
@@ -192,3 +205,12 @@ ON CONFLICT (id) DO UPDATE SET
 
 INSERT INTO inbox (event_id) VALUES ('01a0e3a4-9a44-7759-805d-04d97179d63d') ON CONFLICT (event_id) DO NOTHING;
 
+-- Messages seeds/advisory already lists as queue signals, with no review
+-- result here: claimed so the start does not classify them a second time.
+INSERT INTO inbox (event_id) VALUES
+  ('01a0e3a4-9a44-783a-82d1-a8e32168c44c'),
+  ('01a0e3a4-9a44-7844-ac70-f9372bd01f7c'),
+  ('01a0e3a4-9a44-784e-a54a-ac95cd58ec5c'),
+  ('01a0e3a4-9a44-786a-af65-90053c789720'),
+  ('01a0e3a4-9a44-787f-9d84-2f6659d73c0b')
+ON CONFLICT (event_id) DO NOTHING;
