@@ -439,18 +439,19 @@ func TestSeedCast_ReseedResolvesAppOpenedCases(t *testing.T) {
 
 	applyCasesSQLDir(t, pool, seeds)
 
-	for id, want := range map[string]string{
-		marianaCase: cases.StateResolvido,
-		pauloCase:   cases.StateResolvido,
-		pauloCast:   cases.StateEmAtendimento,
-	} {
-		var got string
-		if err := pool.QueryRow(ctx, stateOfCase, id).Scan(&got); err != nil {
-			t.Fatalf("state of %s: %v", id, err)
+	// The seed removes every case and loads the cast again: a case the app
+	// opened is gone, not resolved, and a cast case is back as seeded.
+	for _, id := range []string{marianaCase, pauloCase} {
+		if got := countWhere(t, pool, `SELECT count(*) FROM cases WHERE id = $1`, id); got != 0 {
+			t.Errorf("app-opened case %s survives the reseed", id)
 		}
-		if got != want {
-			t.Errorf("case %s state = %q, want %q", id, got, want)
-		}
+	}
+	var got string
+	if err := pool.QueryRow(ctx, stateOfCase, pauloCast).Scan(&got); err != nil {
+		t.Fatalf("state of Paulo's cast case: %v", err)
+	}
+	if got != cases.StateEmAtendimento {
+		t.Errorf("Paulo's cast case state = %q, want %q", got, cases.StateEmAtendimento)
 	}
 	if got := countWhere(t, pool, `SELECT count(*) FROM cases WHERE customer_id = $1 AND state <> $2`, mariana, cases.StateResolvido); got != 0 {
 		t.Fatalf("Mariana open cases after reseed = %d, want 0", got)

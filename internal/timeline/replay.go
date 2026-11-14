@@ -36,10 +36,19 @@ type OutboxRow struct {
 	Payload    []byte
 }
 
-// ReplayOutboxes reads every outbox row from the given databases and applies
-// the ones the timeline indexes. Elasticsearch document id is event_id (via
-// IndexDoc).
+// ReplayOutboxes rebuilds the timeline from the outboxes of the given
+// databases at startup: it reads every outbox row and applies the ones the
+// timeline indexes. The memory index starts empty on every start, so the
+// Elasticsearch index is cleared first and then holds exactly the replayed
+// events (document id is event_id, via IndexDoc). Without the clear, a
+// document whose event left its outbox, as a reseed removes every event that
+// is not seed cast, would stay in Elasticsearch forever.
 func ReplayOutboxes(ctx context.Context, idx *Index, elastic *ElasticStore, pools ...*pgxpool.Pool) error {
+	if elastic != nil {
+		if err := elastic.Clear(ctx); err != nil {
+			return fmt.Errorf("timeline: clear index: %w", err)
+		}
+	}
 	for _, pool := range pools {
 		if pool == nil {
 			continue

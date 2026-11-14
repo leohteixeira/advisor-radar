@@ -26,11 +26,8 @@ var stateOrder = []string{
 	StateResolvido,
 }
 
-// AtRiskRemainingMinutes is the SLA remaining threshold for the manager panel.
-// A non-resolved case with this many minutes or fewer (or already overdue) is at risk.
-const AtRiskRemainingMinutes = 60
-
-// CaseRow is one cases table row.
+// CaseRow is one cases table row. SLAStartedAt is the instant the SLA clock
+// counts from; zero means OpenedAt (no segment change has moved the clock).
 type CaseRow struct {
 	ID              string
 	CustomerID      string
@@ -40,6 +37,20 @@ type CaseRow struct {
 	SLATotalMinutes int
 	Escalated       bool
 	OpenedAt        time.Time
+	SLAStartedAt    time.Time
+}
+
+// SLAStart is the instant the SLA clock counts from.
+func (r CaseRow) SLAStart() time.Time {
+	if r.SLAStartedAt.IsZero() {
+		return r.OpenedAt
+	}
+	return r.SLAStartedAt
+}
+
+// SLADeadline is the instant the SLA is breached: the start plus the total.
+func (r CaseRow) SLADeadline() time.Time {
+	return r.SLAStart().Add(time.Duration(r.SLATotalMinutes) * time.Minute)
 }
 
 // OutboxRow is one unpublished or published outbox record.
@@ -49,11 +60,13 @@ type OutboxRow struct {
 	Payload    []byte
 }
 
-// DelayArm is one SLA delay armed inside a transaction.
+// DelayArm is one SLA delay armed inside a transaction. ArmedAt identifies
+// the arm: a recalculated SLA re-arms the case's row with a new ArmedAt.
 // Published is true after the broker accepts the delay message.
 type DelayArm struct {
 	CaseID    string
 	TTLMs     int
+	ArmedAt   time.Time
 	Published bool
 }
 
@@ -82,7 +95,11 @@ type Tx interface {
 	UpdateCase(ctx context.Context, row CaseRow) error
 	GetCase(ctx context.Context, id string) (CaseRow, bool, error)
 	InsertOutbox(ctx context.Context, row OutboxRow) error
+	// ArmDelay arms the first SLA delay of a case; a case already armed stays
+	// as it is.
 	ArmDelay(ctx context.Context, caseID string, ttlMs int) error
+	// RearmDelay replaces the case's SLA delay with a new unpublished arm.
+	RearmDelay(ctx context.Context, caseID string, ttlMs int) error
 	ClaimInbox(ctx context.Context, eventID string) (bool, error)
 	// LockCustomer serializes writers for one customer until the transaction ends.
 	LockCustomer(ctx context.Context, customerID string) error
@@ -98,7 +115,9 @@ type Store interface {
 	ListUnpublished(ctx context.Context) ([]OutboxRow, error)
 	MarkPublished(ctx context.Context, eventID string, at time.Time) error
 	ListUnpublishedDelays(ctx context.Context) ([]DelayArm, error)
-	MarkDelayPublished(ctx context.Context, caseID string, at time.Time) error
+	// MarkDelayPublished stamps arm as published. An arm replaced since it
+	// was listed is left unpublished.
+	MarkDelayPublished(ctx context.Context, arm DelayArm, at time.Time) error
 }
 
 // DelayBroker publishes one SLA delay message. The queue TTL is ttlMs.
@@ -210,11 +229,17 @@ func Advance(ctx context.Context, store Store, caseID, to string) error {
 		if err := tx.UpdateCase(ctx, row); err != nil {
 			return fmt.Errorf("cases: update case %s: %w", caseID, err)
 		}
+		at := time.Now().UTC()
+		if err := insertHistory(ctx, tx, HistoryRow{
+			CaseID: caseID, Kind: HistoryKindCase, Text: "Caso passou para " + to, OccurredAt: at,
+		}); err != nil {
+			return err
+		}
 		body, err := marshalCaseEvent(
 			event.NameCaseStatusChanged,
 			statusEventID(caseID, to),
 			row.CustomerID,
-			time.Now().UTC(),
+			at,
 			row,
 		)
 		if err != nil {
@@ -235,19 +260,18 @@ func Advance(ctx context.Context, store Store, caseID, to string) error {
 	return nil
 }
 
-// RemainingMinutes returns SLA minutes left at now (may be negative when overdue).
+// RemainingMinutes returns SLA minutes left at now (may be negative when
+// overdue), counted from the SLA start.
 func RemainingMinutes(row CaseRow, now time.Time) int {
-	elapsed := int(now.Sub(row.OpenedAt).Minutes())
+	elapsed := int(now.Sub(row.SLAStart()).Minutes())
 	return row.SLATotalMinutes - elapsed
 }
 
-// IsAtRisk reports whether a non-resolved case is at or past the at-risk threshold.
+// IsAtRisk reports whether a non-resolved case is due soon or overdue: the
+// SLA states the queue shows as Vencendo and Vencido.
 func IsAtRisk(row CaseRow, now time.Time) bool {
-	if row.State == StateResolvido {
-		return false
-	}
-	remaining := RemainingMinutes(row, now)
-	return remaining <= AtRiskRemainingMinutes
+	state := SLAState(row, now)
+	return state == SLAStateDueSoon || state == SLAStateOverdue
 }
 
 // PermanentDeliveryError marks a dead-letter body that must not be requeued.
@@ -299,10 +323,15 @@ func ApplyBreachDelivery(ctx context.Context, store Store, body []byte) error {
 	return HandleBreach(ctx, store, caseID, occurredAt)
 }
 
-// HandleBreach marks a case escalated after the SLA delay dead-letters.
-// The state is unchanged. A second delivery writes no outbox row. A case
-// already Resolvido when its delay expires has no SLA left to breach: the
-// delivery is claimed and nothing is escalated or published.
+// HandleBreach marks a case escalated after an SLA delay dead-letters at
+// occurredAt. The state is unchanged. A second delivery writes no outbox row.
+//
+// A tick before the case's current deadline belongs to a clock a segment
+// change superseded (ADR 0012): it is acknowledged without claiming the
+// inbox, so the tick of the current clock still escalates. A case already
+// Resolvido has no SLA left to breach: the delivery is claimed and nothing is
+// escalated or published. A case that no longer exists (a reseed removed it)
+// is a PermanentDeliveryError, so its tick is dropped instead of requeued.
 func HandleBreach(ctx context.Context, store Store, caseID string, occurredAt time.Time) error {
 	if store == nil {
 		return fmt.Errorf("cases: store is required")
@@ -315,21 +344,21 @@ func HandleBreach(ctx context.Context, store Store, caseID string, occurredAt ti
 	}
 
 	err := store.WithTx(ctx, func(tx Tx) error {
-		claimed, err := tx.ClaimInbox(ctx, breachEventID(caseID))
-		if err != nil {
-			return fmt.Errorf("cases: claim inbox: %w", err)
-		}
-		if !claimed {
-			return nil
-		}
 		row, ok, err := tx.GetCase(ctx, caseID)
 		if err != nil {
 			return fmt.Errorf("cases: get case %s: %w", caseID, err)
 		}
 		if !ok {
-			return fmt.Errorf("cases: case %s not found", caseID)
+			return PermanentDeliveryError{Err: fmt.Errorf("cases: case %s not found", caseID)}
 		}
-		if row.State == StateResolvido {
+		if row.State != StateResolvido && occurredAt.Before(row.SLADeadline()) {
+			return nil
+		}
+		claimed, err := tx.ClaimInbox(ctx, breachEventID(caseID))
+		if err != nil {
+			return fmt.Errorf("cases: claim inbox: %w", err)
+		}
+		if !claimed || row.State == StateResolvido {
 			return nil
 		}
 		row.Escalated = true
@@ -409,7 +438,7 @@ func PublishDelays(ctx context.Context, store Store, broker DelayBroker) error {
 		if err := broker.PublishDelay(ctx, row.CaseID, row.TTLMs, []byte(row.CaseID)); err != nil {
 			return fmt.Errorf("cases: publish delay %s: %w", row.CaseID, err)
 		}
-		if err := store.MarkDelayPublished(ctx, row.CaseID, time.Now().UTC()); err != nil {
+		if err := store.MarkDelayPublished(ctx, row, time.Now().UTC()); err != nil {
 			return fmt.Errorf("cases: mark delay %s: %w", row.CaseID, err)
 		}
 	}

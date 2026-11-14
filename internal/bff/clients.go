@@ -397,11 +397,12 @@ func (g *GRPCCases) Backlog(ctx context.Context) ([]ManagerBacklog, error) {
 func protoCase(it *casesv1.Case) Case {
 	hist := make([]CaseHistoryEntry, 0, len(it.GetHistory()))
 	for _, h := range it.GetHistory() {
-		hist = append(hist, CaseHistoryEntry{Ago: int(h.GetAgo()), Kind: h.GetKind(), Text: h.GetText()})
+		hist = append(hist, CaseHistoryEntry{Ago: int(h.GetAgo()), Kind: h.GetKind(), Text: h.GetText(), Signal: h.GetSignal()})
 	}
 	return Case{
 		ID: it.GetId(), Client: it.GetClient(), Signal: it.GetSignal(), State: int(it.GetState()),
-		OpenedAgo: int(it.GetOpenedAgo()), SlaTotal: int(it.GetSlaTotal()), Escalated: it.GetEscalated(), History: hist,
+		OpenedAgo: int(it.GetOpenedAgo()), SlaTotal: int(it.GetSlaTotal()), SlaRemaining: int(it.GetRemainingMinutes()),
+		SlaState: it.GetSlaState(), SlaHalved: it.GetSlaHalved(), Escalated: it.GetEscalated(), History: hist,
 	}
 }
 

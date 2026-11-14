@@ -123,7 +123,8 @@
       "case_open": {
         "kicker": "Atendimento em andamento",
         "title": "Sua reclamação está com a {{.AdvisorName}}",
-        "body": "Como cliente {{.Segment}}, você recebe resposta em até {{.SLA}}.",
+        "body": "Como cliente {{.Segment}}, este atendimento tem resposta em até {{.SLA}}.",
+        "body_priority": "Como cliente {{.Segment}}, seu prazo padrão é de {{.BaseSLA}}. Este atendimento é prioritário: resposta em até {{.SLA}}.",
         "meta": "Protocolo {{.Protocol}} · aberto {{.Age}}",
         "action": "Ver conversa"
       },

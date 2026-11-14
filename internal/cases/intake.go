@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,16 +29,24 @@ const WantsHumanFactor = 0.5
 // origin.
 const OriginClientApp = "client_app"
 
+// KindComplaint marks a message the customer sent through the client app's
+// complaint panel. The panel promises a case with a protocol, so such a
+// message always qualifies.
+const KindComplaint = "complaint"
+
 // Triaged intents that open a case regardless of churn risk.
 const (
 	intentComplaint = "reclamacao"
 	intentClosing   = "encerramento"
 )
 
-// History kinds written by the intake.
+// History kinds written by the intake, the open-case command, and the SLA
+// recalculation.
 const (
 	HistoryKindCase    = "caso"
 	HistoryKindMessage = "mensagem"
+	HistoryKindSignal  = "sinal"
+	HistoryKindSLA     = "sla"
 )
 
 // Intake retry policy for transient errors.
@@ -96,19 +105,23 @@ func (r Reason) openedText() string {
 // Decision is the intake outcome for one triaged message.
 type Decision string
 
-// Intake decisions.
+// Intake decisions. DecisionRecalculated is the SLA recalculation of an open
+// case after a segment change.
 const (
-	DecisionOpened    Decision = "opened"
-	DecisionJoined    Decision = "joined"
-	DecisionIgnored   Decision = "ignored"
-	DecisionDuplicate Decision = "duplicate"
+	DecisionOpened       Decision = "opened"
+	DecisionJoined       Decision = "joined"
+	DecisionIgnored      Decision = "ignored"
+	DecisionDuplicate    Decision = "duplicate"
+	DecisionRecalculated Decision = "recalculated"
 )
 
 // TriagedMessage is the part of the message.triaged payload cases reads.
 type TriagedMessage struct {
 	SourceEventID string  `json:"source_event_id"`
 	Origin        string  `json:"origin,omitempty"`
+	Kind          string  `json:"kind,omitempty"`
 	Intent        string  `json:"intent"`
+	Text          string  `json:"text,omitempty"`
 	Frustration   float64 `json:"frustration"`
 	ChurnRisk     float64 `json:"churn_risk"`
 	WantsHuman    float64 `json:"wants_human"`
@@ -117,10 +130,15 @@ type TriagedMessage struct {
 }
 
 // Qualifies reports whether a triaged message opens (or joins) a case. Only a
-// client-app message qualifies, by intent or by churn risk.
+// client-app message qualifies: one filed as a complaint, or by intent or
+// churn risk.
 func Qualifies(m TriagedMessage) (Reason, bool) {
 	if m.Origin != OriginClientApp {
 		return ReasonNone, false
+	}
+	// The client filed it as a complaint: it is one whatever triage read.
+	if m.Kind == KindComplaint {
+		return ReasonComplaint, true
 	}
 	switch m.Intent {
 	case intentComplaint:
@@ -157,13 +175,15 @@ type CustomerLookup interface {
 	Lookup(ctx context.Context, customerID string) (Customer, error)
 }
 
-// HistoryRow is one case_history row.
+// HistoryRow is one case_history row. SignalID is set when the row records a
+// signal an advisor joined to the case; a case keeps one row per signal.
 type HistoryRow struct {
 	ID         string
 	CaseID     string
 	Kind       string
 	Text       string
 	OccurredAt time.Time
+	SignalID   string
 }
 
 // IntakeResult describes what Intake did. EventID and CustomerID are set as
@@ -210,43 +230,61 @@ func Intake(ctx context.Context, store IntakeStore, lookup CustomerLookup, body 
 		return res, PermanentDeliveryError{Err: err}
 	}
 
+	signal := signalID(msg.SourceEventID, env.EventID)
 	reason, qualifies := Qualifies(msg)
 	if !qualifies {
-		return claimOnly(ctx, store, res)
+		if msg.Origin != OriginClientApp {
+			return claimOnly(ctx, store, res)
+		}
+		// Any other message the client sends while a case is open belongs
+		// to that case's history; without an open case it opens nothing.
+		return follow(ctx, store, res, HistoryRow{
+			Kind: HistoryKindMessage, Text: joinedText(ReasonNone, msg.Text), OccurredAt: env.OccurredAt, SignalID: signal,
+		})
 	}
 
-	seen, err := store.InboxSeen(ctx, env.EventID)
-	if err != nil {
-		return res, fmt.Errorf("cases: intake %s: %w", env.EventID, err)
-	}
-	if seen {
-		res.Decision = DecisionDuplicate
-		return res, nil
-	}
-	_, hasOpen, err := store.OpenCaseFor(ctx, env.CustomerID)
-	if err != nil {
-		return res, fmt.Errorf("cases: intake %s: %w", env.EventID, err)
-	}
-	var customer Customer
-	looked := false
-	if !hasOpen {
-		customer, err = lookup.Lookup(ctx, env.CustomerID)
-		if err != nil {
-			if errors.Is(err, ErrUnknownCustomer) || errors.Is(err, ErrUnusableCustomer) {
-				return res, PermanentDeliveryError{Err: fmt.Errorf("cases: intake %s: %w", env.EventID, err)}
-			}
-			return res, fmt.Errorf("cases: intake %s: lookup customer: %w", env.EventID, err)
-		}
-		if err := customer.validate(); err != nil {
-			return res, PermanentDeliveryError{Err: fmt.Errorf("cases: intake %s: %w", env.EventID, err)}
-		}
-		looked = true
-	}
+	return admit(ctx, store, lookup, admission{
+		eventID:    env.EventID,
+		customerID: env.CustomerID,
+		occurredAt: env.OccurredAt,
+		signalID:   signal,
+		factors:    msg.clockFactors(),
+		openedText: reason.openedText(),
+		joinKind:   HistoryKindMessage,
+		joinText:   joinedText(reason, msg.Text),
+		joinSignal: true,
+	})
+}
 
-	var decided IntakeResult
-	err = store.WithTx(ctx, func(tx Tx) error {
+// maxHistoryQuoteRunes bounds the message text quoted in a history line.
+const maxHistoryQuoteRunes = 160
+
+// joinedText is the history line of a message that joins an open case: what
+// kind of message it is, when it qualifies for a case on its own, and what
+// the client wrote.
+func joinedText(reason Reason, text string) string {
+	line := "Nova mensagem do cliente"
+	if reason != ReasonNone {
+		line += ": " + reason.String()
+	}
+	quote := []rune(strings.TrimSpace(text))
+	if len(quote) == 0 {
+		return line
+	}
+	if len(quote) > maxHistoryQuoteRunes {
+		quote = append(quote[:maxHistoryQuoteRunes], '…')
+	}
+	return line + " — “" + string(quote) + "”"
+}
+
+// follow adds line to the customer's open case, once per signal, or only
+// claims the inbox when the customer has no open case. It never opens a case
+// and never calls advisory.
+func follow(ctx context.Context, store Store, res IntakeResult, line HistoryRow) (IntakeResult, error) {
+	decided := res
+	err := store.WithTx(ctx, func(tx Tx) error {
 		decided = res
-		claimed, err := tx.ClaimInbox(ctx, env.EventID)
+		claimed, err := tx.ClaimInbox(ctx, res.EventID)
 		if err != nil {
 			return fmt.Errorf("cases: claim inbox: %w", err)
 		}
@@ -254,18 +292,109 @@ func Intake(ctx context.Context, store IntakeStore, lookup CustomerLookup, body 
 			decided.Decision = DecisionDuplicate
 			return nil
 		}
-		if err := tx.LockCustomer(ctx, env.CustomerID); err != nil {
+		if err := tx.LockCustomer(ctx, res.CustomerID); err != nil {
 			return fmt.Errorf("cases: lock customer: %w", err)
 		}
-		open, found, err := tx.OpenCaseFor(ctx, env.CustomerID)
+		open, found, err := tx.OpenCaseFor(ctx, res.CustomerID)
+		if err != nil {
+			return fmt.Errorf("cases: find open case: %w", err)
+		}
+		if !found {
+			decided.Decision = DecisionIgnored
+			return nil
+		}
+		decided.CaseID = open.ID
+		decided.Decision = DecisionJoined
+		line.CaseID = open.ID
+		return insertHistory(ctx, tx, line)
+	})
+	if err != nil {
+		return res, fmt.Errorf("cases: intake %s: %w", res.EventID, err)
+	}
+	return decided, nil
+}
+
+// admission is one request to open a case for a customer or, when the
+// customer already has an open case, to add a line to that case's history.
+// With joinSignal the line names signalID, and a case that already has the
+// signal (as its own or in its history) gets no second line. Every caller
+// sets it today: a signal that joined a case is represented by that case.
+type admission struct {
+	eventID    string
+	customerID string
+	occurredAt time.Time
+	signalID   string
+	factors    ClockFactors
+	openedText string
+	joinKind   string
+	joinText   string
+	joinSignal bool
+}
+
+// admit applies one admission under the one-open-case-per-customer invariant.
+// A duplicate, or an admission that joins an open case, never calls advisory.
+// The lookup runs outside the transaction; all writes happen in one
+// transaction. A PermanentDeliveryError means redelivery cannot succeed; any
+// other error is transient.
+func admit(ctx context.Context, store IntakeStore, lookup CustomerLookup, a admission) (IntakeResult, error) {
+	res := IntakeResult{EventID: a.eventID, CustomerID: a.customerID}
+	seen, err := store.InboxSeen(ctx, a.eventID)
+	if err != nil {
+		return res, fmt.Errorf("cases: intake %s: %w", a.eventID, err)
+	}
+	if seen {
+		res.Decision = DecisionDuplicate
+		return res, nil
+	}
+	_, hasOpen, err := store.OpenCaseFor(ctx, a.customerID)
+	if err != nil {
+		return res, fmt.Errorf("cases: intake %s: %w", a.eventID, err)
+	}
+	var customer Customer
+	looked := false
+	if !hasOpen {
+		customer, err = lookup.Lookup(ctx, a.customerID)
+		if err != nil {
+			if errors.Is(err, ErrUnknownCustomer) || errors.Is(err, ErrUnusableCustomer) {
+				return res, PermanentDeliveryError{Err: fmt.Errorf("cases: intake %s: %w", a.eventID, err)}
+			}
+			return res, fmt.Errorf("cases: intake %s: lookup customer: %w", a.eventID, err)
+		}
+		if err := customer.validate(); err != nil {
+			return res, PermanentDeliveryError{Err: fmt.Errorf("cases: intake %s: %w", a.eventID, err)}
+		}
+		looked = true
+	}
+
+	var decided IntakeResult
+	err = store.WithTx(ctx, func(tx Tx) error {
+		decided = res
+		claimed, err := tx.ClaimInbox(ctx, a.eventID)
+		if err != nil {
+			return fmt.Errorf("cases: claim inbox: %w", err)
+		}
+		if !claimed {
+			decided.Decision = DecisionDuplicate
+			return nil
+		}
+		if err := tx.LockCustomer(ctx, a.customerID); err != nil {
+			return fmt.Errorf("cases: lock customer: %w", err)
+		}
+		open, found, err := tx.OpenCaseFor(ctx, a.customerID)
 		if err != nil {
 			return fmt.Errorf("cases: find open case: %w", err)
 		}
 		if found {
 			decided.CaseID = open.ID
 			decided.Decision = DecisionJoined
-			return insertHistory(ctx, tx, open.ID, HistoryKindMessage,
-				"Nova mensagem do cliente: "+reason.String(), env.OccurredAt)
+			line := HistoryRow{CaseID: open.ID, Kind: a.joinKind, Text: a.joinText, OccurredAt: a.occurredAt}
+			if a.joinSignal {
+				if open.SignalID == a.signalID {
+					return nil
+				}
+				line.SignalID = a.signalID
+			}
+			return insertHistory(ctx, tx, line)
 		}
 		if !looked {
 			return errLookupNeeded
@@ -277,22 +406,24 @@ func Intake(ctx context.Context, store IntakeStore, lookup CustomerLookup, body 
 		}
 		row, err := openInTx(ctx, tx, OpenInput{
 			ID:         caseID,
-			CustomerID: env.CustomerID,
-			SignalID:   signalID(msg.SourceEventID, env.EventID),
+			CustomerID: a.customerID,
+			SignalID:   a.signalID,
 			AdvisorID:  customer.AdvisorID,
 			Segment:    customer.Segment,
-			Factors:    msg.clockFactors(),
-			OccurredAt: env.OccurredAt,
+			Factors:    a.factors,
+			OccurredAt: a.occurredAt,
 		})
 		if err != nil {
 			return err
 		}
 		decided.CaseID = row.ID
 		decided.Decision = DecisionOpened
-		return insertHistory(ctx, tx, row.ID, HistoryKindCase, reason.openedText(), row.OpenedAt)
+		return insertHistory(ctx, tx, HistoryRow{
+			CaseID: row.ID, Kind: HistoryKindCase, Text: a.openedText, OccurredAt: row.OpenedAt,
+		})
 	})
 	if err != nil {
-		return res, fmt.Errorf("cases: intake %s: %w", env.EventID, err)
+		return res, fmt.Errorf("cases: intake %s: %w", a.eventID, err)
 	}
 	return decided, nil
 }
@@ -378,19 +509,15 @@ func (c Customer) validate() error {
 	return nil
 }
 
-func insertHistory(ctx context.Context, tx Tx, caseID, kind, text string, at time.Time) error {
+// insertHistory writes row under a new id.
+func insertHistory(ctx context.Context, tx Tx, row HistoryRow) error {
 	id, err := identity.NewV7()
 	if err != nil {
 		return fmt.Errorf("cases: history id: %w", err)
 	}
-	if err := tx.InsertHistory(ctx, HistoryRow{
-		ID:         id,
-		CaseID:     caseID,
-		Kind:       kind,
-		Text:       text,
-		OccurredAt: at,
-	}); err != nil {
-		return fmt.Errorf("cases: insert history %s: %w", caseID, err)
+	row.ID = id
+	if err := tx.InsertHistory(ctx, row); err != nil {
+		return fmt.Errorf("cases: insert history %s: %w", row.CaseID, err)
 	}
 	return nil
 }
@@ -407,6 +534,22 @@ func signalID(sourceEventID, triagedEventID string) string {
 // decodeTriaged parses and validates a message.triaged body. Every error is
 // permanent: the same body can never decode differently.
 func decodeTriaged(body []byte) (event.Envelope, TriagedMessage, error) {
+	env, payload, err := decodeEnvelope(event.NameMessageTriaged, "triaged", body)
+	if err != nil {
+		return env, TriagedMessage{}, err
+	}
+	var msg TriagedMessage
+	if err := json.Unmarshal(payload, &msg); err != nil {
+		return env, TriagedMessage{}, fmt.Errorf("cases: decode triaged payload: %w", err)
+	}
+	env.Payload = msg
+	return env, msg, nil
+}
+
+// decodeEnvelope parses and validates the envelope of a delivery of the event
+// name and returns its raw payload; what labels the errors. Every error is
+// permanent: the same body can never decode differently.
+func decodeEnvelope(name, what string, body []byte) (event.Envelope, json.RawMessage, error) {
 	var raw struct {
 		EventID       string          `json:"event_id"`
 		OccurredAt    time.Time       `json:"occurred_at"`
@@ -415,37 +558,32 @@ func decodeTriaged(body []byte) (event.Envelope, TriagedMessage, error) {
 		Payload       json.RawMessage `json:"payload"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return event.Envelope{}, TriagedMessage{}, fmt.Errorf("cases: decode triaged: %w", err)
+		return event.Envelope{}, nil, fmt.Errorf("cases: decode %s: %w", what, err)
 	}
 	env := event.Envelope{
-		Name:          event.NameMessageTriaged,
+		Name:          name,
 		EventID:       raw.EventID,
 		OccurredAt:    raw.OccurredAt,
 		CustomerID:    raw.CustomerID,
 		SchemaVersion: raw.SchemaVersion,
 	}
 	if err := env.Validate(); err != nil {
-		return env, TriagedMessage{}, fmt.Errorf("cases: validate triaged: %w", err)
+		return env, nil, fmt.Errorf("cases: validate %s: %w", what, err)
 	}
 	// inbox.event_id and cases.customer_id are UUID columns.
 	eventID, err := uuid.Parse(env.EventID)
 	if err != nil {
-		return env, TriagedMessage{}, fmt.Errorf("cases: validate triaged: event_id is not a uuid")
+		return env, nil, fmt.Errorf("cases: validate %s: event_id is not a uuid", what)
 	}
 	env.EventID = eventID.String()
 	customerID, err := identity.ParseV7(env.CustomerID)
 	if err != nil {
-		return env, TriagedMessage{}, fmt.Errorf("cases: validate triaged: customer_id: %w", err)
+		return env, nil, fmt.Errorf("cases: validate %s: customer_id: %w", what, err)
 	}
 	env.CustomerID = customerID
 
 	if len(raw.Payload) == 0 || string(raw.Payload) == "null" {
-		return env, TriagedMessage{}, errors.New("cases: validate triaged: payload is required")
+		return env, nil, fmt.Errorf("cases: validate %s: payload is required", what)
 	}
-	var msg TriagedMessage
-	if err := json.Unmarshal(raw.Payload, &msg); err != nil {
-		return env, TriagedMessage{}, fmt.Errorf("cases: decode triaged payload: %w", err)
-	}
-	env.Payload = msg
-	return env, msg, nil
+	return env, raw.Payload, nil
 }

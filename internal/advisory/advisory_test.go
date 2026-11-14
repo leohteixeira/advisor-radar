@@ -769,6 +769,7 @@ func TestApply_PurchaseAboveProfileRaisesPerfil(t *testing.T) {
 		}
 		want := advisory.AlertPayload{
 			Kind: advisory.KindPerfil, Rule: advisory.RuleSuitability, SourceEventID: env.EventID,
+			Reason: "Compra de US$ 1.000,00 em produto de risco 5. Perfil conservador vai até risco 2.",
 			Amount: 1_000, Before: 8_200, After: 8_200,
 			ProductID: "cobalto", AssetClass: sim.ClassAcoes, Risk: 5, Profile: advisory.ProfileConservador, MaxRisk: 2,
 		}
@@ -1027,6 +1028,7 @@ func TestApply_ReavaliacaoQuedaPayloadAndRedelivery(t *testing.T) {
 		}
 		want := advisory.AlertPayload{
 			Kind: advisory.KindQueda, Rule: "Queda acima de 15% em 5 dias úteis", SourceEventID: env.EventID,
+			Reason: "Patrimônio caiu 15,5%, de US$ 248.300,00 para US$ 209.780,00",
 			Amount: -38_520, Before: 248_300, After: 209_780,
 		}
 		if payload != want || row.SourceSchemaVersion != event.SchemaVersionPositions {

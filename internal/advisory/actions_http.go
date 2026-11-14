@@ -7,18 +7,23 @@ import (
 	"strings"
 )
 
-// ActionsHandler serves PUT/DELETE/GET /v1/actions for Contatado and Adiar.
+// ActionsHandler serves what an advisor does to a queue signal:
+// PUT/DELETE/GET /v1/actions for Contatado and Adiar, and
+// POST /v1/signals/{id}/case for Abrir caso.
 type ActionsHandler struct {
-	actions *Actions
+	actions  *Actions
+	commands *CaseCommands
 }
 
-// NewActionsHandler returns an HTTP handler for signal actions.
-func NewActionsHandler(actions *Actions) http.Handler {
-	h := &ActionsHandler{actions: actions}
+// NewActionsHandler returns an HTTP handler for signal actions. commands may
+// be nil when the process has no outbox; Abrir caso then answers 503.
+func NewActionsHandler(actions *Actions, commands *CaseCommands) http.Handler {
+	h := &ActionsHandler{actions: actions, commands: commands}
 	mux := http.NewServeMux()
 	mux.HandleFunc("PUT /v1/actions/{id}", h.put)
 	mux.HandleFunc("DELETE /v1/actions/{id}", h.del)
 	mux.HandleFunc("GET /v1/actions", h.list)
+	mux.HandleFunc("POST /v1/signals/{id}/case", h.requestCase)
 	return mux
 }
 

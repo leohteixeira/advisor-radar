@@ -1,22 +1,16 @@
 -- account_sim outbox: Mariana timeline lines + market-day burst + alert facts.
-
-INSERT INTO outbox (event_id, routing_key, payload, published_at)
-VALUES (
-  '01a0e3a4-9a44-774f-b570-c0fc7e50e00c',
-  'message.received',
-  jsonb_build_object(
-    'event_id', '01a0e3a4-9a44-774f-b570-c0fc7e50e00c'::text,
-    'occurred_at', (now() - interval '12 minutes'),
-    'customer_id', '01a0e3a4-9a44-7566-b5de-eb2e365799f8'::text,
-    'schema_version', 1,
-    'payload', '{"channel":"chat","meta":"Reclamação · Frustrado · risco de saída","text":"Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.","title":"Mensagem · chat"}'::jsonb
-  ),
-  NULL
-)
-ON CONFLICT (event_id) DO UPDATE SET
-  routing_key = EXCLUDED.routing_key,
-  payload = EXCLUDED.payload,
-  published_at = NULL;
+--
+-- A reseed returns the service to this cast. Everything a walk recorded goes
+-- first: the events of every deposit, withdrawal, purchase, message and
+-- revaluation, and the idempotency keys that point at them. The outbox then
+-- holds the cast alone, unpublished, so the relay publishes it again and the
+-- timeline replay finds nothing from before the reseed. Stop every service
+-- before reseeding (README, "Reseed before each walk").
+--
+-- One message is one outbox row: the same text seeded under two event ids
+-- shows twice in the customer 360 and in the client's "Atividade recente".
+DELETE FROM outbox;
+DELETE FROM pov_idempotency;
 
 INSERT INTO outbox (event_id, routing_key, payload, published_at)
 VALUES (
@@ -279,7 +273,7 @@ VALUES (
     'occurred_at', (now() - interval '12 minutes'),
     'customer_id', '01a0e3a4-9a44-7566-b5de-eb2e365799f8'::text,
     'schema_version', 1,
-    'payload', '{"channel":"chat","text":"Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora."}'::jsonb
+    'payload', '{"channel":"chat","meta":"Reclamação · Frustrado · risco de saída","text":"Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora.","title":"Mensagem · chat"}'::jsonb
   ),
   NULL
 )

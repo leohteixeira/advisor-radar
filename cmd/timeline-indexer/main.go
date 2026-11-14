@@ -17,6 +17,7 @@ import (
 
 	timelinev1 "github.com/leohteixeira/advisor-radar/gen/timeline/v1"
 	"github.com/leohteixeira/advisor-radar/internal/envfile"
+	"github.com/leohteixeira/advisor-radar/internal/sim"
 	"github.com/leohteixeira/advisor-radar/internal/telemetry"
 	"github.com/leohteixeira/advisor-radar/internal/timeline"
 )
@@ -55,7 +56,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	brokerURL := os.Getenv("TIMELINE_BROKER_URL")
 	esURL := os.Getenv("ELASTICSEARCH_URL")
 
-	idx := timeline.NewIndex()
+	idx := timeline.NewIndex(timeline.WithProductNames(productNames()))
 	var elastic *timeline.ElasticStore
 	if esURL != "" {
 		elastic = timeline.NewElasticStore(esURL)
@@ -78,12 +79,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		defer pool.Close()
 		pools = append(pools, pool)
 	}
-	if len(pools) > 0 {
-		if err := timeline.ReplayOutboxes(ctx, idx, elastic, pools...); err != nil {
-			return fmt.Errorf("timeline-indexer: replay: %w", err)
-		}
-		logger.Info("outboxes replayed", "service", "timeline-indexer", "pools", len(pools))
+	// Runs even without a database: the memory index starts empty, and the
+	// Elasticsearch index must match it.
+	if err := timeline.ReplayOutboxes(ctx, idx, elastic, pools...); err != nil {
+		return fmt.Errorf("timeline-indexer: replay: %w", err)
 	}
+	logger.Info("outboxes replayed", "service", "timeline-indexer", "pools", len(pools))
 
 	if grpcAddr == "" && brokerURL == "" {
 		<-ctx.Done()
@@ -180,6 +181,19 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		}
 		return err
 	}
+}
+
+// productNames maps the fictional catalog's product ids to their names, so
+// the row of a purchase names what was bought. The event carries only the id.
+// The catalog is fixed in code (sim.Catalog; the account-sim seed holds the
+// same rows), so it is read here rather than queried from account-sim.
+func productNames() map[string]string {
+	catalog := sim.Catalog()
+	names := make(map[string]string, len(catalog))
+	for _, product := range catalog {
+		names[product.ID] = product.Name
+	}
+	return names
 }
 
 type amqpSession struct {

@@ -150,6 +150,9 @@ type OpenCase struct {
 	ID    string
 	State string
 	Age   time.Duration
+	// SLAMinutes is the case's own SLA as cases holds it: the segment's SLA,
+	// halved by what opened the case, recalculated when the segment changes.
+	SLAMinutes int
 }
 
 // Product is one entry of the account-sim product catalog. AssetClass is

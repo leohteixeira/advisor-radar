@@ -19,7 +19,14 @@ type MessagePayload struct {
 	Channel string `json:"channel"`
 	Text    string `json:"text"`
 	Origin  string `json:"origin,omitempty"`
+	// Kind is KindComplaint for a message sent through the client app's
+	// complaint panel, and empty for any other message.
+	Kind string `json:"kind,omitempty"`
 }
+
+// KindComplaint marks a message the customer filed as a complaint. It is a
+// complaint whatever triage reads in its text.
+const KindComplaint = "complaint"
 
 // AccountPayload is the outbox payload for a fictional account fact.
 // Schema version 1 stores amount, before, and after as whole USD dollars.

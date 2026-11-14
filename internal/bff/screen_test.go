@@ -750,10 +750,11 @@ func TestGetScreen_MomentTransitions(t *testing.T) {
 			name: "mariana after a complaint", id: sim.CustomerMariana,
 			cases: stubCases{items: []bff.Case{
 				{ID: identity.MustNewV7(), Client: sim.CustomerFernanda, State: 0, OpenedAgo: 1},
-				{ID: caseID, Client: sim.CustomerMariana, State: 0, OpenedAgo: 3},
+				// A churn-risk complaint from a Singular client: 30 of the 60 minutes.
+				{ID: caseID, Client: sim.CustomerMariana, State: 0, OpenedAgo: 3, SlaTotal: 30, SlaRemaining: 27},
 			}},
 			expected: "moment_card/case_open | info | Sua reclamação está com a Ana Paula Ribeiro | " +
-				"Como cliente Singular, você recebe resposta em até 1 h. | Protocolo 01A0E3A5-2F4C · aberto há 3 min | " +
+				"Como cliente Singular, seu prazo padrão é de 1 h. Este atendimento é prioritário: resposta em até 30 min. | Protocolo 01A0E3A5-2F4C · aberto há 3 min | " +
 				"panel message Ver conversa",
 		},
 		{

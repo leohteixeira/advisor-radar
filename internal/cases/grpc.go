@@ -29,11 +29,13 @@ func NewCaseReader(pool *pgxpool.Pool) *CaseReader {
 	return &CaseReader{pool: pool, now: time.Now}
 }
 
-// HistoryEntry is one case_history row.
+// HistoryEntry is one case_history row. Signal is the signal the row is
+// about, when an advisor's command joined it to the case.
 type HistoryEntry struct {
-	Ago  int
-	Kind string
-	Text string
+	Ago    int
+	Kind   string
+	Text   string
+	Signal string
 }
 
 // CaseView is one board case with computed fields.
@@ -43,6 +45,8 @@ type CaseView struct {
 	StateIdx  int
 	OpenedAgo int
 	Remaining int
+	// SLAState is the case's SLA state at read time (see SLAState).
+	SLAState string
 }
 
 func stateIndex(state string) int {
@@ -58,11 +62,11 @@ func stateIndex(state string) int {
 // customerID keeps only that customer's cases.
 func (r *CaseReader) ListCases(ctx context.Context, customerID string) ([]CaseView, error) {
 	const all = `
-SELECT id, customer_id, COALESCE(signal_id::text, ''), advisor_id, state, sla_total_minutes, escalated, opened_at
+SELECT ` + caseColumns + `
 FROM cases
 ORDER BY opened_at DESC`
 	const byCustomer = `
-SELECT id, customer_id, COALESCE(signal_id::text, ''), advisor_id, state, sla_total_minutes, escalated, opened_at
+SELECT ` + caseColumns + `
 FROM cases
 WHERE customer_id = $1
 ORDER BY opened_at DESC`
@@ -82,11 +86,8 @@ ORDER BY opened_at DESC`
 	now := r.now()
 	out := make([]CaseView, 0)
 	for rows.Next() {
-		var row CaseRow
-		if err := rows.Scan(
-			&row.ID, &row.CustomerID, &row.SignalID, &row.AdvisorID,
-			&row.State, &row.SLATotalMinutes, &row.Escalated, &row.OpenedAt,
-		); err != nil {
+		row, err := scanCase(rows)
+		if err != nil {
 			return nil, fmt.Errorf("cases: scan: %w", err)
 		}
 		hist, err := r.history(ctx, row.ID, now)
@@ -99,7 +100,7 @@ ORDER BY opened_at DESC`
 		}
 		out = append(out, CaseView{
 			Row: row, History: hist, StateIdx: stateIndex(row.State),
-			OpenedAgo: openedAgo, Remaining: RemainingMinutes(row, now),
+			OpenedAgo: openedAgo, Remaining: RemainingMinutes(row, now), SLAState: SLAState(row, now),
 		})
 	}
 	return out, rows.Err()
@@ -107,7 +108,7 @@ ORDER BY opened_at DESC`
 
 func (r *CaseReader) history(ctx context.Context, caseID string, now time.Time) ([]HistoryEntry, error) {
 	const q = `
-SELECT kind, text, occurred_at
+SELECT kind, text, occurred_at, COALESCE(signal_id::text, '')
 FROM case_history
 WHERE case_id = $1
 ORDER BY occurred_at DESC`
@@ -118,16 +119,16 @@ ORDER BY occurred_at DESC`
 	defer rows.Close()
 	out := make([]HistoryEntry, 0)
 	for rows.Next() {
-		var kind, text string
+		var kind, text, signal string
 		var at time.Time
-		if err := rows.Scan(&kind, &text, &at); err != nil {
+		if err := rows.Scan(&kind, &text, &at, &signal); err != nil {
 			return nil, fmt.Errorf("cases: scan history: %w", err)
 		}
 		ago := int(now.Sub(at).Minutes())
 		if ago < 0 {
 			ago = -ago
 		}
-		out = append(out, HistoryEntry{Ago: ago, Kind: kind, Text: text})
+		out = append(out, HistoryEntry{Ago: ago, Kind: kind, Text: text, Signal: signal})
 	}
 	return out, rows.Err()
 }
@@ -171,11 +172,11 @@ func (r *CaseReader) viewOf(ctx context.Context, row CaseRow) (CaseView, error) 
 	}
 	return CaseView{
 		Row: row, History: hist, StateIdx: stateIndex(row.State),
-		OpenedAgo: openedAgo, Remaining: RemainingMinutes(row, now),
+		OpenedAgo: openedAgo, Remaining: RemainingMinutes(row, now), SLAState: SLAState(row, now),
 	}, nil
 }
 
-// ListAtRisk returns non-resolved cases within the at-risk window.
+// ListAtRisk returns the non-resolved cases that are due soon or overdue.
 func (r *CaseReader) ListAtRisk(ctx context.Context) ([]CaseView, error) {
 	all, err := r.ListCases(ctx, "")
 	if err != nil {
@@ -190,7 +191,8 @@ func (r *CaseReader) ListAtRisk(ctx context.Context) ([]CaseView, error) {
 	return out, nil
 }
 
-// Backlog aggregates open/risk/overdue counts by advisor_id.
+// Backlog aggregates open, due-soon (risk) and overdue counts by advisor_id.
+// A case counts in at most one of risk and overdue.
 func (r *CaseReader) Backlog(ctx context.Context) (map[string]struct{ Open, Risk, Overdue int }, error) {
 	all, err := r.ListCases(ctx, "")
 	if err != nil {
@@ -204,11 +206,10 @@ func (r *CaseReader) Backlog(ctx context.Context) (map[string]struct{ Open, Risk
 		}
 		b := out[c.Row.AdvisorID]
 		b.Open++
-		rem := RemainingMinutes(c.Row, now)
-		if rem <= 0 {
+		switch SLAState(c.Row, now) {
+		case SLAStateOverdue:
 			b.Overdue++
-		}
-		if IsAtRisk(c.Row, now) {
+		case SLAStateDueSoon:
 			b.Risk++
 		}
 		out[c.Row.AdvisorID] = b
@@ -231,13 +232,15 @@ func NewGRPCServer(reader *CaseReader, store Store) *GRPCServer {
 func toProto(c CaseView) *casesv1.Case {
 	hist := make([]*casesv1.CaseHistoryEntry, 0, len(c.History))
 	for _, h := range c.History {
-		hist = append(hist, &casesv1.CaseHistoryEntry{Ago: int32(h.Ago), Kind: h.Kind, Text: h.Text})
+		hist = append(hist, &casesv1.CaseHistoryEntry{Ago: int32(h.Ago), Kind: h.Kind, Text: h.Text, Signal: h.Signal})
 	}
 	return &casesv1.Case{
 		Id: c.Row.ID, Client: c.Row.CustomerID, Signal: c.Row.SignalID,
 		State: int32(c.StateIdx), OpenedAgo: int32(c.OpenedAgo), SlaTotal: int32(c.Row.SLATotalMinutes),
 		Escalated: c.Row.Escalated, History: hist, AdvisorId: c.Row.AdvisorID,
 		RemainingMinutes: int32(c.Remaining),
+		SlaState:         c.SLAState,
+		SlaHalved:        IsHalved(c.Row.SLATotalMinutes),
 	}
 }
 

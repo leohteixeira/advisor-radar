@@ -1,5 +1,16 @@
 -- Advisory cast: operators, book, queue signals, alerts, notes, inbox, outbox.
--- Reseed refreshes clocks of these ids only; unknown ids are left alone.
+--
+-- A reseed returns the service to this cast. Everything a walk recorded goes
+-- first: the alerts the rules raised and their events, the commands in the
+-- outbox, the inbox claims (so the cast account events that are not claimed
+-- below are evaluated again), the Contatado and Adiar marks, and the latest
+-- revaluations. The book rows below put AUM, segment, and profile back. Stop
+-- every service before reseeding (README, "Reseed before each walk").
+DELETE FROM outbox;
+DELETE FROM inbox;
+DELETE FROM alerts;
+DELETE FROM signal_action;
+DELETE FROM revaluation;
 
 INSERT INTO operators (id, name) VALUES
   ('01a0e3a4-9a44-750d-9e38-ca5f92ecf52a', 'Ana Paula Ribeiro'),
@@ -45,7 +56,8 @@ ON CONFLICT (customer_id) DO UPDATE SET
   investor_profile = EXCLUDED.investor_profile,
   profile_assessed_on = EXCLUDED.profile_assessed_on;
 
--- Queue message signals (reseed updates raised_at).
+-- Queue message signals. Each raised_at is the occurred_at of its message in
+-- seeds/account_sim: one message has one age on every screen.
 INSERT INTO queue_signals (id, customer_id, kind, raised_at, payload)
 VALUES ('01a0e3a4-9a44-7640-9d53-0fb421112eed', '01a0e3a4-9a44-7566-b5de-eb2e365799f8', 'message', now() - interval '12 minutes', '{"channel":"chat","churn":true,"churnConf":"alta","dist":{"Encerramento":0.11,"Operacional":0.04,"Reclamação":0.82,"Resgate":0.03},"fallback":false,"frustration":2,"human":false,"intent":"Reclamação","text":"Se isso não for resolvido hoje vou levar meu dinheiro todo para outra corretora."}'::jsonb)
 ON CONFLICT (id) DO UPDATE SET

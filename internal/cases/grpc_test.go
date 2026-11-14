@@ -82,3 +82,41 @@ func TestGRPCServer_ListCases_CustomerFilter(t *testing.T) {
 		})
 	}
 }
+
+// A case reports whether its SLA is the halved one, so the card can explain
+// a Singular case counting 30 min next to the segment's 1 h.
+func TestGRPCServer_ListCases_SLAHalved(t *testing.T) {
+	t.Parallel()
+	pool := newCasesPool(t)
+	store := cases.NewPGXStore(pool)
+	ctx := t.Context()
+	lookup := singular(identity.MustNewV7())
+
+	tests := []struct {
+		name      string
+		msg       cases.TriagedMessage
+		wantTotal int32
+		want      bool
+	}{
+		{name: "churn risk halves", msg: cases.TriagedMessage{Origin: cases.OriginClientApp, Intent: "reclamacao", ChurnRisk: 0.8}, wantTotal: 30, want: true},
+		{name: "plain complaint keeps the base", msg: cases.TriagedMessage{Origin: cases.OriginClientApp, Intent: "reclamacao"}, wantTotal: 60, want: false},
+	}
+	srv := cases.NewGRPCServer(cases.NewCaseReader(pool), store)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			customerID := identity.MustNewV7()
+			tt.msg.SourceEventID = identity.MustNewV7()
+			if _, err := cases.Intake(ctx, store, lookup, triagedBody(t, identity.MustNewV7(), customerID, tt.msg)); err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			res, err := srv.ListCases(ctx, &casesv1.ListCasesRequest{CustomerId: customerID})
+			if err != nil || len(res.GetItems()) != 1 {
+				t.Fatalf("ListCases = %d items, %v", len(res.GetItems()), err)
+			}
+			got := res.GetItems()[0]
+			if got.GetSlaTotal() != tt.wantTotal || got.GetSlaHalved() != tt.want {
+				t.Fatalf("total %d halved %v, want %d and %v", got.GetSlaTotal(), got.GetSlaHalved(), tt.wantTotal, tt.want)
+			}
+		})
+	}
+}

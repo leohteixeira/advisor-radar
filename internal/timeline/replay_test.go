@@ -37,6 +37,9 @@ func TestReplayRows_SkipsEventsTheTimelineDoesNotIndex(t *testing.T) {
 	rows := []timeline.OutboxRow{
 		outboxRow(t, event.NameCaseOpened, cust, map[string]any{"case_id": "k1", "state": "Aberto"}),
 		outboxRow(t, event.NameCaseSLABreached, cust, map[string]any{"case_id": "k1", "state": "Aberto", "escalated": true}),
+		// advisory's outbox also carries the open-case command, which only
+		// cases consumes.
+		outboxRow(t, "case.open.requested", cust, map[string]any{"signal_id": "s1"}),
 		outboxRow(t, event.NameCaseStatusChanged, cust, map[string]any{"case_id": "k1", "state": "Resolvido"}),
 	}
 

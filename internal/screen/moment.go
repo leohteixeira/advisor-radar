@@ -72,12 +72,25 @@ func hasSLA(c Catalog, segment string) bool {
 	return err == nil
 }
 
-// caseOpenMoment matches when the customer has a case that is not resolved
-// and the book segment has a catalog SLA. It shows the most recent case.
+// caseOpenMoment matches when the customer has a case that is not resolved,
+// the book segment is one the catalog knows, and the most recent case has an
+// SLA. It shows that case and states the case's own SLA, the number the
+// advisor's clock counts from: the segment's SLA halved by what opened the
+// case, so the copy never promises more than the queue enforces.
 type caseOpenMoment struct{ cat Catalog }
 
 func (v caseOpenMoment) Matches(s Snapshot) bool {
-	return s.Cases.OK() && len(s.Cases.Value) > 0 && hasAdvisor(s) && hasSLA(v.cat, customerFields(s).Segment)
+	return s.Cases.OK() && len(s.Cases.Value) > 0 && hasAdvisor(s) &&
+		hasSLA(v.cat, customerFields(s).Segment) && latestCase(s.Cases.Value).SLAMinutes > 0
+}
+
+// slaText writes an SLA in minutes as the catalog writes one: "4 h", or
+// "30 min" when it is not a whole number of hours.
+func slaText(minutes int) string {
+	if minutes%60 == 0 {
+		return strconv.Itoa(minutes/60) + " h"
+	}
+	return strconv.Itoa(minutes) + " min"
 }
 
 func (caseOpenMoment) Build(s Snapshot, c Catalog) (Component, error) {
@@ -88,19 +101,30 @@ func (caseOpenMoment) Build(s Snapshot, c Catalog) (Component, error) {
 	if f.AdvisorName == "" {
 		return Component{}, errors.New("screen: case_open needs the advisor")
 	}
-	sla, err := c.SLA(f.Segment)
+	base, err := c.SLA(f.Segment)
 	if err != nil {
 		return Component{}, err
 	}
 	latest := latestCase(s.Cases.Value)
-	f.SLA = sla
+	if latest.SLAMinutes <= 0 {
+		return Component{}, errors.New("screen: case_open needs the case SLA")
+	}
+	f.SLA = slaText(latest.SLAMinutes)
+	// A case whose SLA is not the segment's was halved by what opened it.
+	// The copy then names both, so the shorter number does not contradict
+	// the segment's SLA shown on the other cards.
+	body := "body"
+	if f.SLA != base {
+		body = "body_priority"
+		f.BaseSLA = base
+	}
 	f.Protocol = Protocol(latest.ID)
 	f.Age = RelativeTime(latest.Age)
 	cp := copier{cat: c, typ: typeMomentCard, variant: momentCaseOpen, fields: f}
 	props := MomentCard{
 		Kicker: cp.text("kicker"),
 		Title:  cp.text("title"),
-		Body:   cp.text("body"),
+		Body:   cp.text(body),
 		Meta:   cp.text("meta"),
 		Tone:   ToneInfo,
 		Icon:   "inbox",
@@ -184,6 +208,28 @@ func (segmentUpgradeNearMoment) Build(s Snapshot, c Catalog) (Component, error) 
 	return momentComponent(momentSegmentUpgradeNear, props, cp.err)
 }
 
+// cashShare is the whole-percent share of the patrimony held in cash. With
+// the account on hand it is the cash row of the allocation breakdown, the
+// same largest-remainder share over the four classes that Carteira and the
+// wealth summary show, so the moment never reads a point away from them.
+// Without the account it falls back to the moment facts.
+func cashShare(s Snapshot) (int, error) {
+	if s.Account.OK() {
+		a := s.Account.Value
+		shares, err := Shares([]int64{a.Cash, a.Acoes, a.ETFs, a.RendaFixa})
+		if err != nil {
+			return 0, err
+		}
+		return shares[0], nil
+	}
+	m := s.Moments.Value
+	shares, err := Shares([]int64{m.CashCents, m.PatrimonyCents - m.CashCents})
+	if err != nil {
+		return 0, err
+	}
+	return shares[0], nil
+}
+
 // idleCashMoment matches a client advisory found with at least half of the
 // patrimony in cash. Its copy names the investor profile, so it also needs
 // that source. The timeline only dates the idle cash; without it the body
@@ -199,13 +245,13 @@ func (idleCashMoment) Build(s Snapshot, c Catalog) (Component, error) {
 		return Component{}, errors.New("screen: idle_cash needs the moment facts and the profile")
 	}
 	m := s.Moments.Value
-	shares, err := Shares([]int64{m.CashCents, m.PatrimonyCents - m.CashCents})
+	share, err := cashShare(s)
 	if err != nil {
 		return Component{}, err
 	}
 	f := customerFields(s)
 	f.Cash = Money(m.CashCents)
-	f.CashShare = Percent(shares[0])
+	f.CashShare = Percent(share)
 	f.Profile = strings.ToLower(s.Profile.Value.Profile)
 	bodyKey := "body_undated"
 	if days, ok := idleDays(s); ok {

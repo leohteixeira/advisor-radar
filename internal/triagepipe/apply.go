@@ -39,10 +39,13 @@ type ResultRow struct {
 	Payload       []byte
 }
 
-// TriagedPayload is the domain payload on message.triaged.
+// TriagedPayload is the domain payload on message.triaged. Origin and Kind
+// are copied from message.received; Kind is "complaint" for a message filed
+// through the complaint panel.
 type TriagedPayload struct {
 	SourceEventID string  `json:"source_event_id"`
 	Origin        string  `json:"origin,omitempty"`
+	Kind          string  `json:"kind,omitempty"`
 	Channel       string  `json:"channel"`
 	Text          string  `json:"text"`
 	Intent        string  `json:"intent"`
@@ -122,6 +125,7 @@ func Apply(ctx context.Context, store Store, classifier triage.Classifier, env e
 	domain := TriagedPayload{
 		SourceEventID: env.EventID,
 		Origin:        payload.Origin,
+		Kind:          payload.Kind,
 		Channel:       payload.Channel,
 		Text:          payload.Text,
 		Intent:        string(result.Intent),

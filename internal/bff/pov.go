@@ -76,6 +76,9 @@ type povList struct {
 }
 
 // povListItem is one client in the persona list. Assets is integer cents.
+// Segment is the client's current segment in the advisory book and SLA the
+// response time of that segment; with Since they are empty when advisory
+// cannot answer.
 type povListItem struct {
 	Advisor    string `json:"advisor"`
 	Assets     int64  `json:"assets"`
@@ -89,7 +92,8 @@ type povListItem struct {
 
 // povHome is the GET /v1/client-pov/customers/{id} body. Money is integer
 // cents. Activity and Messages are always empty in phase 2 and must be
-// non-nil so they encode as [] rather than null.
+// non-nil so they encode as [] rather than null. Segment, SLA, and Since
+// follow the advisory book as in povListItem.
 type povHome struct {
 	Activity   []any         `json:"activity"`
 	Advisor    string        `json:"advisor"`
@@ -171,19 +175,22 @@ type POVSource interface {
 	UpdatePreferences(ctx context.Context, customerID string, prefs POVPreferences) (POVPreferences, error)
 }
 
+// povMeta is the fixed part of one demo client: who they are and the hint
+// the persona list shows. The segment and its SLA are not here: they follow
+// the advisory book (see bookOf). A hint only states what stays true whatever
+// the client's current segment is, so it names no segment: the badge next to
+// it changes during a walk.
 type povMeta struct {
 	id      string
 	name    string
-	segment string
 	advisor string
-	sla     string
 	hint    string
 }
 
 var povCatalog = []povMeta{
-	{sim.CustomerMariana, "Mariana Costa", "Singular", "Ana Paula Ribeiro", "1 h", "Já reclamou de uma transferência atrasada. Um saque grande ou uma ameaça de saída sobem a prioridade na hora."},
-	{sim.CustomerFernanda, "Fernanda Lima", "Essencial", "Ana Paula Ribeiro", "24 h", "Perto do teto da faixa. Um depósito pode subir o segmento; uma reclamação mostra o SLA mais longo."},
-	{sim.CustomerThiago, "Thiago Azevedo", "Advance", "Ana Paula Ribeiro", "4 h", "Acabou de subir de Essencial para Advance com um depósito grande."},
+	{sim.CustomerMariana, "Mariana Costa", "Ana Paula Ribeiro", "Já reclamou de uma transferência atrasada. Um saque grande ou uma ameaça de saída sobem a prioridade na hora."},
+	{sim.CustomerFernanda, "Fernanda Lima", "Ana Paula Ribeiro", "Depósitos e saques podem mudar o segmento desta cliente, e o prazo de resposta acompanha."},
+	{sim.CustomerThiago, "Thiago Azevedo", "Ana Paula Ribeiro", "Recebeu um depósito grande há pouco. Um saque grande pode mudar o segmento, e o prazo de resposta acompanha."},
 }
 
 type emptyPOV struct{}
@@ -326,15 +333,16 @@ func (h *Handler) listPOV(w http.ResponseWriter, r *http.Request) {
 	items := make([]povListItem, 0, len(povCatalog))
 	for _, meta := range povCatalog {
 		account := byID[meta.id]
+		book := h.bookOf(r, meta.id)
 		items = append(items, povListItem{
 			Advisor:    meta.advisor,
 			Assets:     account.assets(),
 			CustomerID: meta.id,
 			Hint:       meta.hint,
 			Name:       meta.name,
-			Segment:    meta.segment,
-			Since:      h.customerSince(r.Context(), meta.id),
-			SLA:        meta.sla,
+			Segment:    book.segment,
+			Since:      book.since,
+			SLA:        book.sla,
 		})
 	}
 	writeJSON(w, http.StatusOK, povList{Items: items})
@@ -357,6 +365,7 @@ func (h *Handler) getPOV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	meta := catalog(id)
+	book := h.bookOf(r, id)
 	writeJSON(w, http.StatusOK, povHome{
 		Activity: []any{},
 		Advisor:  meta.advisor,
@@ -371,9 +380,9 @@ func (h *Handler) getPOV(w http.ResponseWriter, r *http.Request) {
 		CustomerID: id,
 		Messages:   []any{},
 		Name:       meta.name,
-		Segment:    meta.segment,
-		Since:      h.customerSince(r.Context(), id),
-		SLA:        meta.sla,
+		Segment:    book.segment,
+		Since:      book.since,
+		SLA:        book.sla,
 	})
 }
 
@@ -578,12 +587,37 @@ func (h *Handler) upstreamFailed(r *http.Request, op, customerID string, err err
 	)
 }
 
-func (h *Handler) customerSince(ctx context.Context, id string) string {
-	customer, err := h.queue.GetCustomer(ctx, id)
+// povBook is what the client POV reads from the advisory book for one
+// client: the current segment, the response time that segment promises, and
+// the year the client joined.
+type povBook struct {
+	segment string
+	sla     string
+	since   string
+}
+
+// bookOf reads the client's book row from advisory, once. The segment is live
+// (advisory moves it on every account event), so it is never taken from a
+// fixed table. When advisory cannot answer, the three fields are empty: the
+// client app shows no segment rather than one that may be wrong, and the rest
+// of the response, which comes from account-sim, still answers.
+func (h *Handler) bookOf(r *http.Request, id string) povBook {
+	customer, err := h.queue.GetCustomer(r.Context(), id)
 	if err != nil {
-		return ""
+		h.logger.LogAttrs(r.Context(), slog.LevelWarn, "advisory call failed",
+			slog.String("service", "bff"),
+			slog.String("operation", "pov.book"),
+			slog.String("code", status.Code(err).String()),
+			slog.String("customer_id", id),
+		)
+		return povBook{}
 	}
-	return customer.Since
+	book := povBook{segment: customer.Segment, since: customer.Since}
+	// A segment the screen catalog has no SLA text for keeps an empty SLA.
+	if sla, err := h.screens.SLA(customer.Segment); err == nil {
+		book.sla = sla
+	}
+	return book
 }
 
 func catalog(id string) povMeta {

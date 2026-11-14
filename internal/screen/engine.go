@@ -293,6 +293,12 @@ func planSources(def screenDef, sections []plannedSection) (fetched, required []
 	return fetched, required
 }
 
+// SLA is the advisory response-time text of a segment, such as "4 h", from
+// the same catalog the screens are written with.
+func (e *Engine) SLA(segment string) (string, error) {
+	return e.catalog.SLA(segment)
+}
+
 // Build composes one screen for a customer, in the revision servedPlan picks
 // from the Snapshot. It fails only for an unknown slug (ErrUnknownScreen),
 // when account-sim does not know the customer (ErrUnknownCustomer), or with

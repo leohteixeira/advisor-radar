@@ -3,6 +3,7 @@ package sim_test
 import (
 	"context"
 	"errors"
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -280,6 +281,51 @@ func TestWithdrawalAboveCaixaWritesNothing(t *testing.T) {
 	}
 	if len(store.outbox) != 0 || len(store.keys) != 0 {
 		t.Fatalf("outbox=%d keys=%d, want 0", len(store.outbox), len(store.keys))
+	}
+}
+
+// A deposit or a withdrawal whose amount is not a positive number of cents
+// within the cap is refused before anything is written: the UI is not the
+// only client of the command path.
+func TestDepositAndWithdrawalRefuseBadAmounts(t *testing.T) {
+	t.Parallel()
+
+	amounts := []struct {
+		name   string
+		amount int64
+	}{
+		{name: "zero", amount: 0},
+		{name: "negative", amount: -500},
+		{name: "most negative", amount: math.MinInt64},
+		{name: "above the cap", amount: sim.MaxAmountCents + 1},
+	}
+	kinds := []sim.Command{
+		{Kind: sim.CmdDeposit, Origin: "pix"},
+		{Kind: sim.CmdWithdrawal, Destination: "conta-eua"},
+	}
+	for _, kind := range kinds {
+		for _, tt := range amounts {
+			t.Run(kind.Kind+" "+tt.name, func(t *testing.T) {
+				t.Parallel()
+				store := newStore()
+				before := store.accounts[sim.CustomerMariana]
+				cmd := kind
+				cmd.CustomerID = sim.CustomerMariana
+				cmd.IdempotencyKey = "bad-amount"
+				cmd.Amount = tt.amount
+
+				_, err := sim.Apply(context.Background(), store, cmd)
+				if !errors.Is(err, sim.ErrAmount) {
+					t.Fatalf("err = %v, want ErrAmount", err)
+				}
+				if !sameAccount(store.accounts[sim.CustomerMariana], before) {
+					t.Fatalf("account changed: %+v", store.accounts[sim.CustomerMariana])
+				}
+				if len(store.outbox) != 0 || len(store.keys) != 0 {
+					t.Fatalf("outbox=%d keys=%d, want 0", len(store.outbox), len(store.keys))
+				}
+			})
+		}
 	}
 }
 

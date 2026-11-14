@@ -292,7 +292,7 @@ func TestIndex_ApplyDeliverySchemaVersions(t *testing.T) {
 		{
 			name: "perfil alert", version: 1, routing: event.NameAlertRaised,
 			payload:  map[string]any{"kind": "perfil", "rule": "Compra acima do perfil de investidor", "product_id": "cobalto"},
-			wantKind: "perfil", wantTitle: "Compra acima do perfil",
+			wantKind: "perfil", wantTitle: "Alerta: compra acima do perfil",
 		},
 		{name: "v4 is refused", version: 4, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte"}, wantErr: true},
 		{name: "v0 is refused", version: 0, routing: event.NameAccountEventRecorded, payload: map[string]any{"kind": "aporte"}, wantErr: true},

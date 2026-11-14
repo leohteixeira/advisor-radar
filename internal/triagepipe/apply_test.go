@@ -325,6 +325,44 @@ func TestApply_CopiesMessageOrigin(t *testing.T) {
 	}
 }
 
+func TestApply_CopiesMessageKind(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		kind string
+		want any
+	}{
+		{name: "complaint panel message stays a complaint", kind: sim.KindComplaint, want: sim.KindComplaint},
+		{name: "any other message has no kind", kind: "", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := newMemStore()
+			// Triage reads another intent: the kind must survive it.
+			clf := &fixedClassifier{result: triage.Result{Intent: "cambio", IntentProb: 0.9, Classifier: "jev"}}
+			env := messageEnv("md-kind", "c18")
+			env.Payload = sim.MessagePayload{Channel: "chat", Text: "Quero falar com alguém", Origin: sim.OriginClientApp, Kind: tt.kind}
+			if err := triagepipe.Apply(context.Background(), store, clf, env); err != nil {
+				t.Fatal(err)
+			}
+			store.mu.Lock()
+			ob := store.outbox["tr-md-kind"]
+			store.mu.Unlock()
+			var body struct {
+				Payload map[string]any `json:"payload"`
+			}
+			if err := json.Unmarshal(ob.row.Payload, &body); err != nil {
+				t.Fatal(err)
+			}
+			if got := body.Payload["kind"]; got != tt.want {
+				t.Fatalf("payload kind = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestApply_UUIDv7SourceStoresUUIDv7Result(t *testing.T) {
 	t.Parallel()
 

@@ -14,6 +14,7 @@ import (
 
 	triagev1 "github.com/leohteixeira/advisor-radar/gen/triage/v1"
 	"github.com/leohteixeira/advisor-radar/internal/identity"
+	"github.com/leohteixeira/advisor-radar/internal/triage"
 )
 
 const reviewThreshold = 0.85
@@ -74,6 +75,7 @@ ORDER BY created_at DESC`
 			label = *corrected
 			isCorrected = true
 		}
+		label = triage.IntentLabel(label)
 		ago := int(now.Sub(created).Minutes())
 		if ago < 0 {
 			ago = -ago
@@ -117,29 +119,30 @@ RETURNING id, customer_id, intent, intent_prob, degraded, corrected_intent, crea
 	}
 	return ReviewRow{
 		ID: rid, Client: customer, Text: text, Dist: dist, Ago: ago,
-		Fallback: degraded, Intent: label, Corrected: true,
+		Fallback: degraded, Intent: triage.IntentLabel(label), Corrected: true,
 	}, nil
 }
 
-// IntentStats aggregates review and fallback percentages plus intent counts.
+// IntentStats returns the share of results still awaiting human review, the
+// share classified by the fallback, and the result count per intent label.
+// A reviewed row leaves the pending share, as it leaves the pending count of
+// ListReview. Counts are keyed by the canonical label, whichever spelling the
+// row stores.
 func (r *ReviewReader) IntentStats(ctx context.Context) (reviewPct, fallbackPct int, intents map[string]int, err error) {
-	const totalQ = `SELECT COUNT(*) FROM results`
-	var total int
-	if err := r.pool.QueryRow(ctx, totalQ).Scan(&total); err != nil {
+	const totalsQ = `
+SELECT COUNT(*),
+       COUNT(*) FILTER (WHERE intent_prob < $1 AND COALESCE(corrected_intent, '') = ''),
+       COUNT(*) FILTER (WHERE degraded)
+FROM results`
+	var total, pending, fallback int
+	if err := r.pool.QueryRow(ctx, totalsQ, reviewThreshold).Scan(&total, &pending, &fallback); err != nil {
 		return 0, 0, nil, fmt.Errorf("triage: count results: %w", err)
 	}
 	if total == 0 {
 		return 0, 0, map[string]int{}, nil
 	}
-	var reviewN, fallbackN int
-	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM results WHERE intent_prob < $1`, reviewThreshold).Scan(&reviewN); err != nil {
-		return 0, 0, nil, fmt.Errorf("triage: count review: %w", err)
-	}
-	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM results WHERE degraded`).Scan(&fallbackN); err != nil {
-		return 0, 0, nil, fmt.Errorf("triage: count fallback: %w", err)
-	}
 	rows, err := r.pool.Query(ctx, `
-SELECT COALESCE(corrected_intent, intent), COUNT(*)
+SELECT COALESCE(NULLIF(corrected_intent, ''), intent), COUNT(*)
 FROM results
 GROUP BY 1`)
 	if err != nil {
@@ -148,14 +151,22 @@ GROUP BY 1`)
 	defer rows.Close()
 	intents = map[string]int{}
 	for rows.Next() {
-		var label string
+		var stored string
 		var n int
-		if err := rows.Scan(&label, &n); err != nil {
+		if err := rows.Scan(&stored, &n); err != nil {
 			return 0, 0, nil, fmt.Errorf("triage: scan intent: %w", err)
 		}
-		intents[label] = n
+		intents[triage.IntentLabel(stored)] += n
 	}
-	return (reviewN * 100) / total, (fallbackN * 100) / total, intents, rows.Err()
+	if err := rows.Err(); err != nil {
+		return 0, 0, nil, fmt.Errorf("triage: intent groups: %w", err)
+	}
+	return percent(pending, total), percent(fallback, total), intents, nil
+}
+
+// percent is part of total as a whole percentage, rounded half up.
+func percent(part, total int) int {
+	return (part*200 + total) / (total * 2)
 }
 
 func decodeReviewPayload(payload []byte) (map[string]float64, string) {
@@ -164,15 +175,11 @@ func decodeReviewPayload(payload []byte) (map[string]float64, string) {
 		Dist map[string]float64 `json:"dist"`
 	}
 	_ = json.Unmarshal(payload, &raw)
-	if raw.Dist == nil {
-		raw.Dist = map[string]float64{}
+	dist := make(map[string]float64, len(raw.Dist))
+	for stored, prob := range raw.Dist {
+		dist[triage.IntentLabel(stored)] += prob
 	}
-	return raw.Dist, raw.Text
-}
-
-var validIntents = map[string]struct{}{
-	"Operacional": {}, "Câmbio": {}, "Tributação": {}, "Investimento": {},
-	"Resgate": {}, "Reclamação": {}, "Encerramento": {}, "Contato": {},
+	return dist, raw.Text
 }
 
 // GRPCServer serves TriageService.
@@ -209,10 +216,13 @@ func (s *GRPCServer) CorrectIntent(ctx context.Context, req *triagev1.CorrectInt
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid id")
 	}
-	if _, ok := validIntents[req.GetIntent()]; !ok {
+	intent, ok := triage.ParseIntent(req.GetIntent())
+	if !ok {
 		return nil, status.Error(codes.InvalidArgument, "invalid intent")
 	}
-	row, err := s.reader.CorrectIntent(ctx, id, req.GetIntent())
+	// The label is what corrections have always stored; reads accept both
+	// spellings.
+	row, err := s.reader.CorrectIntent(ctx, id, intent.Label())
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, status.Error(codes.NotFound, "review row not found")
 	}

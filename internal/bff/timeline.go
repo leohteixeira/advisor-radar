@@ -119,3 +119,10 @@ func parseTimelineOrder(raw string) string {
 func reverseTimeline(items []TimelineEntry) {
 	slices.Reverse(items)
 }
+
+// unchangedRevaluation reports whether e is a daily reavaliacao that moved
+// nothing. Every simulated day writes one per client; the customer 360 leaves
+// out the ones with no change, as the client's own activity list does.
+func unchangedRevaluation(e TimelineEntry) bool {
+	return e.Kind == "reavaliacao" && e.AmountCents == 0
+}

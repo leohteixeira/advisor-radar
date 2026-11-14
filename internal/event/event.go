@@ -16,6 +16,9 @@ const (
 	NameCaseOpened           = "case.opened"
 	NameCaseStatusChanged    = "case.status.changed"
 	NameCaseSLABreached      = "case.sla.breached"
+	// NameCaseOpenRequested is the advisor's command to open a case from a
+	// queue signal (ADR 0013): advisory publishes it, cases consumes it.
+	NameCaseOpenRequested = "case.open.requested"
 )
 
 // Schema versions accepted on the shared envelope. Version 3 keeps the
@@ -41,6 +44,7 @@ var knownNames = map[string]struct{}{
 	NameCaseOpened:           {},
 	NameCaseStatusChanged:    {},
 	NameCaseSLABreached:      {},
+	NameCaseOpenRequested:    {},
 }
 
 // Envelope is the shared event body plus the routing-key name.
