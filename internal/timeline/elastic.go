@@ -14,19 +14,32 @@ import (
 // ElasticStore indexes timeline entries over Elasticsearch's HTTP API.
 // It is used only when ELASTICSEARCH_URL is set.
 type ElasticStore struct {
-	base   string
-	client *http.Client
-	index  string
+	base        string
+	client      *http.Client
+	clearClient *http.Client
+	index       string
 }
+
+const (
+	// documentTimeout bounds one document write.
+	documentTimeout = 5 * time.Second
+	// clearTimeout bounds the delete by query that empties the index. It scans
+	// and deletes every document, so on a busy single-node cluster it takes far
+	// longer than one document write.
+	clearTimeout = 2 * time.Minute
+)
 
 // NewElasticStore returns a client for baseURL (no trailing slash).
 func NewElasticStore(baseURL string) *ElasticStore {
+	return newElasticStore(baseURL, documentTimeout, clearTimeout)
+}
+
+func newElasticStore(baseURL string, document, clearing time.Duration) *ElasticStore {
 	return &ElasticStore{
-		base:  strings.TrimRight(baseURL, "/"),
-		index: "customer-timeline",
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
+		base:        strings.TrimRight(baseURL, "/"),
+		index:       "customer-timeline",
+		client:      &http.Client{Timeout: document},
+		clearClient: &http.Client{Timeout: clearing},
 	}
 }
 
@@ -43,7 +56,7 @@ func (e *ElasticStore) Clear(ctx context.Context) error {
 		return fmt.Errorf("timeline: elastic request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	res, err := e.client.Do(req)
+	res, err := e.clearClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("timeline: elastic delete by query: %w", err)
 	}

@@ -158,6 +158,21 @@ func TestElasticStore_Clear(t *testing.T) {
 	}
 }
 
+// A delete by query outlasts one document write on a busy cluster, so Clear
+// must not share the document timeout.
+func TestElasticStore_ClearOutlastsDocumentTimeout(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+	store := timeline.NewElasticStoreWithTimeouts(srv.URL, 20*time.Millisecond, 5*time.Second)
+	if err := store.Clear(context.Background()); err != nil {
+		t.Fatalf("Clear slower than the document timeout = %v, want nil", err)
+	}
+}
+
 func TestElasticStore_ClearCanceledContext(t *testing.T) {
 	t.Parallel()
 	fake := &elasticFake{clearStatus: http.StatusOK, clearPayload: `{}`}
