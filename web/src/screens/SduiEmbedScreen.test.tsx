@@ -92,6 +92,38 @@ describe('embedded Server-Driven UI', () => {
     vi.unstubAllGlobals();
   });
 
+  it('posts the document height, margin above the root included, and again when the size changes', () => {
+    stubLiveBFF();
+    const resized: (() => void)[] = [];
+    const disconnect = vi.fn();
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resized.push(callback); }
+      observe() {}
+      disconnect = disconnect;
+    });
+    const post = vi.spyOn(window, 'postMessage').mockImplementation(() => undefined);
+    // The root starts 36px down the document: a child margin collapses out of it.
+    let rect = { top: 36, bottom: 2425.94, height: 2389.94 };
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => rect as DOMRect);
+    const heights = () => post.mock.calls.map(([message]) => (message as { type: string; height: number }).height);
+
+    const view = renderAt(`${ROUTER_BASENAME}/embed/sdui`);
+    expect(post).toHaveBeenLastCalledWith({ type: 'advisor-radar:sdui-height', height: 2426 }, window.location.origin);
+
+    rect = { top: 36, bottom: 4693.2, height: 4657.2 };
+    act(() => resized.forEach((notify) => notify()));
+    expect(heights().at(-1)).toBe(4694);
+
+    // Content that shrinks is reported too, whatever height the host gave the iframe.
+    rect = { top: 36, bottom: 2425.94, height: 2389.94 };
+    act(() => resized.forEach((notify) => notify()));
+    expect(heights().at(-1)).toBe(2426);
+
+    view.unmount();
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    vi.restoreAllMocks();
+  });
+
   it('renders the embedded showcase with its heading, steps, and principles', () => {
     stubLiveBFF();
     renderAt(`${ROUTER_BASENAME}/embed/sdui`);

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   advanceCase,
+  ApiError,
   deleteAction,
   fetchCases,
   fetchQueue,
+  openCase,
   putAction,
   queueStreamUrl,
 } from '../api/bff';
@@ -12,24 +14,35 @@ import { FilterBar, type FilterGroup } from '../components/FilterBar';
 import { NewItemsPill } from '../components/NewItemsPill';
 import { QueueBoard } from '../components/QueueBoard';
 import { Toast } from '../components/Toast';
-import type { CaseItem, ListFacets, Signal } from '../domain/types';
+import { CASE_STATES, type CaseItem, type ListFacets, type Signal } from '../domain/types';
 import {
   ANDAMENTO_OPTIONS,
+  caseOutcome,
+  type CaseOutcome,
   columnVisible,
+  countLabel,
   dateLabel,
   decorateCase,
   decorateSignal,
   EMPTY_FILTERS,
   type FilterKey,
   type QueueFilters,
+  signalsColumnVisible,
+  slaFacetsFromCards,
 } from '../domain/queueVisual';
 
 const DESKTOP_MQ = '(min-width: 900px)';
 
+/** Abrir caso is confirmed by re-reading the cases: once a second, ten times (ADR 0013). */
+const CASE_POLL_MS = 1000;
+const CASE_POLL_ATTEMPTS = 10;
+
 interface ToastState {
   text: string;
-  undoId?: string;
+  action?: { label: string; run: () => void };
 }
+
+const RETRY = 'Tentar novamente';
 
 export interface QueueScreenProps {
   /** Override matchMedia for tests. */
@@ -83,6 +96,25 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
   const seenIds = useRef<Set<string>>(new Set());
   const incomingRef = useRef<Signal[]>([]);
   incomingRef.current = incoming;
+  const [pendingCases, setPendingCases] = useState<ReadonlySet<string>>(new Set());
+  // One idempotency key per signal command: a retry after a failed or refused
+  // POST sends the same key. An accepted command that was never confirmed
+  // drops it, because advisory dedupes a known key and would publish nothing.
+  const caseKeys = useRef<Map<string, string>>(new Map());
+  const gone = useRef(false);
+  const pollTimers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
+  useEffect(() => {
+    gone.current = false;
+    const timers = pollTimers.current;
+    return () => {
+      gone.current = true;
+      for (const timer of timers) {
+        clearTimeout(timer);
+      }
+      timers.clear();
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof isDesktop === 'boolean') {
@@ -95,9 +127,13 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
     return () => mq.removeEventListener('change', onChange);
   }, [isDesktop]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(false);
+  // A quiet load refreshes the lists behind an action: no skeleton, and a
+  // failure keeps what is on screen.
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) {
+      setLoading(true);
+      setError(false);
+    }
     try {
       const params = listParams(query, filters);
       const [queue, caseRes] = await Promise.all([fetchQueue(params), fetchCases(params)]);
@@ -111,12 +147,20 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
         seen.add(id);
       }
       seenIds.current = seen;
+      setError(false);
     } catch {
-      setError(true);
+      if (!quiet) {
+        setError(true);
+      }
     } finally {
-      setLoading(false);
+      if (!quiet) {
+        setLoading(false);
+      }
     }
   }, [query, filters]);
+  // Actions that finish later reload with the filters of that moment.
+  const loadRef = useRef(load);
+  loadRef.current = load;
 
   useEffect(() => {
     void load();
@@ -177,48 +221,98 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
     }
   };
 
-  const onOpenCase = (id: string) => {
+  // Waits for cases to act on an accepted command. Resolves with the outcome,
+  // or null when the time runs out or the screen is gone.
+  const awaitCaseOutcome = async (signalId: string): Promise<CaseOutcome | null> => {
+    for (let attempt = 0; attempt < CASE_POLL_ATTEMPTS; attempt += 1) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          pollTimers.current.delete(timer);
+          resolve();
+        }, CASE_POLL_MS);
+        pollTimers.current.add(timer);
+      });
+      if (gone.current) {
+        return null;
+      }
+      try {
+        const outcome = caseOutcome((await fetchCases()).items, signalId);
+        if (outcome) {
+          return outcome;
+        }
+      } catch {
+        // A failed read is only a lost attempt.
+      }
+    }
+    return null;
+  };
+
+  const onOpenCase = async (id: string) => {
     const signal = items.find((s) => s.id === id);
-    if (!signal) {
+    if (!signal || pendingCases.has(id)) {
       return;
     }
-    const opened: CaseItem = {
-      id: `k-local-${id}`,
-      client: signal.client,
-      name: signal.name,
-      segment: signal.segment,
-      signal: id,
-      state: 0,
-      openedAgo: 0,
-      slaTotal: 120,
-      escalated: false,
-      history: [],
-    };
-    setCases((prev) => [opened, ...prev]);
-    setItems((prev) => prev.filter((s) => s.id !== id));
-    setSelection((cur) => {
-      if (cur?.type === 'signal' && cur.signal.id === id) {
-        return null;
+    const who = signal.name ?? signal.client;
+    const key = caseKeys.current.get(id) ?? crypto.randomUUID();
+    caseKeys.current.set(id, key);
+    const retry = { label: RETRY, run: () => void onOpenCase(id) };
+    setToast(null);
+    setPendingCases((prev) => new Set(prev).add(id));
+    try {
+      await openCase(id, key);
+      const outcome = await awaitCaseOutcome(id);
+      if (gone.current) {
+        return;
       }
-      if (!desktop) {
-        return null;
+      if (!outcome) {
+        caseKeys.current.delete(id);
+        setToast({ text: `O caso de ${who} ainda não foi confirmado. O sinal continua na fila.`, action: retry });
+        return;
       }
-      return cur;
-    });
+      caseKeys.current.delete(id);
+      await loadRef.current(true);
+      setToast({
+        text:
+          outcome === 'opened'
+            ? `Caso aberto para ${who}`
+            : `${who} já tinha um caso aberto. O sinal foi adicionado ao histórico desse caso.`,
+      });
+    } catch (err) {
+      if (gone.current) {
+        return;
+      }
+      const status = err instanceof ApiError ? err.status : 0;
+      setToast({
+        text:
+          status === 404
+            ? 'Este sinal não está mais na fila. Nenhum caso foi aberto.'
+            : status === 429
+              ? 'Muitos casos abertos em pouco tempo. Aguarde alguns minutos e tente de novo.'
+              : `Não foi possível abrir o caso de ${who}. O sinal continua na fila.`,
+        action: retry,
+      });
+    } finally {
+      setPendingCases((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const undoAction = async (id: string) => {
+    await deleteAction(id);
+    await loadRef.current(true);
   };
 
   const onContacted = async (id: string) => {
+    const hit = items.find((s) => s.id === id);
     try {
       await putAction(id, 'contact');
-      const hit = items.find((s) => s.id === id);
-      setItems((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, contacted_at: new Date().toISOString() } : s,
-        ),
-      );
+      await loadRef.current(true);
       setToast({
         text: `${hit?.name ?? hit?.client ?? 'Cliente'} marcada como contatada`,
-        undoId: id,
+        action: { label: 'Desfazer', run: () => void onUndo(id) },
       });
     } catch {
       setToast({ text: 'Não foi possível marcar Contatado' });
@@ -228,64 +322,82 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
   const onSnooze = async (id: string) => {
     try {
       await putAction(id, 'snooze');
-      setItems((prev) => prev.filter((s) => s.id !== id));
-      setSelection((cur) =>
-        cur?.type === 'signal' && cur.signal.id === id ? null : cur,
-      );
+      await loadRef.current(true);
       setToast({
         text: 'Sinal adiado por 1 h',
-        undoId: id,
+        action: { label: 'Desfazer', run: () => void onUndo(id) },
       });
     } catch {
       setToast({ text: 'Não foi possível adiar' });
     }
   };
 
-  const onUndo = async () => {
-    if (!toast?.undoId) {
-      setToast(null);
-      return;
-    }
+  // Desfazer on the toast, right after the action.
+  const onUndo = async (id: string) => {
     try {
-      await deleteAction(toast.undoId);
-      await load();
+      await undoAction(id);
       setToast(null);
     } catch {
       // keep the toast so the advisor can retry Desfazer
     }
   };
 
+  // Reativar and Desfazer contato on the card, any time later.
+  const onUndoAction = async (id: string) => {
+    try {
+      await undoAction(id);
+      setToast(null);
+    } catch {
+      setToast({
+        text: 'Não foi possível desfazer. Nada foi alterado.',
+        action: { label: RETRY, run: () => void onUndoAction(id) },
+      });
+    }
+  };
+
   const onAdvanceCase = async (id: string) => {
     try {
       const updated = await advanceCase(id);
-      setCases((prev) => prev.map((c) => (c.id === id ? updated : c)));
+      // The advance answer does not name the origin signal; the card keeps it.
+      const merge = (c: CaseItem): CaseItem => ({ ...updated, origin: updated.origin ?? c.origin });
+      setCases((prev) => prev.map((c) => (c.id === id ? merge(c) : c)));
       setSelection((cur) =>
         cur?.type === 'case' && cur.caseItem.id === id
-          ? { type: 'case', caseItem: updated }
+          ? { type: 'case', caseItem: merge(cur.caseItem) }
           : cur,
       );
+      setToast(null);
+      void loadRef.current(true);
     } catch {
-      setCases((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, state: Math.min(c.state + 1, 3) } : c)),
-      );
+      // The card stays in the state the server last reported.
+      setToast({
+        text: 'Não foi possível avançar o caso. Nada foi alterado.',
+        action: { label: RETRY, run: () => void onAdvanceCase(id) },
+      });
     }
   };
 
   // Server already filtered and sorted; decorate only for card presentation.
   const openSignals = items.map(decorateSignal);
-  const decoratedCases = cases.map((c) => decorateCase(c, items));
+  const decoratedCases = cases.map(decorateCase);
   const visibleCases = (state: number) =>
     decoratedCases.filter((row) => row.caseItem.state === state);
-  const showSignals = columnVisible('Novo sinal', filters, null);
-  const caseColumns = ([0, 1, 2, 3] as const)
-    .filter((state) => columnVisible(ANDAMENTO_OPTIONS[state + 1] ?? '', filters, state))
-    .map((state) => ({
+  const showSignals = signalsColumnVisible(filters);
+  const caseColumns = CASE_STATES.map((label, state) => ({ label, state }))
+    .filter(({ label, state }) => columnVisible(label, filters, state))
+    .map(({ label, state }) => ({
       key: `k${state}`,
-      label: ANDAMENTO_OPTIONS[state + 1] ?? '',
+      label,
       accent: (['info', 'brand', 'warn', 'ok'] as const)[state] ?? 'info',
       cases: visibleCases(state),
     }));
-  const resolved = cases.filter((c) => c.state === 3).length;
+  // The same number the Resolvido filter shows: the backend counts it.
+  const resolved = (facets?.andamento ?? []).find((f) => f.label === 'Resolvido')?.count ?? 0;
+  // A search that finds nothing on the board may still match resolved cases,
+  // which the board hides until the Resolvido filter is on.
+  const boardEmpty = !loading && !error && items.length === 0 && cases.length === 0;
+  const resolvedHint = boardEmpty && query.trim() !== '' && filters.andamento.length === 0 && resolved > 0;
+  const cardStates = [...openSignals.map((row) => row.slaState), ...decoratedCases.map((row) => row.slaState)];
   const emptyBecauseFilter =
     query.trim() !== '' ||
     Object.values(filters).some((list) => list.length > 0);
@@ -300,7 +412,11 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
       key: 'sla',
       label: 'SLA',
       align: 'left',
-      options: facetOptions(facets, 'sla', ['No prazo', 'Vencendo', 'Vencido']),
+      options: slaFacetsFromCards(
+        facetOptions(facets, 'sla', ['No prazo', 'Vencendo', 'Vencido']),
+        cardStates,
+        filters.sla,
+      ),
     },
     {
       key: 'sinal',
@@ -335,6 +451,8 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
     });
   };
 
+  const closeFilter = useCallback(() => setOpenFilter(null), []);
+
   const showBoard = desktop || !selection;
 
   return (
@@ -345,11 +463,11 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
             <span className="queue-stats__date">{dateLabel()}</span>
             <span className="queue-stats__dot" aria-hidden />
             <span>
-              <strong>{items.length}</strong> sinais
+              <strong>{items.length}</strong> {countLabel(items.length, 'sinal', 'sinais')}
             </span>
             <span className="queue-stats__dot" aria-hidden />
             <span>
-              <strong>{resolved}</strong> resolvidos
+              <strong>{resolved}</strong> {countLabel(resolved, 'resolvido', 'resolvidos')}
             </span>
             <NewItemsPill count={incoming.length} onMerge={mergeIncoming} />
           </div>
@@ -360,7 +478,7 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
             groups={groups}
             open={openFilter}
             onToggle={(key) => setOpenFilter((cur) => (cur === key ? null : key))}
-            onClose={() => setOpenFilter(null)}
+            onClose={closeFilter}
             onToggleOption={toggleOption}
             onClear={() => {
               setQuery('');
@@ -369,6 +487,18 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
             }}
           />
         </div>
+      ) : null}
+      {showBoard && resolvedHint ? (
+        <p className="queue-hint">
+          {countLabel(
+            resolved,
+            '1 caso resolvido corresponde a esta busca.',
+            `${resolved} casos resolvidos correspondem a esta busca.`,
+          )}{' '}
+          <button type="button" onClick={() => toggleOption('andamento', 'Resolvido')}>
+            Mostrar resolvidos
+          </button>
+        </p>
       ) : null}
       {showBoard ? (
         <QueueBoard
@@ -386,10 +516,12 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
           }
           onRetry={() => void load()}
           onViewCase={onViewCase}
-          onOpenCase={onOpenCase}
+          onOpenCase={(id) => void onOpenCase(id)}
           onContacted={(id) => void onContacted(id)}
           onSnooze={(id) => void onSnooze(id)}
+          onUndoAction={(id) => void onUndoAction(id)}
           onAdvanceCase={(id) => void onAdvanceCase(id)}
+          pendingCases={pendingCases}
         />
       ) : null}
       {selection && !desktop ? (
@@ -399,7 +531,7 @@ export function QueueScreen({ isDesktop, disableStream }: QueueScreenProps) {
         <DetailModal selection={selection} onClose={() => setSelection(null)} desktop />
       ) : null}
       {toast ? (
-        <Toast text={toast.text} onUndo={toast.undoId ? () => void onUndo() : undefined} />
+        <Toast text={toast.text} action={toast.action} />
       ) : null}
     </div>
   );

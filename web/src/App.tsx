@@ -6,6 +6,7 @@ import { QueueScreen } from './screens/QueueScreen';
 import { ReviewScreen } from './screens/ReviewScreen';
 import { ClientAppScreen } from './screens/ClientAppScreen';
 import { ClientListScreen } from './screens/ClientListScreen';
+import { NotFoundScreen } from './screens/NotFoundScreen';
 import { PresentationRedirect } from './screens/PresentationRedirect';
 import { SduiEmbedScreen } from './screens/SduiEmbedScreen';
 
@@ -22,6 +23,7 @@ export function App() {
         <Route path="painel" element={<ManagerScreen />} />
         <Route path="clientes/:id" element={<CustomerScreen />} />
       </Route>
+      <Route path="*" element={<NotFoundScreen />} />
     </Routes>
   );
 }

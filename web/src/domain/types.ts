@@ -43,6 +43,8 @@ export interface Signal {
   rule?: string;
   reason?: string;
   contacted_at?: string;
+  /** Set only while the signal is snoozed; such a signal is listed only by the Adiados filter. */
+  snoozed_until?: string;
   /** Catalog product of a `perfil` alert. */
   product_id?: string;
   /** Product risk (1–5) of a `perfil` alert. */
@@ -57,6 +59,8 @@ export interface CaseHistoryEntry {
   ago: number;
   kind: string;
   text: string;
+  /** Id of the queue signal the line is about, when a signal joined the case. */
+  signal?: string;
 }
 
 export interface CaseItem {
@@ -71,6 +75,14 @@ export interface CaseItem {
   state: number;
   openedAgo: number;
   slaTotal: number;
+  /** True when cases halved the segment SLA for this case; absent otherwise. */
+  slaHalved?: boolean;
+  /** Minutes left of the SLA as cases counts them; negative once overdue. */
+  slaRemaining: number;
+  /** SLA state decided by cases: No prazo, Vencendo, Vencido or Concluído. */
+  slaState: string;
+  /** The signal the case came from, e.g. "mensagem · Reclamação"; absent when the queue does not know it. */
+  origin?: string;
   escalated: boolean;
   history: CaseHistoryEntry[];
 }
@@ -142,8 +154,10 @@ export interface ManagerSnapshot {
   backlog: ManagerBacklog[];
   avgFirstContactMin: number;
   avgFirstContactYesterday: number;
+  /** Share of triaged messages still awaiting human review, in percent. */
   reviewPct: number;
   fallbackPct: number;
+  /** Intent label to its share of the triaged messages, in percent. */
   intents: Record<string, number>;
   atRisk: ManagerAtRisk[];
 }

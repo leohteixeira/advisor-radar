@@ -1,6 +1,8 @@
 import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { CaseItem, Signal } from '../domain/types';
+import { protocolOf } from '../api/pov';
+import { agoText, SLA_HALVED_WHY, slaHalvedNote } from '../domain/queueVisual';
 import { ALERT_LABELS, CASE_STATES } from '../domain/types';
 
 const FRUSTRATION = ['Calmo', 'Incomodado', 'Frustrado', 'Muito frustrado'];
@@ -128,12 +130,17 @@ function CaseDetail({ caseItem }: { caseItem: CaseItem }) {
   return (
     <div className="detail detail--case" data-testid="case-detail">
       <p className="detail__eyebrow">
-        Caso <span className="detail__case-id">{caseItem.id}</span>
+        Caso <span className="detail__case-id">{protocolOf(caseItem.id)}</span>
       </p>
       <h2 className="detail__title">{name}</h2>
       <p className="detail__sub">
         {segment} · {stateLabel}
       </p>
+      {caseItem.slaHalved ? (
+        <p className="detail__sub" data-testid="sla-halved">
+          {slaHalvedNote(segment)}. {SLA_HALVED_WHY}
+        </p>
+      ) : null}
       <ol className="case-rail" data-testid="case-rail" aria-label="Etapas do caso">
         {CASE_STATES.map((label, i) => {
           const done = i < caseItem.state;
@@ -156,6 +163,22 @@ function CaseDetail({ caseItem }: { caseItem: CaseItem }) {
           );
         })}
       </ol>
+      <section className="detail__history" aria-label="Histórico do caso">
+        <h3 className="detail__history-title">Histórico ({caseItem.history.length})</h3>
+        {caseItem.history.length === 0 ? (
+          <p className="detail__history-empty">Nenhum registro neste caso.</p>
+        ) : (
+          // In the order cases keeps them: oldest first, newest last.
+          <ol className="detail__history-list" data-testid="case-history">
+            {caseItem.history.map((line, i) => (
+              <li key={`${i}-${line.kind}-${line.ago}`}>
+                <span className="detail__history-text">{line.text}</span>
+                <span className="detail__history-age">{agoText(line.ago)}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
       <Link to={`/clientes/${caseItem.client}`} className="detail__360">
         Ver visão 360 de {firstName(caseItem)} →
       </Link>

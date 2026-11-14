@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { ICONS } from '../domain/queueVisual';
 import type { FilterKey, QueueFilters } from '../domain/queueVisual';
 
@@ -54,6 +55,24 @@ export function FilterBar({
   onToggleOption,
   onClear,
 }: FilterBarProps) {
+  const triggers = useRef<Partial<Record<FilterKey, HTMLButtonElement | null>>>({});
+
+  // Esc closes the open menu and hands focus back to the button that opened it.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') {
+        return;
+      }
+      onClose();
+      triggers.current[open]?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   const tags = groups.flatMap((g) =>
     filters[g.key].map((option) => ({
       key: `${g.key}:${option}`,
@@ -90,6 +109,9 @@ export function FilterBar({
             <div key={g.key} className={`filter-bar__group filter-bar__group--${g.align}`}>
               <button
                 type="button"
+                ref={(el) => {
+                  triggers.current[g.key] = el;
+                }}
                 className={
                   isOpen || selected.length > 0 ? 'filter-bar__btn filter-bar__btn--on' : 'filter-bar__btn'
                 }
@@ -111,6 +133,7 @@ export function FilterBar({
                           key={o.label}
                           type="button"
                           className="filter-bar__option"
+                          aria-label={`${o.label} (${o.count})`}
                           aria-pressed={on}
                           onClick={() => onToggleOption(g.key, o.label)}
                         >

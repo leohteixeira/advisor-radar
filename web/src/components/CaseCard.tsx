@@ -1,4 +1,5 @@
-import type { DecoratedCase } from '../domain/queueVisual';
+import { protocolOf } from '../api/pov';
+import { SLA_HALVED_WHY, slaHalvedNote, type DecoratedCase } from '../domain/queueVisual';
 
 interface CaseCardProps {
   row: DecoratedCase;
@@ -9,6 +10,7 @@ interface CaseCardProps {
 export function CaseCard({ row, onAdvance, onOpen }: CaseCardProps) {
   const { caseItem } = row;
   const canAdvance = caseItem.state < 3 && row.nextLabel !== '';
+  const protocol = protocolOf(caseItem.id);
 
   return (
     <article className={`case-card case-card--${row.slaTone}`} data-testid={`case-${caseItem.id}`}>
@@ -16,7 +18,7 @@ export function CaseCard({ row, onAdvance, onOpen }: CaseCardProps) {
         type="button"
         className="case-card__open"
         onClick={() => onOpen(caseItem.id)}
-        aria-label={`Abrir caso ${caseItem.id}`}
+        aria-label={`Abrir caso ${protocol} de ${row.name}`}
       >
         <div className="case-card__top">
           <strong className="case-card__name">{row.name}</strong>
@@ -29,8 +31,14 @@ export function CaseCard({ row, onAdvance, onOpen }: CaseCardProps) {
           <span className={`case-card__state case-card__state--${caseItem.state}`}>SLA {row.slaState}</span>
         </div>
         <p className="case-card__meta">
-          <span className="case-card__id">{caseItem.id}</span> · {row.origin}
+          <span className="case-card__id">{protocol}</span>
+          {row.origin ? ` · ${row.origin}` : ''}
         </p>
+        {caseItem.slaHalved ? (
+          <p className="case-card__meta" title={SLA_HALVED_WHY} data-testid="sla-halved">
+            {slaHalvedNote(row.segment)}
+          </p>
+        ) : null}
         {caseItem.escalated ? (
           <span className="case-card__escalated">Escalonado automaticamente</span>
         ) : null}

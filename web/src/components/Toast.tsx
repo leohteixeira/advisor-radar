@@ -1,15 +1,16 @@
 interface ToastProps {
   text: string;
-  onUndo?: () => void;
+  /** One follow-up the advisor can take from the message, e.g. Desfazer or Tentar novamente. */
+  action?: { label: string; run: () => void };
 }
 
-export function Toast({ text, onUndo }: ToastProps) {
+export function Toast({ text, action }: ToastProps) {
   return (
     <div className="toast" role="status">
       <span>{text}</span>
-      {onUndo ? (
-        <button type="button" className="toast__undo" onClick={onUndo}>
-          Desfazer
+      {action ? (
+        <button type="button" className="toast__undo" onClick={action.run}>
+          {action.label}
         </button>
       ) : null}
     </div>

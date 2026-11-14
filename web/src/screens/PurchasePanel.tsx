@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { dollars, formatCents, protocolOf } from '../api/pov';
+import { formatCents, protocolOf, readAmount, type AmountProblem } from '../api/pov';
 import { RiskBars } from '../sdui/components/RiskBars';
 import { MASKED_MONEY } from '../sdui/context';
 import type { PurchaseTarget } from '../sdui/purchase';
@@ -28,7 +28,15 @@ const CHIPS = [
 
 const DEFAULT_CENTS = 100_000;
 
-type Chip = '250' | '1000' | 'all' | null;
+/**
+ * What the amount forms say about a typed amount they will not send. An empty
+ * field shows its sentence as helper text; the other two are errors.
+ */
+export const AMOUNT_PROBLEMS: Record<AmountProblem, string> = {
+  empty: 'Informe um valor maior que zero.',
+  unrecognised: 'Valor não reconhecido. Use o formato 1.000,00.',
+  zero: 'O valor precisa ser maior que zero.',
+};
 
 /**
  * The Bastidores steps of a purchase. Above the profile the suitability rule
@@ -50,10 +58,6 @@ function useFocusedHeading() {
   return heading;
 }
 
-function centsOf(text: string): number {
-  return Math.round(dollars(text) * 100);
-}
-
 function BackChevron() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -65,7 +69,11 @@ function BackChevron() {
 /**
  * The coded purchase form (Compra-Fernanda-Aviso). Every product value and the
  * cash come from the Investir envelope; the only thing web works out is the
- * typed amount, capped at the cash as a convenience. The BFF decides the rest.
+ * typed amount. The field always shows what was typed: an amount the form
+ * will not send (unreadable, zero, below the minimum, above the cash, or any
+ * amount when there is no cash) keeps Confirm disabled and says why. The
+ * suggested amounts are capped at the cash, and one is highlighted only while
+ * the field holds exactly its value. The BFF decides the rest.
  */
 export function PurchaseForm({
   target,
@@ -88,28 +96,42 @@ export function PurchaseForm({
   const { product, cash } = target;
   const cap = cash?.cents;
   const capped = (cents: number) => (cap === undefined ? cents : Math.min(cents, cap));
-  const [text, setText] = useState(() => formatCents(capped(DEFAULT_CENTS)));
   // With less than US$ 1.000 in cash the opening amount is the whole cash.
-  const [chip, setChip] = useState<Chip>(() => (cap !== undefined && cap < DEFAULT_CENTS ? 'all' : '1000'));
-  const cents = centsOf(text);
+  const [text, setText] = useState(() => formatCents(capped(DEFAULT_CENTS)));
+  const { cents, problem } = readAmount(text);
+  // The envelope says there is nothing to invest: no amount can be chosen.
+  const noCash = cap !== undefined && cap <= 0;
+  let blocked = '';
+  if (noCash) {
+    blocked = 'Sem caixa disponível para investir.';
+  } else if (problem) {
+    blocked = AMOUNT_PROBLEMS[problem];
+  } else if (cents < product.minimum_cents) {
+    blocked = 'Valor abaixo do mínimo deste produto.';
+  } else if (cap !== undefined && cents > cap) {
+    blocked = 'Valor acima do caixa disponível.';
+  }
+  const helper = !noCash && problem === 'empty';
   const heading = useFocusedHeading();
-  const described = [cash ? 'valor-compra-caixa' : '', 'valor-compra-minimo', product.warning ? 'valor-compra-aviso' : '']
+  const described = [
+    cash ? 'valor-compra-caixa' : '',
+    'valor-compra-minimo',
+    product.warning ? 'valor-compra-aviso' : '',
+    blocked ? 'valor-compra-problema' : '',
+  ]
     .filter(Boolean)
     .join(' ');
+  const pressed = (value: number) => problem === null && cents === value;
 
-  function pick(key: Exclude<Chip, null>, value: number) {
-    setChip(key);
+  function pick(value: number) {
     setText(formatCents(capped(value)));
-  }
-
-  function typed(value: string) {
-    setChip(null);
-    setText(cap !== undefined && centsOf(value) > cap ? formatCents(cap) : value);
   }
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    onSubmit(cents);
+    if (blocked === '') {
+      onSubmit(cents);
+    }
   }
 
   return (
@@ -139,17 +161,29 @@ export function PurchaseForm({
           inputMode="decimal"
           autoComplete="off"
           aria-describedby={described}
+          aria-invalid={blocked !== '' && !helper}
+          disabled={noCash}
           value={text}
-          onChange={(event) => typed(event.target.value)}
+          onChange={(event) => setText(event.target.value)}
         />
+        {helper ? (
+          <span id="valor-compra-problema" className="pov-buy__hint">
+            {blocked}
+          </span>
+        ) : null}
+        {blocked && !helper ? (
+          <p id="valor-compra-problema" role="alert">
+            {blocked}
+          </p>
+        ) : null}
         <div className="pov-buy__chips" role="group" aria-label="Valores sugeridos">
           {CHIPS.map((item) => (
-            <button key={item.key} type="button" aria-pressed={chip === item.key} onClick={() => pick(item.key, item.cents)}>
+            <button key={item.key} type="button" aria-pressed={pressed(item.cents)} disabled={noCash} onClick={() => pick(item.cents)}>
               {item.label}
             </button>
           ))}
           {cash ? (
-            <button type="button" aria-pressed={chip === 'all'} onClick={() => pick('all', cash.cents)}>
+            <button type="button" aria-pressed={pressed(cash.cents)} disabled={noCash} onClick={() => pick(cash.cents)}>
               Tudo
             </button>
           ) : null}
@@ -175,7 +209,7 @@ export function PurchaseForm({
         </div>
       ) : null}
       {notice ? <p role="alert">{notice}</p> : null}
-      <button type="submit" className="pov-buy__primary" disabled={busy || cents <= 0 || cents < product.minimum_cents}>
+      <button type="submit" className="pov-buy__primary" disabled={busy || blocked !== ''}>
         Confirmar compra de {masked ? MASKED_MONEY : formatCents(cents)}
       </button>
       <button type="button" className="pov-buy__ghost" onClick={onBack}>
