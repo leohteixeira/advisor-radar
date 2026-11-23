@@ -32,4 +32,4 @@ COPY deploy/Caddyfile.production /etc/caddy/Caddyfile
 COPY --from=web-build /src/web/dist /srv
 USER nobody
 EXPOSE 8080
-HEALTHCHECK --interval=10s --timeout=3s --retries=12 CMD wget -q -O /dev/null http://127.0.0.1:8080/
+HEALTHCHECK --interval=30s --timeout=3s --start-period=120s --start-interval=2s --retries=5 CMD wget -q -O /dev/null http://127.0.0.1:8080/
