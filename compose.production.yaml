@@ -33,10 +33,11 @@ services:
       ACCOUNT_SIM_BROKER_URL: "${BROKER_URL:?Set BROKER_URL}"
     healthcheck:
       test: [CMD, nc, -z, 127.0.0.1, "8460"]
-      interval: 5s
+      interval: 30s
       timeout: 3s
-      retries: 24
-      start_period: 20s
+      retries: 5
+      start_period: 120s
+      start_interval: 2s
     networks: [default, data, telemetry]
   advisory:
     <<: *runtime
@@ -51,10 +52,11 @@ services:
       ACCOUNT_SIM_GRPC_TARGET: "account-sim:8460"
     healthcheck:
       test: [CMD, nc, -z, 127.0.0.1, "8461"]
-      interval: 5s
+      interval: 30s
       timeout: 3s
-      retries: 24
-      start_period: 20s
+      retries: 5
+      start_period: 120s
+      start_interval: 2s
     networks: [default, data, telemetry]
     depends_on:
       account-sim:
@@ -71,10 +73,11 @@ services:
       ADVISORY_GRPC_TARGET: "advisory:8461"
     healthcheck:
       test: [CMD, nc, -z, 127.0.0.1, "8463"]
-      interval: 5s
+      interval: 30s
       timeout: 3s
-      retries: 24
-      start_period: 20s
+      retries: 5
+      start_period: 120s
+      start_interval: 2s
     networks: [default, data, telemetry]
     depends_on:
       advisory:
@@ -91,10 +94,11 @@ services:
       AI_GATEWAY_API_KEY: "${AI_GATEWAY_API_KEY:-}"
     healthcheck:
       test: [CMD, nc, -z, 127.0.0.1, "8462"]
-      interval: 5s
+      interval: 30s
       timeout: 3s
-      retries: 24
-      start_period: 20s
+      retries: 5
+      start_period: 120s
+      start_interval: 2s
     networks: [default, data, telemetry]
   timeline-indexer:
     <<: *runtime
@@ -110,11 +114,12 @@ services:
       ELASTICSEARCH_URL: "${ELASTICSEARCH_URL:?Set ELASTICSEARCH_URL}"
     healthcheck:
       test: [CMD, nc, -z, 127.0.0.1, "8464"]
-      interval: 5s
+      interval: 30s
       timeout: 3s
+      retries: 5
       # The port opens only after the index is cleared and replayed.
-      retries: 60
-      start_period: 20s
+      start_period: 300s
+      start_interval: 2s
     networks: [default, data, telemetry]
   bff:
     <<: *runtime
@@ -145,10 +150,11 @@ services:
         condition: service_healthy
     healthcheck:
       test: [CMD, curl, -fsS, http://127.0.0.1:8400/v1/client-pov/customers]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 24
-      start_period: 30s
+      retries: 5
+      start_period: 240s
+      start_interval: 2s
     networks:
       default: {}
       data: {}
